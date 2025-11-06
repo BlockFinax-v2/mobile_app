@@ -2,15 +2,27 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
-import { useWallet } from "@/contexts/WalletContext";
+import {
+  getAllSupportedTokens,
+  useWallet,
+  SupportedNetworkId,
+} from "@/contexts/WalletContext";
 import { WalletStackParamList } from "@/navigation/types";
+import { transactionService } from "@/services/transactionService";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { isValidAddress } from "@/utils/tokenUtils";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 type SupportedCurrency = "USDC" | "USDT" | "BUSD" | "ETH" | "MATIC" | "BNB";
@@ -26,21 +38,26 @@ type FormValues = {
 
 export const SendPaymentScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { selectedNetwork } = useWallet();
+  const { selectedNetwork, balances, switchNetwork } = useWallet();
+  const [isEstimatingGas, setIsEstimatingGas] = useState(false);
+  const [estimatedFee, setEstimatedFee] = useState<string | null>(null);
 
-  const availableCurrencies = React.useMemo(() => {
-    const currencies: SupportedCurrency[] = [
-      selectedNetwork.primaryCurrency as SupportedCurrency,
-    ];
-    if (selectedNetwork.stablecoins) {
-      selectedNetwork.stablecoins.forEach((coin) => {
-        currencies.push(coin.symbol as SupportedCurrency);
-      });
-    }
-    return currencies;
+  // Get available tokens for the selected network
+  const availableTokens = React.useMemo(() => {
+    return getAllSupportedTokens(selectedNetwork.id);
   }, [selectedNetwork]);
 
-  const { control, handleSubmit, watch } = useForm<FormValues>({
+  const availableCurrencies = React.useMemo(() => {
+    return availableTokens.map((token) => token.symbol as SupportedCurrency);
+  }, [availableTokens]);
+
+  const {
+    control,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<FormValues>({
     defaultValues: {
       recipient: "",
       amount: "",
@@ -50,12 +67,119 @@ export const SendPaymentScreen: React.FC = () => {
     },
   });
 
+  const recipientValue = watch("recipient");
   const amountValue = watch("amount");
   const selectedCurrency = watch("currency");
-  const fee = amountValue ? parseFloat(amountValue || "0") * 0.005 : 0;
+
+  // Get token details for selected currency
+  const selectedToken = React.useMemo(() => {
+    return availableTokens.find((token) => token.symbol === selectedCurrency);
+  }, [selectedCurrency, availableTokens]);
+
+  // Get balance for selected token
+  const availableBalance = React.useMemo(() => {
+    if (!selectedToken) return "0";
+
+    if (
+      selectedToken.address === "0x0000000000000000000000000000000000000000"
+    ) {
+      // Native token
+      return balances.primary.toFixed(6);
+    } else {
+      // ERC-20 token
+      const tokenBalance = balances.tokens.find(
+        (t) => t.address.toLowerCase() === selectedToken.address.toLowerCase()
+      );
+      return tokenBalance?.balance || "0";
+    }
+  }, [selectedToken, balances]);
+
+  // Estimate gas when amount or recipient changes
+  const estimateGas = useCallback(async () => {
+    if (!recipientValue || !amountValue || !selectedToken) {
+      setEstimatedFee(null);
+      return;
+    }
+
+    if (!isValidAddress(recipientValue)) {
+      setEstimatedFee(null);
+      return;
+    }
+
+    const amount = parseFloat(amountValue);
+    if (isNaN(amount) || amount <= 0) {
+      setEstimatedFee(null);
+      return;
+    }
+
+    setIsEstimatingGas(true);
+    try {
+      const gasEstimate = await transactionService.estimateGas({
+        recipientAddress: recipientValue,
+        amount: amountValue,
+        tokenAddress:
+          selectedToken.address === "0x0000000000000000000000000000000000000000"
+            ? undefined
+            : selectedToken.address,
+        tokenDecimals: selectedToken.decimals,
+        network: selectedNetwork,
+      });
+
+      setEstimatedFee(gasEstimate.estimatedCost);
+    } catch (error: any) {
+      console.error("Gas estimation error:", error);
+      setEstimatedFee(null);
+      Alert.alert("Gas Estimation Failed", error.message);
+    } finally {
+      setIsEstimatingGas(false);
+    }
+  }, [recipientValue, amountValue, selectedToken, selectedNetwork]);
+
+  // Debounce gas estimation
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      estimateGas();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [estimateGas]);
+
+  const fee = estimatedFee ? parseFloat(estimatedFee) : 0;
   const total = parseFloat(amountValue || "0") + fee;
 
   const onSubmit = (values: FormValues) => {
+    if (!selectedToken) {
+      Alert.alert("Error", "Invalid token selected");
+      return;
+    }
+
+    if (!isValidAddress(values.recipient)) {
+      Alert.alert("Invalid Address", "Please enter a valid recipient address");
+      return;
+    }
+
+    const amount = parseFloat(values.amount);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert("Invalid Amount", "Please enter a valid amount");
+      return;
+    }
+
+    if (amount > parseFloat(availableBalance)) {
+      Alert.alert(
+        "Insufficient Balance",
+        `You don't have enough ${selectedCurrency} to complete this transaction`
+      );
+      return;
+    }
+
+    if (!estimatedFee) {
+      Alert.alert(
+        "Gas Estimation Required",
+        "Please wait for gas estimation to complete"
+      );
+      return;
+    }
+
     navigation.navigate("SendPaymentReview", {
       recipient: values.recipient,
       amount: values.amount,
@@ -63,6 +187,8 @@ export const SendPaymentScreen: React.FC = () => {
       network: values.network,
       fee,
       message: values.message || undefined,
+      tokenAddress: selectedToken.address,
+      tokenDecimals: selectedToken.decimals,
     });
   };
 
@@ -83,11 +209,71 @@ export const SendPaymentScreen: React.FC = () => {
           </View>
         </View>
 
+        {/* Network Display */}
+        <View style={styles.networkSelectorCard}>
+          <Text style={styles.networkLabel}>Network</Text>
+          <View style={styles.networkDisplay}>
+            <View style={styles.networkInfo}>
+              <MaterialCommunityIcons
+                name={
+                  selectedNetwork.id.includes("ethereum")
+                    ? "ethereum"
+                    : selectedNetwork.id.includes("base")
+                    ? "alpha-b-circle-outline"
+                    : selectedNetwork.id.includes("lisk")
+                    ? "flash-circle"
+                    : selectedNetwork.id.includes("polygon")
+                    ? "triangle"
+                    : selectedNetwork.id.includes("bsc")
+                    ? "alpha-b-circle"
+                    : "earth"
+                }
+                size={24}
+                color={
+                  selectedNetwork.id.includes("ethereum")
+                    ? "#627EEA"
+                    : selectedNetwork.id.includes("base")
+                    ? "#0052FF"
+                    : selectedNetwork.id.includes("lisk")
+                    ? "#4070F4"
+                    : selectedNetwork.id.includes("polygon")
+                    ? "#8247E5"
+                    : selectedNetwork.id.includes("bsc")
+                    ? "#F3BA2F"
+                    : palette.primaryBlue
+                }
+              />
+              <View style={styles.networkDetails}>
+                <Text style={styles.networkName}>{selectedNetwork.name}</Text>
+                <Text style={styles.networkMeta}>
+                  Chain ID: {selectedNetwork.chainId}
+                </Text>
+              </View>
+            </View>
+          </View>
+          {selectedNetwork.isTestnet && (
+            <View style={styles.testnetWarning}>
+              <MaterialCommunityIcons
+                name="alert-circle"
+                size={16}
+                color={palette.warningYellow}
+              />
+              <Text style={styles.testnetWarningText}>
+                Test Network - Tokens have no real value
+              </Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.card}>
           <Controller
             control={control}
             name="recipient"
-            rules={{ required: "Recipient address is required" }}
+            rules={{
+              required: "Recipient address is required",
+              validate: (value) =>
+                isValidAddress(value) || "Invalid Ethereum address",
+            }}
             render={({ field: { onChange, value }, fieldState }) => (
               <Input
                 label="Recipient Address *"
@@ -107,7 +293,19 @@ export const SendPaymentScreen: React.FC = () => {
           <Controller
             control={control}
             name="amount"
-            rules={{ required: "Amount required" }}
+            rules={{
+              required: "Amount required",
+              validate: (value) => {
+                const num = parseFloat(value);
+                if (isNaN(num) || num <= 0) {
+                  return "Amount must be greater than 0";
+                }
+                if (num > parseFloat(availableBalance)) {
+                  return "Insufficient balance";
+                }
+                return true;
+              },
+            }}
             render={({ field: { onChange, value }, fieldState }) => (
               <Input
                 label="Amount *"
@@ -116,7 +314,7 @@ export const SendPaymentScreen: React.FC = () => {
                 keyboardType="numeric"
                 placeholder="0.00"
                 error={fieldState.error?.message}
-                helperText={`Available: 24,500 ${selectedCurrency}`}
+                helperText={`Available: ${availableBalance} ${selectedCurrency}`}
               />
             )}
           />
@@ -130,18 +328,43 @@ export const SendPaymentScreen: React.FC = () => {
             </Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text color={palette.neutralMid}>Fee</Text>
-            <Text style={styles.summaryValue}>
-              {fee.toFixed(4)} {selectedCurrency}
-            </Text>
+            <Text color={palette.neutralMid}>Network Fee</Text>
+            <View style={styles.feeContainer}>
+              {isEstimatingGas ? (
+                <ActivityIndicator size="small" color={palette.primaryBlue} />
+              ) : (
+                <Text style={styles.summaryValue}>
+                  {estimatedFee
+                    ? `${parseFloat(estimatedFee).toFixed(6)} ${
+                        selectedNetwork.primaryCurrency
+                      }`
+                    : "—"}
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.divider} />
           <View style={styles.summaryRow}>
             <Text variant="subtitle">Total</Text>
             <Text variant="subtitle" color={palette.primaryBlue}>
-              {total.toFixed(4)} {selectedCurrency}
+              {amountValue || "0.00"} {selectedCurrency}
+              {estimatedFee && (
+                <Text style={styles.feeNote}>
+                  {" "}
+                  + {parseFloat(estimatedFee).toFixed(6)}{" "}
+                  {selectedNetwork.primaryCurrency}
+                </Text>
+              )}
             </Text>
           </View>
+          {!isEstimatingGas &&
+            !estimatedFee &&
+            recipientValue &&
+            amountValue && (
+              <Text color={palette.warningYellow} style={styles.gasWarning}>
+                Gas estimation failed. Fee will be calculated before sending.
+              </Text>
+            )}
         </View>
 
         <View style={styles.card}>
@@ -181,6 +404,63 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
   headerText: { flex: 1, gap: spacing.xs },
   subtitle: { fontSize: 14 },
+  networkSelectorCard: {
+    backgroundColor: palette.white,
+    padding: spacing.lg,
+    borderRadius: 16,
+    gap: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  networkLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+  },
+  networkDisplay: {
+    backgroundColor: palette.surface,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+  },
+  networkInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  networkDetails: {
+    flex: 1,
+  },
+  networkName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+  },
+  networkMeta: {
+    fontSize: 12,
+    color: palette.neutralMid,
+    marginTop: 2,
+  },
+  testnetWarning: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: palette.warningYellow + "15",
+    padding: spacing.sm,
+    borderRadius: 8,
+  },
+  testnetWarningText: {
+    fontSize: 12,
+    color: palette.warningYellow,
+    fontWeight: "500",
+    flex: 1,
+  },
   card: {
     backgroundColor: palette.white,
     borderRadius: 16,
@@ -205,6 +485,20 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "#D1D5DB",
     marginVertical: spacing.xs,
+  },
+  feeContainer: {
+    minWidth: 60,
+    alignItems: "flex-end",
+  },
+  feeNote: {
+    fontSize: 12,
+    color: palette.neutralMid,
+    fontWeight: "400",
+  },
+  gasWarning: {
+    fontSize: 11,
+    marginTop: spacing.xs,
+    fontStyle: "italic",
   },
   actions: { gap: spacing.md },
 });

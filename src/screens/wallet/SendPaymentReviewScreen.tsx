@@ -1,13 +1,22 @@
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { useWallet } from "@/contexts/WalletContext";
 import { WalletStackParamList } from "@/navigation/types";
+import { transactionService } from "@/services/transactionService";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import React, { useState } from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 type RouteProps = RouteProp<WalletStackParamList, "SendPaymentReview">;
@@ -19,20 +28,63 @@ type NavigationProps = StackNavigationProp<
 export const SendPaymentReviewScreen: React.FC = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProps>();
+  const { selectedNetwork, refreshBalance } = useWallet();
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [transactionHash, setTransactionHash] = useState<string>("");
+  const [explorerUrl, setExplorerUrl] = useState<string>("");
 
   const details = route.params;
-  const total = parseFloat(details.amount) + details.fee;
 
   const handleConfirm = async () => {
     setIsProcessing(true);
-    // Simulate transaction processing
-    setTimeout(() => {
-      setIsProcessing(false);
+    try {
+      const result = await transactionService.sendTransaction({
+        recipientAddress: details.recipient,
+        amount: details.amount,
+        tokenAddress:
+          details.tokenAddress === "0x0000000000000000000000000000000000000000"
+            ? undefined
+            : details.tokenAddress,
+        tokenDecimals: details.tokenDecimals,
+        network: selectedNetwork,
+      });
+
+      setTransactionHash(result.hash);
+      if (result.explorerUrl) {
+        setExplorerUrl(result.explorerUrl);
+      }
       setSuccess(true);
-      setTimeout(() => navigation.popToTop(), 2000);
-    }, 2000);
+
+      // Wait for confirmation in background
+      transactionService
+        .waitForTransaction(result.hash, selectedNetwork, 1)
+        .then(() => {
+          console.log("Transaction confirmed!");
+          // Refresh balance after confirmation
+          refreshBalance();
+        })
+        .catch((error) => {
+          console.error("Transaction confirmation error:", error);
+        });
+
+      // Navigate back after showing success
+      setTimeout(() => navigation.popToTop(), 3000);
+    } catch (error: any) {
+      console.error("Transaction error:", error);
+      Alert.alert(
+        "Transaction Failed",
+        error.message || "Failed to send transaction. Please try again.",
+        [{ text: "OK", onPress: () => setIsProcessing(false) }]
+      );
+      setIsProcessing(false);
+    }
+  };
+
+  const handleViewOnExplorer = () => {
+    if (explorerUrl) {
+      Linking.openURL(explorerUrl);
+    }
   };
 
   if (success) {
@@ -58,7 +110,34 @@ export const SendPaymentReviewScreen: React.FC = () => {
             <Text variant="title" color={palette.primaryBlue}>
               {details.amount} {details.currency}
             </Text>
+
+            {transactionHash && (
+              <View style={styles.txHashContainer}>
+                <Text color={palette.neutralMid} style={styles.txHashLabel}>
+                  Transaction Hash
+                </Text>
+                <Text style={styles.txHash} numberOfLines={1}>
+                  {transactionHash.slice(0, 10)}...{transactionHash.slice(-8)}
+                </Text>
+              </View>
+            )}
           </View>
+
+          {explorerUrl && (
+            <TouchableOpacity
+              style={styles.explorerButton}
+              onPress={handleViewOnExplorer}
+            >
+              <MaterialCommunityIcons
+                name="open-in-new"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text color={palette.primaryBlue} style={styles.explorerText}>
+                View on Block Explorer
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </Screen>
     );
@@ -179,18 +258,14 @@ export const SendPaymentReviewScreen: React.FC = () => {
             </Text>
           </View>
           <View style={styles.feeRow}>
-            <Text color={palette.neutralMid}>Network Fee</Text>
+            <Text color={palette.neutralMid}>Network Fee (Est.)</Text>
             <Text style={styles.feeValue}>
-              {details.fee.toFixed(4)} {details.currency}
+              {details.fee.toFixed(6)} {selectedNetwork.primaryCurrency}
             </Text>
           </View>
-          <View style={styles.divider} />
-          <View style={styles.feeRow}>
-            <Text variant="subtitle">Total</Text>
-            <Text variant="subtitle" color={palette.primaryBlue}>
-              {total.toFixed(4)} {details.currency}
-            </Text>
-          </View>
+          <Text style={styles.feeNote}>
+            * Final gas fee may vary based on network conditions
+          </Text>
         </View>
 
         {/* Warning */}
@@ -305,6 +380,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: palette.neutralDark,
   },
+  feeNote: {
+    fontSize: 11,
+    color: palette.neutralMid,
+    fontStyle: "italic",
+    marginTop: spacing.xs,
+  },
   divider: {
     height: 1,
     backgroundColor: "#D1D5DB",
@@ -363,5 +444,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     marginTop: spacing.lg,
+  },
+  txHashContainer: {
+    marginTop: spacing.md,
+    width: "100%",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  txHashLabel: {
+    fontSize: 12,
+  },
+  txHash: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+    fontFamily: "monospace",
+  },
+  explorerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 12,
+    marginTop: spacing.md,
+  },
+  explorerText: {
+    fontSize: 14,
+    fontWeight: "600",
   },
 });

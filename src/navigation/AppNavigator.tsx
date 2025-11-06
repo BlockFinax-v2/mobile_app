@@ -4,6 +4,10 @@ import { TransactionDetailsScreen } from "@/screens/dashboard/TransactionDetails
 import { CreateInvoiceScreen } from "@/screens/invoices";
 import { ChatScreen } from "@/screens/messages/ChatScreen";
 import { MessagesHomeScreen } from "@/screens/messages/MessagesHomeScreen";
+import { DebugScreen } from "@/screens/profile/DebugScreen";
+import { NetworkConfigScreen } from "@/screens/profile/NetworkConfigScreen";
+import { ProfileHomeScreen } from "@/screens/profile/ProfileHomeScreen";
+import { SettingsScreen } from "@/screens/profile/SettingsScreen";
 import { RewardsHomeScreen } from "@/screens/rewards/RewardsHomeScreen";
 import { TradeFinanceScreen } from "@/screens/trade/TradeFinanceScreen";
 import { TreasuryPortalScreen } from "@/screens/treasury/TreasuryPortalScreen";
@@ -127,6 +131,50 @@ const WalletNavigator = () => (
       options={{
         headerShown: true,
         title: "Rewards & Referrals",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="ProfileHome"
+      component={ProfileHomeScreen}
+      options={{
+        headerShown: true,
+        title: "Profile",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="Settings"
+      component={SettingsScreen}
+      options={{
+        headerShown: true,
+        title: "Settings",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="NetworkConfig"
+      component={NetworkConfigScreen}
+      options={{
+        headerShown: true,
+        title: "Network Configuration",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="Debug"
+      component={DebugScreen}
+      options={{
+        headerShown: true,
+        title: "Debug Tools",
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },

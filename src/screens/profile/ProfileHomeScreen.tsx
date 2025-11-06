@@ -2,13 +2,22 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { WalletStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
 import React, { useState } from "react";
 import { StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
+type ProfileHomeScreenNavigationProp = StackNavigationProp<
+  WalletStackParamList,
+  "ProfileHome"
+>;
+
 export const ProfileHomeScreen: React.FC = () => {
+  const navigation = useNavigation<ProfileHomeScreenNavigationProp>();
   const [publicProfile, setPublicProfile] = useState(false);
   const [formData, setFormData] = useState({
     displayName: "How others see you",
@@ -346,6 +355,70 @@ export const ProfileHomeScreen: React.FC = () => {
           onPress={() => {}}
           style={styles.createButton}
         />
+
+        {/* Navigation Section */}
+        <View style={styles.section}>
+          <Text variant="subtitle" style={styles.sectionLabel}>
+            Application Settings
+          </Text>
+
+          <TouchableOpacity
+            style={styles.navigationItem}
+            onPress={() => navigation.navigate("Settings")}
+          >
+            <View style={styles.navigationLeft}>
+              <MaterialCommunityIcons
+                name="cog"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text style={styles.navigationLabel}>Settings</Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color={palette.neutralMid}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navigationItem}
+            onPress={() => navigation.navigate("NetworkConfig")}
+          >
+            <View style={styles.navigationLeft}>
+              <MaterialCommunityIcons
+                name="network"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text style={styles.navigationLabel}>Network Configuration</Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color={palette.neutralMid}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navigationItem}
+            onPress={() => navigation.navigate("Debug")}
+          >
+            <View style={styles.navigationLeft}>
+              <MaterialCommunityIcons
+                name="bug"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text style={styles.navigationLabel}>Debug Tools</Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color={palette.neutralMid}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     </Screen>
   );
@@ -423,6 +496,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   createButton: {
-    marginTop: spacing.md,
+    marginTop: spacing.lg,
+  },
+  navigationItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: palette.white,
+    borderRadius: 12,
+    padding: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  navigationLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  navigationLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: palette.neutralDark,
   },
 });

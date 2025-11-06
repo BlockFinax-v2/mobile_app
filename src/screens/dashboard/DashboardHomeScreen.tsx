@@ -1,7 +1,11 @@
-import { NetworkSelector } from "@/components/ui/NetworkSelector";
 import { Text } from "@/components/ui/Text";
-import { useNetwork } from "@/contexts/NetworkContext";
-import { useWallet } from "@/contexts/WalletContext";
+import {
+  useWallet,
+  SupportedNetworkId,
+  getMainnetNetworks,
+  getTestnetNetworks,
+  WalletNetwork,
+} from "@/contexts/WalletContext";
 import { AppTabParamList, DashboardStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
@@ -11,8 +15,9 @@ import {
   useNavigation,
 } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -21,6 +26,27 @@ import {
   View,
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+
+// Network icon mapping
+const getNetworkIcon = (networkId: SupportedNetworkId): string => {
+  if (networkId.includes("ethereum")) return "ethereum";
+  if (networkId.includes("base")) return "alpha-b-circle-outline";
+  if (networkId.includes("lisk")) return "flash-circle";
+  if (networkId.includes("polygon")) return "triangle";
+  if (networkId.includes("bsc") || networkId.includes("bnb"))
+    return "alpha-b-circle";
+  return "earth";
+};
+
+// Network color mapping
+const getNetworkColor = (networkId: SupportedNetworkId): string => {
+  if (networkId.includes("ethereum")) return "#627EEA";
+  if (networkId.includes("base")) return "#0052FF";
+  if (networkId.includes("lisk")) return "#4070F4";
+  if (networkId.includes("polygon")) return "#8247E5";
+  if (networkId.includes("bsc") || networkId.includes("bnb")) return "#F3BA2F";
+  return palette.primaryBlue;
+};
 
 const quickActions = [
   {
@@ -124,13 +150,85 @@ type DashboardNavigation = CompositeNavigationProp<
 >;
 
 export const DashboardHomeScreen: React.FC = () => {
-  const { balances, address } = useWallet();
-  const { selectedNetwork, setSelectedNetwork } = useNetwork();
+  const { balances, address, selectedNetwork, switchNetwork } = useWallet();
+  const [showNetworkConfig, setShowNetworkConfig] = useState(false);
   const accountDisplay = useMemo(
     () => address?.slice(0, 6) + "..." + address?.slice(-4),
     [address]
   );
   const navigation = useNavigation<DashboardNavigation>();
+
+  // Get organized networks for the config modal
+  const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
+  const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
+
+  const handleNetworkConfigSelect = async (networkId: SupportedNetworkId) => {
+    try {
+      await switchNetwork(networkId);
+      setShowNetworkConfig(false); // Close modal after selection
+    } catch (error) {
+      console.error("Failed to switch network:", error);
+    }
+  };
+
+  const renderNetworkConfigItem = (network: WalletNetwork) => {
+    const isActive = selectedNetwork.id === network.id;
+    const icon = getNetworkIcon(network.id);
+    const color = getNetworkColor(network.id);
+
+    return (
+      <Pressable
+        key={network.id}
+        style={[styles.networkCard, isActive && styles.activeNetworkCard]}
+        onPress={() => handleNetworkConfigSelect(network.id)}
+      >
+        <View style={styles.networkCardContent}>
+          <View style={styles.networkInfo}>
+            <View style={[styles.networkIcon, { backgroundColor: color }]}>
+              <MaterialCommunityIcons
+                name={icon as any}
+                size={24}
+                color={palette.white}
+              />
+            </View>
+            <View style={styles.networkDetails}>
+              <Text style={styles.networkName}>{network.name}</Text>
+              <Text style={styles.networkMeta}>
+                Chain ID: {network.chainId}
+              </Text>
+              <Text style={styles.networkMeta} numberOfLines={1}>
+                {network.primaryCurrency}
+              </Text>
+              {network.stablecoins && network.stablecoins.length > 0 && (
+                <Text style={styles.tokenCount}>
+                  {network.stablecoins.length} stablecoin
+                  {network.stablecoins.length !== 1 ? "s" : ""} supported
+                </Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.networkActions}>
+            {isActive ? (
+              <View style={styles.activeIndicator}>
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={24}
+                  color={palette.accentGreen}
+                />
+                <Text style={styles.activeText}>Active</Text>
+              </View>
+            ) : (
+              <MaterialCommunityIcons
+                name="chevron-right"
+                size={24}
+                color={palette.neutralMid}
+              />
+            )}
+          </View>
+        </View>
+      </Pressable>
+    );
+  };
 
   const handleQuickAction = (id: string) => {
     switch (id) {
@@ -168,7 +266,12 @@ export const DashboardHomeScreen: React.FC = () => {
             </Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable style={styles.iconButton}>
+            <Pressable
+              style={styles.iconButton}
+              onPress={() =>
+                navigation.navigate("WalletTab", { screen: "ProfileHome" })
+              }
+            >
               <MaterialCommunityIcons
                 name="cog-outline"
                 size={24}
@@ -217,13 +320,35 @@ export const DashboardHomeScreen: React.FC = () => {
           </Text>
           <Text style={styles.balanceUsd}>${balances.usd.toFixed(2)} USD</Text>
 
-          {/* Network Selector */}
+          {/* Network Configuration Button */}
           <View style={styles.networkSelectorContainer}>
-            <NetworkSelector
-              selectedNetwork={selectedNetwork}
-              onNetworkSelect={setSelectedNetwork}
-              style={styles.networkSelector}
-            />
+            <Pressable
+              style={styles.networkInfoButton}
+              onPress={() => setShowNetworkConfig(true)}
+            >
+              <View style={styles.networkInfoContent}>
+                <View style={styles.networkInfoLeft}>
+                  <MaterialCommunityIcons
+                    name={getNetworkIcon(selectedNetwork.id)}
+                    size={24}
+                    color={getNetworkColor(selectedNetwork.id)}
+                  />
+                  <View>
+                    <Text style={styles.networkInfoName}>
+                      {selectedNetwork.name}
+                    </Text>
+                    <Text style={styles.networkInfoMeta}>
+                      Chain ID: {selectedNetwork.chainId}
+                    </Text>
+                  </View>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-down"
+                  size={20}
+                  color={palette.white}
+                />
+              </View>
+            </Pressable>
           </View>
 
           <View style={styles.balanceActions}>
@@ -408,6 +533,99 @@ export const DashboardHomeScreen: React.FC = () => {
           ))}
         </View>
       </ScrollView>
+
+      {/* Network Configuration Modal */}
+      <Modal
+        visible={showNetworkConfig}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowNetworkConfig(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHeaderContent}>
+              <MaterialCommunityIcons
+                name="lan"
+                size={24}
+                color={palette.primaryBlue}
+              />
+              <Text style={styles.modalTitle}>Network Configuration</Text>
+            </View>
+            <Pressable
+              style={styles.modalCloseButton}
+              onPress={() => setShowNetworkConfig(false)}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={palette.neutralDark}
+              />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.modalSubtitle}>
+              Select your preferred blockchain network
+            </Text>
+
+            {/* Mainnet Networks Section */}
+            <View style={styles.modalSection}>
+              <View style={styles.modalSectionHeader}>
+                <MaterialCommunityIcons
+                  name="shield-check"
+                  size={20}
+                  color={palette.primaryBlue}
+                />
+                <Text style={styles.modalSectionTitle}>Mainnet Networks</Text>
+              </View>
+              <Text style={styles.modalSectionDescription}>
+                Production networks with real assets
+              </Text>
+              {mainnetNetworks.map((network) =>
+                renderNetworkConfigItem(network)
+              )}
+            </View>
+
+            {/* Testnet Networks Section */}
+            <View style={styles.modalSection}>
+              <View style={styles.modalSectionHeader}>
+                <MaterialCommunityIcons
+                  name="test-tube"
+                  size={20}
+                  color={palette.warningYellow}
+                />
+                <Text style={styles.modalSectionTitle}>Testnet Networks</Text>
+              </View>
+              <Text style={styles.modalSectionDescription}>
+                Testing networks with test tokens (no real value)
+              </Text>
+              {testnetNetworks.map((network) =>
+                renderNetworkConfigItem(network)
+              )}
+            </View>
+
+            {/* Info Card */}
+            <View style={styles.modalInfoCard}>
+              <MaterialCommunityIcons
+                name="information"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <View style={styles.modalInfoContent}>
+                <Text style={styles.modalInfoTitle}>Network Information</Text>
+                <Text style={styles.modalInfoText}>
+                  • Mainnets handle real transactions with actual value{"\n"}•
+                  Testnets are for development and testing only{"\n"}• You can
+                  switch networks anytime from the wallet
+                </Text>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -494,9 +712,32 @@ const styles = StyleSheet.create({
   networkSelectorContainer: {
     marginTop: spacing.sm,
   },
-  networkSelector: {
+  networkInfoButton: {
     backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 12,
+    borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  networkInfoContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: spacing.md,
+  },
+  networkInfoLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  networkInfoName: {
+    color: palette.white,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  networkInfoMeta: {
+    color: palette.white,
+    fontSize: 12,
+    opacity: 0.8,
   },
   balanceActions: {
     flexDirection: "row",
@@ -620,5 +861,157 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: palette.neutralDark,
     textAlign: "center",
+  },
+  // Network Configuration Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: palette.surface,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingTop: Platform.select({
+      ios: 50,
+      android: 20,
+    }),
+    backgroundColor: palette.white,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.neutralLighter,
+  },
+  modalHeaderContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  modalCloseButton: {
+    padding: spacing.xs,
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: spacing.lg,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: palette.neutralMid,
+    textAlign: "center",
+    marginVertical: spacing.lg,
+  },
+  modalSection: {
+    marginBottom: spacing.xl,
+  },
+  modalSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  modalSectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  modalSectionDescription: {
+    fontSize: 14,
+    color: palette.neutralMid,
+    marginBottom: spacing.md,
+  },
+  networkCard: {
+    backgroundColor: palette.white,
+    borderRadius: 16,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  activeNetworkCard: {
+    borderColor: palette.accentGreen,
+    borderWidth: 2,
+  },
+  networkCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: spacing.md,
+  },
+  networkInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: spacing.md,
+  },
+  networkIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  networkDetails: {
+    flex: 1,
+  },
+  networkName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: palette.neutralDark,
+    marginBottom: spacing.xs,
+  },
+  networkMeta: {
+    fontSize: 12,
+    color: palette.neutralMid,
+    marginBottom: 2,
+  },
+  tokenCount: {
+    fontSize: 11,
+    color: palette.primaryBlue,
+    marginTop: spacing.xs,
+    fontWeight: "500",
+  },
+  networkActions: {
+    marginLeft: spacing.sm,
+  },
+  activeIndicator: {
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  activeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: palette.accentGreen,
+  },
+  modalInfoCard: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 16,
+    padding: spacing.lg,
+    flexDirection: "row",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: palette.primaryBlueLight,
+    marginBottom: spacing.xl,
+  },
+  modalInfoContent: {
+    flex: 1,
+  },
+  modalInfoTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.primaryBlue,
+    marginBottom: spacing.xs,
+  },
+  modalInfoText: {
+    fontSize: 13,
+    color: palette.neutralDark,
+    lineHeight: 20,
   },
 });

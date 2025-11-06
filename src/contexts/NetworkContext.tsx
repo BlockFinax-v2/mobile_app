@@ -1,4 +1,4 @@
-import { Network } from "@/components/ui/NetworkSelector";
+import { Network } from "@/types/network";
 import React, { createContext, ReactNode, useContext, useState } from "react";
 
 interface NetworkContextType {

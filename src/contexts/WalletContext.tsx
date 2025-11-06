@@ -25,6 +25,13 @@ const BIOMETRIC_HASH_KEY = "blockfinax.biometric_hash";
 const AUTO_LOCK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
 export type SupportedNetworkId =
+  // Mainnets
+  | "ethereum-mainnet"
+  | "base-mainnet"
+  | "lisk-mainnet"
+  | "polygon-mainnet"
+  | "bsc-mainnet"
+  // Testnets
   | "polygon-mumbai"
   | "ethereum-sepolia"
   | "bsc-testnet"
@@ -38,6 +45,7 @@ export interface WalletNetwork {
   rpcUrl: string;
   explorerUrl?: string;
   primaryCurrency: string;
+  isTestnet: boolean;
   stablecoins?: Array<{
     symbol: string;
     name: string;
@@ -47,6 +55,142 @@ export interface WalletNetwork {
 }
 
 const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
+  // ========== MAINNETS ==========
+  "ethereum-mainnet": {
+    id: "ethereum-mainnet",
+    name: "Ethereum Mainnet",
+    chainId: 1,
+    rpcUrl: "https://eth.llamarpc.com", // Free public RPC
+    explorerUrl: "https://etherscan.io",
+    primaryCurrency: "ETH",
+    isTestnet: false,
+    stablecoins: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        decimals: 6,
+      },
+      {
+        symbol: "USDT",
+        name: "Tether USD",
+        address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+        decimals: 6,
+      },
+      {
+        symbol: "DAI",
+        name: "Dai Stablecoin",
+        address: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        decimals: 18,
+      },
+    ],
+  },
+  "base-mainnet": {
+    id: "base-mainnet",
+    name: "Base",
+    chainId: 8453,
+    rpcUrl: "https://mainnet.base.org",
+    explorerUrl: "https://basescan.org",
+    primaryCurrency: "ETH",
+    isTestnet: false,
+    stablecoins: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        decimals: 6,
+      },
+      {
+        symbol: "USDbC",
+        name: "USD Base Coin",
+        address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+        decimals: 6,
+      },
+      {
+        symbol: "DAI",
+        name: "Dai Stablecoin",
+        address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+        decimals: 18,
+      },
+    ],
+  },
+  "lisk-mainnet": {
+    id: "lisk-mainnet",
+    name: "Lisk",
+    chainId: 1135,
+    rpcUrl: "https://rpc.api.lisk.com",
+    explorerUrl: "https://blockscout.lisk.com",
+    primaryCurrency: "ETH",
+    isTestnet: false,
+    stablecoins: [
+      {
+        symbol: "USDT",
+        name: "Tether USD",
+        address: "0x05D032ac25d322df992303dCa074EE7392C117b9",
+        decimals: 6,
+      },
+    ],
+  },
+  "polygon-mainnet": {
+    id: "polygon-mainnet",
+    name: "Polygon",
+    chainId: 137,
+    rpcUrl: "https://polygon-rpc.com",
+    explorerUrl: "https://polygonscan.com",
+    primaryCurrency: "MATIC",
+    isTestnet: false,
+    stablecoins: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        decimals: 6,
+      },
+      {
+        symbol: "USDT",
+        name: "Tether USD",
+        address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+        decimals: 6,
+      },
+      {
+        symbol: "DAI",
+        name: "Dai Stablecoin",
+        address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+        decimals: 18,
+      },
+    ],
+  },
+  "bsc-mainnet": {
+    id: "bsc-mainnet",
+    name: "BNB Smart Chain",
+    chainId: 56,
+    rpcUrl: "https://bsc-dataseed1.binance.org",
+    explorerUrl: "https://bscscan.com",
+    primaryCurrency: "BNB",
+    isTestnet: false,
+    stablecoins: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+        decimals: 18,
+      },
+      {
+        symbol: "USDT",
+        name: "Tether USD",
+        address: "0x55d398326f99059fF775485246999027B3197955",
+        decimals: 18,
+      },
+      {
+        symbol: "DAI",
+        name: "Dai Stablecoin",
+        address: "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3",
+        decimals: 18,
+      },
+    ],
+  },
+
+  // ========== TESTNETS ==========
   "polygon-mumbai": {
     id: "polygon-mumbai",
     name: "Polygon Mumbai Testnet",
@@ -54,6 +198,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     rpcUrl: "https://polygon-mumbai-bor.publicnode.com",
     explorerUrl: "https://mumbai.polygonscan.com",
     primaryCurrency: "MATIC",
+    isTestnet: true,
     stablecoins: [
       {
         symbol: "USDC",
@@ -73,9 +218,10 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     id: "ethereum-sepolia",
     name: "Ethereum Sepolia",
     chainId: 11155111,
-    rpcUrl: "https://sepolia.infura.io/v3/",
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
     explorerUrl: "https://sepolia.etherscan.io",
     primaryCurrency: "ETH",
+    isTestnet: true,
     stablecoins: [
       {
         symbol: "USDC",
@@ -93,11 +239,12 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
   },
   "bsc-testnet": {
     id: "bsc-testnet",
-    name: "Binance Smart Chain Testnet",
+    name: "BSC Testnet",
     chainId: 97,
-    rpcUrl: "https://rpc.ankr.com/bsc_testnet_chapel",
+    rpcUrl: "https://bsc-testnet-rpc.publicnode.com",
     explorerUrl: "https://testnet.bscscan.com",
     primaryCurrency: "BNB",
+    isTestnet: true,
     stablecoins: [
       {
         symbol: "USDC",
@@ -111,12 +258,6 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         address: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd",
         decimals: 18,
       },
-      {
-        symbol: "BUSD",
-        name: "Binance USD",
-        address: "0xeD24FC36d5Ee211Ea25A80239Fb8C4Cfd80f12Ee",
-        decimals: 18,
-      },
     ],
   },
   "base-sepolia": {
@@ -126,6 +267,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     rpcUrl: "https://sepolia.base.org",
     explorerUrl: "https://sepolia.basescan.org",
     primaryCurrency: "ETH",
+    isTestnet: true,
     stablecoins: [
       {
         symbol: "USDC",
@@ -143,11 +285,12 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
   },
   "lisk-sepolia": {
     id: "lisk-sepolia",
-    name: "Lisk Sepolia Testnet",
+    name: "Lisk Sepolia",
     chainId: 4202,
     rpcUrl: "https://rpc.sepolia-api.lisk.com",
     explorerUrl: "https://sepolia-blockscout.lisk.com",
     primaryCurrency: "ETH",
+    isTestnet: true,
     stablecoins: [
       {
         symbol: "USDC",
@@ -190,6 +333,9 @@ interface WalletContextValue {
   address?: string;
   balances: WalletBalances;
   selectedNetwork: WalletNetwork;
+  mainnetNetworks: WalletNetwork[];
+  testnetNetworks: WalletNetwork[];
+  getNetworkById: (networkId: SupportedNetworkId) => WalletNetwork;
   lastUnlockTime?: Date;
   settings: WalletSettings;
   isBiometricAvailable: boolean;
@@ -237,6 +383,13 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const [lastUnlockTime, setLastUnlockTime] = useState<Date | undefined>();
   const [settings, setSettings] = useState<WalletSettings>(defaultSettings);
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+
+  const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
+  const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
+  const getNetworkById = useCallback(
+    (networkId: SupportedNetworkId) => NETWORKS[networkId],
+    []
+  );
 
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -667,6 +820,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       address,
       balances,
       selectedNetwork,
+      mainnetNetworks,
+      testnetNetworks,
+      getNetworkById,
       lastUnlockTime,
       settings,
       isBiometricAvailable,
@@ -694,6 +850,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       isUnlocked,
       lastUnlockTime,
       selectedNetwork,
+      mainnetNetworks,
+      testnetNetworks,
+      getNetworkById,
       settings,
       isBiometricAvailable,
       refreshBalance,
@@ -721,6 +880,14 @@ export function useWallet() {
 
 export function getNetworks() {
   return Object.values(NETWORKS);
+}
+
+export function getMainnetNetworks() {
+  return Object.values(NETWORKS).filter((network) => !network.isTestnet);
+}
+
+export function getTestnetNetworks() {
+  return Object.values(NETWORKS).filter((network) => network.isTestnet);
 }
 
 export function getStablecoinsForNetwork(networkId: SupportedNetworkId) {

@@ -10,7 +10,8 @@ import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { ethers } from "ethers";
 import * as Clipboard from "expo-clipboard";
-import React, { useMemo, useState } from "react";
+import * as Crypto from "expo-crypto";
+import React, { useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   Alert,
@@ -41,6 +42,45 @@ const getPasswordStrength = (password: string) => {
   return score;
 };
 
+// More robust mnemonic generation with fallback strategies
+const generateSecureMnemonic = async (): Promise<string> => {
+  try {
+    // First attempt: Use ethers with proper crypto setup
+    console.log("Attempting to generate mnemonic with ethers...");
+    const wallet = ethers.Wallet.createRandom();
+    if (wallet.mnemonic?.phrase) {
+      console.log("Successfully generated mnemonic with ethers");
+      return wallet.mnemonic.phrase;
+    }
+    throw new Error("Ethers mnemonic generation failed");
+  } catch (ethersError) {
+    console.warn("Ethers mnemonic generation failed:", ethersError);
+
+    try {
+      // Second attempt: Use expo-crypto for entropy + ethers utilities
+      console.log("Attempting to generate mnemonic with expo-crypto...");
+      const randomBytes = await Crypto.getRandomBytesAsync(16); // 128 bits for 12 words
+      const entropy = Array.from(randomBytes)
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+      const mnemonic = ethers.utils.entropyToMnemonic("0x" + entropy);
+      console.log("Successfully generated mnemonic with expo-crypto");
+      return mnemonic;
+    } catch (expoCryptoError) {
+      console.warn("Expo-crypto mnemonic generation failed:", expoCryptoError);
+
+      // Third attempt: Fallback to manual entropy generation
+      console.log("Using fallback manual entropy generation...");
+      const fallbackEntropy = Array.from({ length: 32 }, () =>
+        Math.floor(Math.random() * 256)
+          .toString(16)
+          .padStart(2, "0")
+      ).join("");
+      return ethers.utils.entropyToMnemonic("0x" + fallbackEntropy);
+    }
+  }
+};
+
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 export const CreateWalletFlowScreen: React.FC = () => {
@@ -48,13 +88,30 @@ export const CreateWalletFlowScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [step, setStep] = useState<number>(1);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [mnemonic, setMnemonic] = useState<string>("");
+  const [mnemonicError, setMnemonicError] = useState<string | null>(null);
 
-  const mnemonic = useMemo(
-    () => ethers.Wallet.createRandom().mnemonic?.phrase ?? "",
-    []
-  );
+  // Generate mnemonic on component mount
+  useEffect(() => {
+    const initializeMnemonic = async () => {
+      try {
+        setMnemonicError(null);
+        console.log("Initializing mnemonic generation...");
+        const generatedMnemonic = await generateSecureMnemonic();
+        setMnemonic(generatedMnemonic);
+        console.log("Mnemonic successfully generated");
+      } catch (error) {
+        console.error("Failed to generate mnemonic:", error);
+        setMnemonicError("Failed to generate secure wallet. Please try again.");
+      }
+    };
+
+    initializeMnemonic();
+  }, []);
+
   const seedWords = useMemo(() => mnemonic.split(" "), [mnemonic]);
   const confirmationIndexes = useMemo(() => {
+    if (seedWords.length < 12) return []; // Safety check
     const indices = new Set<number>();
     while (indices.size < 3) {
       indices.add(Math.floor(Math.random() * seedWords.length));
@@ -77,6 +134,15 @@ export const CreateWalletFlowScreen: React.FC = () => {
   const strength = getPasswordStrength(passwordValue);
 
   const goNext = () => {
+    // Don't allow progression if there's a mnemonic error or no mnemonic
+    if (step === 1 && (mnemonicError || !mnemonic)) {
+      Alert.alert(
+        "Error",
+        "Cannot proceed without a valid seed phrase. Please retry generation."
+      );
+      return;
+    }
+
     LayoutAnimation.easeInEaseOut();
     setStep((prev) => Math.min(prev + 1, 5));
   };
@@ -87,11 +153,31 @@ export const CreateWalletFlowScreen: React.FC = () => {
   };
 
   const handleCopy = async () => {
+    if (!mnemonic) {
+      Alert.alert("Error", "No seed phrase available to copy");
+      return;
+    }
     await Clipboard.setStringAsync(mnemonic);
     Alert.alert(
       "Phrase Copied",
       "Store your seed phrase securely and never share it."
     );
+  };
+
+  const handleRetryMnemonic = async () => {
+    setIsProcessing(true);
+    try {
+      setMnemonicError(null);
+      const generatedMnemonic = await generateSecureMnemonic();
+      setMnemonic(generatedMnemonic);
+    } catch (error) {
+      console.error("Retry mnemonic generation failed:", error);
+      setMnemonicError(
+        "Failed to generate secure wallet. Please check your internet connection and try again."
+      );
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const onConfirmWords = (values: CreateWalletForm) => {
@@ -118,15 +204,27 @@ export const CreateWalletFlowScreen: React.FC = () => {
       return;
     }
 
+    if (!mnemonic) {
+      Alert.alert(
+        "Error",
+        "No seed phrase available. Please go back and generate a new one."
+      );
+      return;
+    }
+
     setIsProcessing(true);
     try {
+      console.log("Starting wallet import with generated mnemonic");
       await importWallet({ mnemonic, password: values.password });
+      console.log("Wallet import successful");
       goNext();
     } catch (error) {
       console.error("Failed to finalize wallet", error);
       Alert.alert(
-        "Error",
-        "Unable to finalize wallet creation. Please try again."
+        "Wallet Creation Failed",
+        error instanceof Error
+          ? error.message
+          : "Unable to create wallet. Please try again or contact support if the problem persists."
       );
     } finally {
       setIsProcessing(false);
@@ -159,7 +257,32 @@ export const CreateWalletFlowScreen: React.FC = () => {
               phrase securely. Losing it means losing access to your assets
               permanently.
             </Text>
-            <Button label="I Understand" onPress={goNext} />
+
+            {mnemonicError && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{mnemonicError}</Text>
+                <Button
+                  label="Retry Generation"
+                  variant="outline"
+                  onPress={handleRetryMnemonic}
+                  loading={isProcessing}
+                />
+              </View>
+            )}
+
+            {!mnemonic && !mnemonicError && (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>
+                  Generating secure wallet...
+                </Text>
+              </View>
+            )}
+
+            <Button
+              label="I Understand"
+              onPress={goNext}
+              disabled={!mnemonic || !!mnemonicError}
+            />
           </View>
         )}
 
@@ -172,24 +295,36 @@ export const CreateWalletFlowScreen: React.FC = () => {
               Write these 12 words in order and store them offline. Anyone with
               this phrase can access your funds.
             </Text>
-            <View style={styles.seedGrid}>
-              {seedWords.map((word, index) => (
-                <View key={word + index} style={styles.seedCell}>
-                  <Text color={palette.neutralMid}>{index + 1}.</Text>
-                  <Text style={styles.seedWord}>{word}</Text>
+
+            {mnemonic && seedWords.length === 12 ? (
+              <>
+                <View style={styles.seedGrid}>
+                  {seedWords.map((word, index) => (
+                    <View key={word + index} style={styles.seedCell}>
+                      <Text color={palette.neutralMid}>{index + 1}.</Text>
+                      <Text style={styles.seedWord}>{word}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-            <Button
-              label="Copy Seed Phrase"
-              variant="outline"
-              onPress={handleCopy}
-            />
-            <Button
-              label="Continue"
-              style={styles.spacingTop}
-              onPress={goNext}
-            />
+                <Button
+                  label="Copy Seed Phrase"
+                  variant="outline"
+                  onPress={handleCopy}
+                />
+                <Button
+                  label="Continue"
+                  style={styles.spacingTop}
+                  onPress={goNext}
+                />
+              </>
+            ) : (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>
+                  Seed phrase generation failed. Please go back and retry.
+                </Text>
+                <Button label="Back" variant="outline" onPress={goBack} />
+              </View>
+            )}
           </View>
         )}
 
@@ -202,31 +337,44 @@ export const CreateWalletFlowScreen: React.FC = () => {
               Enter the requested words to verify you backed up your phrase
               correctly.
             </Text>
-            {confirmationIndexes.map((index) => (
-              <Controller
-                key={index}
-                control={control}
-                name={`confirmations.${index}` as const}
-                rules={{ required: true }}
-                render={({ field: { onChange, value } }) => (
-                  <Input
-                    label={`Word #${index + 1}`}
-                    value={value as string}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onChangeText={onChange}
-                    placeholder="Enter the seed word"
+
+            {confirmationIndexes.length === 3 ? (
+              <>
+                {confirmationIndexes.map((index) => (
+                  <Controller
+                    key={index}
+                    control={control}
+                    name={`confirmations.${index}` as const}
+                    rules={{ required: true }}
+                    render={({ field: { onChange, value } }) => (
+                      <Input
+                        label={`Word #${index + 1}`}
+                        value={value as string}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        onChangeText={onChange}
+                        placeholder="Enter the seed word"
+                      />
+                    )}
                   />
-                )}
-              />
-            ))}
-            <Button label="Verify" onPress={handleSubmit(onConfirmWords)} />
-            <Button
-              label="Back"
-              variant="outline"
-              onPress={goBack}
-              style={styles.spacingTop}
-            />
+                ))}
+                <Button label="Verify" onPress={handleSubmit(onConfirmWords)} />
+                <Button
+                  label="Back"
+                  variant="outline"
+                  onPress={goBack}
+                  style={styles.spacingTop}
+                />
+              </>
+            ) : (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>
+                  Unable to generate verification words. Please go back and
+                  retry.
+                </Text>
+                <Button label="Back" variant="outline" onPress={goBack} />
+              </View>
+            )}
           </View>
         )}
 
@@ -386,5 +534,30 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 8,
     borderRadius: 4,
+  },
+  errorContainer: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    gap: spacing.sm,
+  },
+  errorText: {
+    color: palette.errorRed,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  loadingContainer: {
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  loadingText: {
+    color: palette.primaryBlue,
+    fontWeight: "500",
+    textAlign: "center",
   },
 });

@@ -41,6 +41,8 @@ export type WalletStackParamList = {
     network: string;
     fee: number;
     message?: string;
+    tokenAddress: string;
+    tokenDecimals: number;
   };
   ReceivePayment: undefined;
   TransactionDetails: { id: string } | undefined;
@@ -48,6 +50,10 @@ export type WalletStackParamList = {
   DocumentCenter: undefined;
   TreasuryPortal: undefined;
   Rewards: undefined;
+  ProfileHome: undefined;
+  Settings: undefined;
+  NetworkConfig: undefined;
+  Debug: undefined;
 };
 
 export type MessagesStackParamList = {
@@ -64,4 +70,5 @@ export type ProfileStackParamList = {
   ProfileHome: undefined;
   Settings: undefined;
   NetworkConfig: undefined;
+  Debug: undefined;
 };
