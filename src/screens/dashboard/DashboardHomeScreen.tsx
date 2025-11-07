@@ -6,6 +6,7 @@ import {
   getTestnetNetworks,
   WalletNetwork,
 } from "@/contexts/WalletContext";
+import { realTransactionService } from "@/services/realTransactionService";
 import { AppTabParamList, DashboardStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
@@ -31,7 +32,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 const getNetworkIcon = (networkId: SupportedNetworkId): string => {
   if (networkId.includes("ethereum")) return "ethereum";
   if (networkId.includes("base")) return "alpha-b-circle-outline";
-  if (networkId.includes("lisk")) return "flash-circle";
+  if (networkId.includes("lisk")) return "alpha-l-circle";
   if (networkId.includes("polygon")) return "triangle";
   if (networkId.includes("bsc") || networkId.includes("bnb"))
     return "alpha-b-circle";
@@ -75,68 +76,9 @@ const quickActions = [
   },
 ];
 
-const statsCards = [
-  {
-    id: "balance",
-    title: "Account Balance",
-    valueKey: "balance",
-  },
-  {
-    id: "escrow",
-    title: "Escrow Status",
-    value: "3 Active",
-    subtitle: "USDC 45,000 locked",
-  },
-  {
-    id: "quick",
-    title: "Quick Stats",
-    value: "12 Transactions",
-    subtitle: "Volume: USDC 120,500",
-  },
-];
+// Removed mock stats data - now calculating from real transaction data
 
-const transactionsMock = [
-  {
-    id: "1",
-    description: "Sent USDC to Ahmed",
-    amount: "-1,200 USDC",
-    type: "send",
-    status: "completed",
-    date: "Oct 28",
-  },
-  {
-    id: "2",
-    description: "Escrow funding - Contract #123",
-    amount: "-15,000 USDC",
-    type: "escrow",
-    status: "pending",
-    date: "Oct 27",
-  },
-  {
-    id: "3",
-    description: "Received USDC from Kofi",
-    amount: "+5,000 USDC",
-    type: "receive",
-    status: "completed",
-    date: "Oct 25",
-  },
-  {
-    id: "4",
-    description: "Document verification fee",
-    amount: "-75 USDC",
-    type: "contract",
-    status: "completed",
-    date: "Oct 24",
-  },
-  {
-    id: "5",
-    description: "Received escrow release",
-    amount: "+10,000 USDC",
-    type: "escrow",
-    status: "completed",
-    date: "Oct 23",
-  },
-];
+// Removed mock transaction data - now using real blockchain data
 
 const statusColorMap: Record<string, string> = {
   completed: palette.accentGreen,
@@ -150,11 +92,18 @@ type DashboardNavigation = CompositeNavigationProp<
 >;
 
 export const DashboardHomeScreen: React.FC = () => {
-  const { balances, address, selectedNetwork, switchNetwork, refreshBalance } =
-    useWallet();
+  const {
+    balances,
+    address,
+    selectedNetwork,
+    switchNetwork,
+    refreshBalance,
+    transactions,
+    isLoadingTransactions,
+    refreshTransactions,
+  } = useWallet();
   const [showNetworkConfig, setShowNetworkConfig] = useState(false);
-  const [selectedTokenSymbol, setSelectedTokenSymbol] =
-    useState<string>("USDC"); // Default to USDC
+  // Removed selectedTokenSymbol state - now showing total portfolio value
   const [expandedNetworkId, setExpandedNetworkId] = useState<string | null>(
     null
   );
@@ -166,93 +115,72 @@ export const DashboardHomeScreen: React.FC = () => {
 
   // Debug logging for balances
   console.log("Current balances:", balances);
-  console.log("Selected token symbol:", selectedTokenSymbol);
   console.log("Selected network:", selectedNetwork);
 
-  // Refresh balance when component mounts or network changes
+  // Refresh balance and transactions when component mounts or network changes
   useEffect(() => {
-    console.log("Refreshing balance due to network change or mount");
+    console.log(
+      "Refreshing balance and transactions due to network change or mount"
+    );
     refreshBalance();
-  }, [selectedNetwork.id, refreshBalance]);
+    refreshTransactions();
+  }, [selectedNetwork.id, refreshBalance, refreshTransactions]);
 
-  // Ensure selected token is valid for current network
-  useEffect(() => {
-    // Check if current selected token is available in current network
-    const isTokenAvailable =
-      selectedTokenSymbol === selectedNetwork.primaryCurrency ||
-      selectedNetwork.stablecoins?.some(
-        (coin) => coin.symbol === selectedTokenSymbol
-      );
-
-    if (!isTokenAvailable) {
-      console.log(
-        "Selected token not available on current network, switching to native currency"
-      );
-      setSelectedTokenSymbol(selectedNetwork.primaryCurrency);
-    }
-  }, [selectedNetwork, selectedTokenSymbol]);
+  // Removed token availability check - now showing total portfolio
 
   // Get organized networks for the config modal
   const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
   const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
 
-  // Calculate dynamic balance based on selected token
-  const selectedTokenBalance = useMemo(() => {
-    console.log("Calculating balance for token:", selectedTokenSymbol);
-    console.log("Available tokens:", balances.tokens);
+  // Removed selectedTokenBalance calculation - now showing total portfolio value
 
-    if (selectedTokenSymbol === selectedNetwork.primaryCurrency) {
-      // Show native token balance
-      console.log("Showing native token balance:", balances.primary);
+  // Calculate real transaction stats from actual data
+  const transactionStats = useMemo(() => {
+    if (transactions.length === 0) {
       return {
-        balance: balances.primary,
-        symbol: selectedNetwork.primaryCurrency,
-        usdValue: balances.usd,
-      };
-    } else {
-      // Show stablecoin balance
-      const tokenBalance = balances.tokens.find(
-        (token) => token.symbol === selectedTokenSymbol
-      );
-      console.log("Found token balance:", tokenBalance);
-
-      return {
-        balance: tokenBalance ? parseFloat(tokenBalance.balance) : 0,
-        symbol: selectedTokenSymbol,
-        usdValue:
-          tokenBalance?.usdValue || parseFloat(tokenBalance?.balance || "0"),
+        totalTransactions: 0,
+        totalVolume: 0,
+        sentCount: 0,
+        receivedCount: 0,
       };
     }
-  }, [selectedTokenSymbol, selectedNetwork.primaryCurrency, balances]);
+
+    const sent = transactions.filter((tx) => tx.type === "send");
+    const received = transactions.filter((tx) => tx.type === "receive");
+
+    // Calculate total volume in USD (approximate)
+    let totalVolume = 0;
+    transactions.forEach((tx) => {
+      const amount = parseFloat(tx.value);
+      if (!isNaN(amount)) {
+        // For stablecoins, assume 1:1 USD
+        if (["USDC", "USDT", "DAI"].includes(tx.tokenSymbol)) {
+          totalVolume += amount;
+        }
+      }
+    });
+
+    return {
+      totalTransactions: transactions.length,
+      totalVolume,
+      sentCount: sent.length,
+      receivedCount: received.length,
+    };
+  }, [transactions]);
 
   const handleNetworkConfigSelect = async (networkId: SupportedNetworkId) => {
     try {
       await switchNetwork(networkId);
       setShowNetworkConfig(false); // Close modal after selection
 
-      // Reset to the native token when switching networks
-      const network =
-        getMainnetNetworks().find((n) => n.id === networkId) ||
-        getTestnetNetworks().find((n) => n.id === networkId);
-
-      if (network) {
-        setSelectedTokenSymbol(network.primaryCurrency);
-        console.log(
-          "Switched to network:",
-          network.name,
-          "with primary currency:",
-          network.primaryCurrency
-        );
-      }
+      // Network switched successfully
+      console.log("Switched to network:", networkId);
     } catch (error) {
       console.error("Failed to switch network:", error);
     }
   };
 
-  const handleTokenSelect = (symbol: string) => {
-    setSelectedTokenSymbol(symbol);
-    setShowNetworkConfig(false); // Close modal after token selection
-  };
+  // Removed handleTokenSelect - now only displaying balances, no selection
 
   const handleNetworkExpand = (networkId: string) => {
     setExpandedNetworkId(expandedNetworkId === networkId ? null : networkId);
@@ -334,47 +262,47 @@ export const DashboardHomeScreen: React.FC = () => {
           </View>
         </Pressable>
 
-        {/* Token Selection Dropdown - only show for active network when expanded */}
+        {/* Token Balances Display - only show for active network when expanded */}
         {isActive && isExpanded && (
           <View style={styles.tokenSelectionContainer}>
-            <Text style={styles.tokenSelectionTitle}>Select Token:</Text>
+            <Text style={styles.tokenSelectionTitle}>Token Balances:</Text>
             {availableTokens.map((token) => {
-              const isSelectedToken = selectedTokenSymbol === token.symbol;
+              // Get balance for this token
+              let tokenBalance = "0.00";
+              let tokenUsdValue = "0.00";
+
+              if (token.isNative) {
+                // Native token
+                tokenBalance = balances.primary.toFixed(2);
+                tokenUsdValue = balances.primaryUsd.toFixed(2);
+              } else {
+                // Find stablecoin balance
+                const stablecoin = balances.tokens.find(
+                  (t) => t.symbol === token.symbol
+                );
+                if (stablecoin) {
+                  tokenBalance = parseFloat(stablecoin.balance).toFixed(2);
+                  tokenUsdValue = (stablecoin.usdValue || 0).toFixed(2);
+                }
+              }
+
               return (
-                <Pressable
-                  key={token.symbol}
-                  style={[
-                    styles.tokenItem,
-                    isSelectedToken && styles.selectedTokenItem,
-                  ]}
-                  onPress={() => handleTokenSelect(token.symbol)}
-                >
+                <View key={token.symbol} style={styles.tokenBalanceItem}>
                   <View style={styles.tokenInfo}>
-                    <Text
-                      style={[
-                        styles.tokenSymbol,
-                        isSelectedToken && styles.selectedTokenText,
-                      ]}
-                    >
-                      {token.symbol}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.tokenName,
-                        isSelectedToken && styles.selectedTokenText,
-                      ]}
-                    >
+                    <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                    <Text style={styles.tokenName}>
                       {token.name} {token.isNative ? "(Native)" : ""}
                     </Text>
                   </View>
-                  {isSelectedToken && (
-                    <MaterialCommunityIcons
-                      name="check"
-                      size={20}
-                      color={palette.primaryBlue}
-                    />
-                  )}
-                </Pressable>
+                  <View style={styles.tokenBalanceInfo}>
+                    <Text style={styles.tokenBalanceAmount}>
+                      {tokenBalance} {token.symbol}
+                    </Text>
+                    <Text style={styles.tokenBalanceUsd}>
+                      ${tokenUsdValue} USD
+                    </Text>
+                  </View>
+                </View>
               );
             })}
           </View>
@@ -449,14 +377,17 @@ export const DashboardHomeScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Balance Card - Your original portfolio balance */}
+        {/* Balance Card - Total Portfolio Value */}
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>
-              Available Balance ({selectedTokenBalance.symbol})
-            </Text>
+            <Text style={styles.balanceLabel}>Total Portfolio Value</Text>
             <View style={styles.headerActions}>
-              <Pressable onPress={refreshBalance} style={styles.refreshButton}>
+              <Pressable
+                onPress={async () => {
+                  await Promise.all([refreshBalance(), refreshTransactions()]);
+                }}
+                style={styles.refreshButton}
+              >
                 <MaterialCommunityIcons
                   name="refresh"
                   size={20}
@@ -479,13 +410,8 @@ export const DashboardHomeScreen: React.FC = () => {
               </Pressable>
             </View>
           </View>
-          <Text style={styles.balanceAmount}>
-            {selectedTokenBalance.balance.toFixed(2)}{" "}
-            {selectedTokenBalance.symbol}
-          </Text>
-          <Text style={styles.balanceUsd}>
-            ${selectedTokenBalance.usdValue.toFixed(2)} USD
-          </Text>
+          <Text style={styles.balanceAmount}>${balances.usd.toFixed(2)}</Text>
+          <Text style={styles.balanceUsd}>Total USD Value</Text>
 
           {/* Network Configuration Button */}
           <View style={styles.networkSelectorContainer}>
@@ -525,7 +451,7 @@ export const DashboardHomeScreen: React.FC = () => {
                 navigation.navigate("WalletTab", { screen: "SendPayment" })
               }
             >
-              <Text style={styles.balanceActionText}>Send Money</Text>
+              <Text style={styles.balanceActionText}>Send Funds</Text>
             </Pressable>
             <Pressable
               style={styles.balanceActionButton}
@@ -533,7 +459,7 @@ export const DashboardHomeScreen: React.FC = () => {
                 navigation.navigate("WalletTab", { screen: "ReceivePayment" })
               }
             >
-              <Text style={styles.balanceActionText}>Receive</Text>
+              <Text style={styles.balanceActionText}>Receive Funds</Text>
             </Pressable>
           </View>
         </View>
@@ -552,7 +478,7 @@ export const DashboardHomeScreen: React.FC = () => {
                   color={palette.primaryBlue}
                 />
               </View>
-              <Text style={styles.quickActionLabel}>Send Payment</Text>
+              <Text style={styles.quickActionLabel}>Send</Text>
             </Pressable>
 
             <Pressable
@@ -566,7 +492,7 @@ export const DashboardHomeScreen: React.FC = () => {
                   color={palette.primaryBlue}
                 />
               </View>
-              <Text style={styles.quickActionLabel}>Request Payment</Text>
+              <Text style={styles.quickActionLabel}>Receive</Text>
             </Pressable>
 
             <Pressable
@@ -649,55 +575,84 @@ export const DashboardHomeScreen: React.FC = () => {
             </Pressable>
           </View>
 
-          {transactionsMock.slice(0, 4).map((item) => (
-            <Pressable
-              key={item.id}
-              style={styles.transactionItem}
-              onPress={() =>
-                navigation.navigate("WalletTab", {
-                  screen: "TransactionDetails",
-                  params: { id: item.id },
-                })
-              }
-            >
-              <View style={styles.transactionIcon}>
-                <MaterialCommunityIcons
-                  name={
-                    item.type === "send"
-                      ? "arrow-top-right"
-                      : item.type === "receive"
-                      ? "arrow-bottom-left"
-                      : item.type === "escrow"
-                      ? "lock-outline"
-                      : "file-document-outline"
-                  }
-                  color={palette.primaryBlue}
-                  size={20}
-                />
-              </View>
-              <View style={styles.transactionDetails}>
-                <Text style={styles.transactionDescription}>
-                  {item.description}
-                </Text>
-                <Text style={styles.transactionDate}>
-                  {item.date} • {item.status}
-                </Text>
-              </View>
-              <Text
-                style={[
-                  styles.transactionAmount,
-                  {
-                    color:
-                      item.type === "receive"
-                        ? palette.accentGreen
-                        : palette.neutralDark,
-                  },
-                ]}
-              >
-                {item.amount}
+          {isLoadingTransactions ? (
+            <View style={styles.loadingContainer}>
+              <MaterialCommunityIcons
+                name="loading"
+                size={24}
+                color={palette.primaryBlue}
+              />
+              <Text style={styles.loadingText}>
+                Loading real transactions...
               </Text>
-            </Pressable>
-          ))}
+            </View>
+          ) : transactions.length === 0 ? (
+            <View style={styles.noTransactionsContainer}>
+              <MaterialCommunityIcons
+                name="history"
+                size={48}
+                color={palette.neutralMid}
+              />
+              <Text style={styles.noTransactionsTitle}>
+                No Transactions Yet
+              </Text>
+              <Text style={styles.noTransactionsSubtitle}>
+                Your transaction history will appear here once you start using
+                your wallet.
+              </Text>
+            </View>
+          ) : (
+            transactions.slice(0, 4).map((transaction) => {
+              const formatted =
+                realTransactionService.formatTransactionForDisplay(transaction);
+              return (
+                <Pressable
+                  key={transaction.id}
+                  style={styles.transactionItem}
+                  onPress={() =>
+                    navigation.navigate("WalletTab", {
+                      screen: "TransactionDetails",
+                      params: { id: transaction.hash },
+                    })
+                  }
+                >
+                  <View
+                    style={[
+                      styles.transactionIcon,
+                      { backgroundColor: formatted.color + "20" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={formatted.icon as any}
+                      color={formatted.color}
+                      size={20}
+                    />
+                  </View>
+                  <View style={styles.transactionDetails}>
+                    <Text style={styles.transactionDescription}>
+                      {formatted.title}
+                    </Text>
+                    <Text style={styles.transactionDate}>
+                      {formatted.date} • {transaction.status}
+                    </Text>
+                    <Text style={styles.transactionSubtitle}>
+                      {formatted.subtitle}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.transactionAmount,
+                      {
+                        color: formatted.color,
+                      },
+                    ]}
+                  >
+                    {formatted.amount}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
         </View>
       </ScrollView>
 
@@ -932,6 +887,39 @@ const styles = StyleSheet.create({
     color: palette.white,
     fontSize: 14,
     fontWeight: "600",
+  },
+  // Balance Stats Styles (inside balance card)
+  balanceStatsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  balanceStatItem: {
+    alignItems: "center",
+    gap: spacing.xs,
+    flex: 1,
+  },
+  balanceStatDivider: {
+    width: 1,
+    height: 30,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    marginHorizontal: spacing.sm,
+  },
+  balanceStatValue: {
+    color: palette.white,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  balanceStatLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 11,
+    fontWeight: "500",
+    textAlign: "center",
   },
   addMoneyButton: {
     flexDirection: "row",
@@ -1236,5 +1224,64 @@ const styles = StyleSheet.create({
   },
   selectedTokenText: {
     color: palette.primaryBlue,
+  },
+  // Token Balance Display Styles
+  tokenBalanceItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.xs,
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+  },
+  tokenBalanceInfo: {
+    alignItems: "flex-end",
+  },
+  tokenBalanceAmount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+  },
+  tokenBalanceUsd: {
+    fontSize: 12,
+    color: palette.neutralMid,
+    marginTop: 2,
+  },
+  // Real transaction and loading styles
+  loadingContainer: {
+    alignItems: "center",
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: palette.neutralMid,
+    textAlign: "center",
+  },
+  noTransactionsContainer: {
+    alignItems: "center",
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  noTransactionsTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: palette.neutralDark,
+    textAlign: "center",
+  },
+  noTransactionsSubtitle: {
+    fontSize: 14,
+    color: palette.neutralMid,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  transactionSubtitle: {
+    fontSize: 11,
+    color: palette.neutralMid,
+    marginTop: 2,
   },
 });

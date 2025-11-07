@@ -1,9 +1,19 @@
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import {
+  useCommunication,
+  Contact,
+  Conversation,
+  CallInfo,
+} from "@/contexts/CommunicationContext";
+import { useWallet } from "@/contexts/WalletContext";
+import { MessagesStackParamList } from "@/navigation/types";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   FlatList,
@@ -12,79 +22,37 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  RefreshControl,
+  Image,
 } from "react-native";
 
-interface Contact {
-  id: string;
-  name: string;
-  walletAddress: string;
-  notes?: string;
-}
-
-interface Conversation {
-  id: string;
-  contact: Contact;
-  lastMessage: string;
-  timestamp: string;
-  unread: number;
-  isOnline?: boolean;
-}
-
-const mockContacts: Contact[] = [
-  {
-    id: "c1",
-    name: "Ahmed Khan",
-    walletAddress: "0x742d35Cc6645C0532b4abE4b4CdeF83eB7a7e5D7",
-    notes: "Regular trade partner - Electronics supplier",
-  },
-  {
-    id: "c2",
-    name: "Lagos Commodities Ltd",
-    walletAddress: "0x8ba1f109551bD432803012645Hac136c9.jpg",
-    notes: "Agricultural commodities trading",
-  },
-  {
-    id: "c3",
-    name: "Arbitration Desk",
-    walletAddress: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
-    notes: "Dispute resolution service",
-  },
-];
-
-const conversations: Conversation[] = [
-  {
-    id: "conv-1",
-    contact: mockContacts[0],
-    lastMessage: "Invoice has been paid successfully",
-    timestamp: "2h",
-    unread: 2,
-    isOnline: true,
-  },
-  {
-    id: "conv-2",
-    contact: mockContacts[1],
-    lastMessage: "Awaiting shipment confirmation from your end",
-    timestamp: "6h",
-    unread: 0,
-    isOnline: false,
-  },
-  {
-    id: "conv-3",
-    contact: mockContacts[2],
-    lastMessage: "Please provide delivery receipts for review",
-    timestamp: "1d",
-    unread: 1,
-    isOnline: true,
-  },
-];
+type MessagesNavigationProp = StackNavigationProp<
+  MessagesStackParamList,
+  "MessagesHome"
+>;
 
 export const MessagesHomeScreen: React.FC = () => {
+  const navigation = useNavigation<MessagesNavigationProp>();
+  const { address } = useWallet();
+  const {
+    conversations,
+    contacts,
+    callHistory,
+    onlineUsers,
+    isConnected,
+    addContact,
+    getContactByAddress,
+    getOrCreateConversation,
+    initiateCall,
+    activeCall,
+  } = useCommunication();
+
   const [activeTab, setActiveTab] = useState<"messages" | "calls">("messages");
   const [showContactModal, setShowContactModal] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showAddContactModal, setShowAddContactModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [contacts, setContacts] = useState<Contact[]>(mockContacts);
+  const [refreshing, setRefreshing] = useState(false);
   const [newContact, setNewContact] = useState({
     name: "",
     walletAddress: "",
@@ -92,99 +60,379 @@ export const MessagesHomeScreen: React.FC = () => {
   });
   const [newChatAddress, setNewChatAddress] = useState("");
 
-  const filteredConversations = conversations.filter(
-    (conv) =>
-      conv.contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Utility functions
+  const formatTimeAgo = (timestamp: Date): string => {
+    const now = new Date();
+    const diff = now.getTime() - new Date(timestamp).getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
 
-  const handleAddContact = () => {
+    if (minutes < 1) return "now";
+    if (minutes < 60) return `${minutes}m`;
+    if (hours < 24) return `${hours}h`;
+    if (days < 7) return `${days}d`;
+    return new Date(timestamp).toLocaleDateString();
+  };
+
+  const getLastMessagePreview = (message: any): string => {
+    switch (message.type) {
+      case "image":
+        return "📷 Image";
+      case "voice":
+        return "🎤 Voice message";
+      case "file":
+        return `📄 ${message.metadata?.fileName || "File"}`;
+      case "payment":
+        return `💰 Payment ${message.metadata?.paymentAmount || ""}`;
+      default:
+        return message.text || "";
+    }
+  };
+
+  // Filter conversations based on search query
+  const filteredConversations = conversations.filter((conv) => {
+    const otherParticipant = conv.participants.find((p) => p !== address);
+    const contact = otherParticipant
+      ? getContactByAddress(otherParticipant)
+      : null;
+    const displayName = contact?.name || otherParticipant || "";
+    const lastMessageText = conv.lastMessage?.text || "";
+
+    return (
+      displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      lastMessageText.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  });
+
+  // Filter call history based on search query
+  const filteredCallHistory = callHistory.filter((call) => {
+    const otherParticipant =
+      call.fromAddress === address ? call.toAddress : call.fromAddress;
+    const contact = getContactByAddress(otherParticipant);
+    const displayName = contact?.name || otherParticipant;
+
+    return displayName.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  const handleAddContact = async () => {
     if (!newContact.name || !newContact.walletAddress) {
       Alert.alert("Error", "Please fill in name and wallet address");
       return;
     }
 
-    const contact: Contact = {
-      id: `c${contacts.length + 1}`,
-      name: newContact.name,
-      walletAddress: newContact.walletAddress,
-      notes: newContact.notes,
-    };
+    try {
+      await addContact({
+        name: newContact.name,
+        walletAddress: newContact.walletAddress,
+        notes: newContact.notes,
+      });
 
-    setContacts([...contacts, contact]);
-    setNewContact({ name: "", walletAddress: "", notes: "" });
-    setShowAddContactModal(false);
-    Alert.alert("Success", "Contact added successfully");
+      setNewContact({ name: "", walletAddress: "", notes: "" });
+      setShowAddContactModal(false);
+      Alert.alert("Success", "Contact added successfully");
+    } catch (error) {
+      Alert.alert("Error", "Failed to add contact. Please try again.");
+    }
   };
 
-  const handleStartNewChat = () => {
+  const handleStartNewChat = async () => {
     if (!newChatAddress) {
       Alert.alert("Error", "Please enter a wallet address");
       return;
     }
 
-    // Navigate to chat screen with the address
-    setShowNewChatModal(false);
-    setNewChatAddress("");
-    Alert.alert("Success", "Starting new conversation");
+    try {
+      const conversationId = await getOrCreateConversation(newChatAddress);
+      setShowNewChatModal(false);
+      setNewChatAddress("");
+
+      // Navigate to chat screen
+      navigation.navigate("Chat", {
+        id: conversationId,
+        participantAddress: newChatAddress,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Failed to start conversation. Please try again.");
+    }
   };
 
-  const renderMessageItem = ({ item }: { item: Conversation }) => (
-    <TouchableOpacity style={styles.conversationItem}>
-      <View style={styles.avatarContainer}>
-        <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-          <Text style={styles.avatarText}>
-            {item.contact.name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        {item.isOnline && <View style={styles.onlineIndicator} />}
-      </View>
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    // In a real app, you might want to fetch latest data from server
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 1000);
+  };
 
-      <View style={styles.conversationContent}>
-        <View style={styles.conversationHeader}>
-          <Text style={styles.contactName}>{item.contact.name}</Text>
-          <Text style={styles.timestamp}>{item.timestamp}</Text>
-        </View>
-        <Text style={styles.lastMessage} numberOfLines={1}>
-          {item.lastMessage}
-        </Text>
-      </View>
+  const renderMessageItem = ({ item }: { item: Conversation }) => {
+    const otherParticipant = item.participants.find((p) => p !== address);
+    const contact = otherParticipant
+      ? getContactByAddress(otherParticipant)
+      : null;
+    const displayName =
+      contact?.name ||
+      `${otherParticipant?.slice(0, 6)}...${otherParticipant?.slice(-4)}`;
+    const isOnline = otherParticipant
+      ? onlineUsers[otherParticipant]?.isOnline
+      : false;
+    const lastMessage = item.lastMessage;
+    const timeAgo = lastMessage ? formatTimeAgo(lastMessage.timestamp) : "";
 
-      {item.unread > 0 && (
-        <View style={styles.unreadBadge}>
-          <Text style={styles.unreadText}>{item.unread}</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+    const handlePress = () => {
+      if (otherParticipant) {
+        navigation.navigate("Chat", {
+          id: item.id,
+          participantAddress: otherParticipant,
+        });
+      }
+    };
 
-  const renderContactItem = ({ item }: { item: Contact }) => (
-    <TouchableOpacity style={styles.contactItem}>
-      <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-        <Text style={styles.avatarText}>
-          {item.name.charAt(0).toUpperCase()}
-        </Text>
-      </View>
-      <View style={styles.contactContent}>
-        <Text style={styles.contactName}>{item.name}</Text>
-        <Text style={styles.contactAddress} numberOfLines={1}>
-          {item.walletAddress}
-        </Text>
-        {item.notes && (
-          <Text style={styles.contactNotes} numberOfLines={1}>
-            {item.notes}
-          </Text>
+    return (
+      <TouchableOpacity style={styles.conversationItem} onPress={handlePress}>
+        <View style={styles.avatarContainer}>
+          {contact?.avatar ? (
+            <Image source={{ uri: contact.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarText}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          {isOnline && <View style={styles.onlineIndicator} />}
+        </View>
+
+        <View style={styles.conversationContent}>
+          <View style={styles.conversationHeader}>
+            <Text style={styles.contactName}>{displayName}</Text>
+            <Text style={styles.timestamp}>{timeAgo}</Text>
+          </View>
+          <View style={styles.lastMessageContainer}>
+            {lastMessage?.type === "image" && (
+              <MaterialCommunityIcons
+                name="image"
+                size={14}
+                color={colors.textSecondary}
+                style={{ marginRight: 4 }}
+              />
+            )}
+            {lastMessage?.type === "voice" && (
+              <MaterialCommunityIcons
+                name="microphone"
+                size={14}
+                color={colors.textSecondary}
+                style={{ marginRight: 4 }}
+              />
+            )}
+            {lastMessage?.type === "file" && (
+              <MaterialCommunityIcons
+                name="file"
+                size={14}
+                color={colors.textSecondary}
+                style={{ marginRight: 4 }}
+              />
+            )}
+            <Text style={styles.lastMessage} numberOfLines={1}>
+              {lastMessage
+                ? getLastMessagePreview(lastMessage)
+                : "No messages yet"}
+            </Text>
+          </View>
+        </View>
+
+        {item.unreadCount > 0 && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadText}>
+              {item.unreadCount > 99 ? "99+" : item.unreadCount}
+            </Text>
+          </View>
         )}
-      </View>
-      <TouchableOpacity style={styles.chatButton}>
-        <MaterialCommunityIcons
-          name="message-text"
-          size={20}
-          color={colors.primary}
-        />
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    );
+  };
+
+  const renderContactItem = ({ item }: { item: Contact }) => {
+    const isOnline = onlineUsers[item.walletAddress]?.isOnline;
+    const lastSeen = onlineUsers[item.walletAddress]?.lastSeen;
+
+    const handleChatPress = async () => {
+      try {
+        const conversationId = await getOrCreateConversation(
+          item.walletAddress
+        );
+        navigation.navigate("Chat", {
+          id: conversationId,
+          participantAddress: item.walletAddress,
+        });
+        setShowContactModal(false);
+      } catch (error) {
+        Alert.alert("Error", "Failed to start conversation");
+      }
+    };
+
+    const handleCallPress = () => {
+      Alert.alert("Call Options", `Call ${item.name}?`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Voice Call",
+          onPress: () => initiateCall(item.walletAddress, "voice"),
+        },
+        {
+          text: "Video Call",
+          onPress: () => initiateCall(item.walletAddress, "video"),
+        },
+      ]);
+    };
+
+    return (
+      <TouchableOpacity style={styles.contactItem}>
+        <View style={styles.avatarContainer}>
+          {item.avatar ? (
+            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarText}>
+                {item.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+          {isOnline && <View style={styles.onlineIndicator} />}
+        </View>
+
+        <View style={styles.contactContent}>
+          <Text style={styles.contactName}>{item.name}</Text>
+          <Text style={styles.contactAddress} numberOfLines={1}>
+            {item.walletAddress}
+          </Text>
+          <Text style={styles.contactStatus}>
+            {isOnline
+              ? "Online"
+              : lastSeen
+              ? `Last seen ${formatTimeAgo(lastSeen)}`
+              : "Offline"}
+          </Text>
+          {item.notes && (
+            <Text style={styles.contactNotes} numberOfLines={1}>
+              {item.notes}
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.contactActions}>
+          <TouchableOpacity style={styles.chatButton} onPress={handleChatPress}>
+            <MaterialCommunityIcons
+              name="message-text"
+              size={20}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.callButton} onPress={handleCallPress}>
+            <MaterialCommunityIcons
+              name="phone"
+              size={20}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderCallItem = ({ item }: { item: CallInfo }) => {
+    const otherParticipant =
+      item.fromAddress === address ? item.toAddress : item.fromAddress;
+    const contact = getContactByAddress(otherParticipant);
+    const displayName =
+      contact?.name ||
+      `${otherParticipant.slice(0, 6)}...${otherParticipant.slice(-4)}`;
+    const isOutgoing = item.fromAddress === address;
+    const timeAgo = formatTimeAgo(item.startTime || new Date());
+
+    const getCallIcon = () => {
+      if (item.type === "video") {
+        return item.status === "missed" ? "video-off" : "video";
+      }
+      return item.status === "missed" ? "phone-missed" : "phone";
+    };
+
+    const getCallStatusColor = () => {
+      switch (item.status) {
+        case "missed":
+          return colors.error;
+        case "rejected":
+          return colors.error;
+        case "ended":
+          return colors.textSecondary;
+        default:
+          return colors.primary;
+      }
+    };
+
+    const handleCallBack = () => {
+      Alert.alert("Call Back", `Call ${displayName}?`, [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Voice Call",
+          onPress: () => initiateCall(otherParticipant, "voice"),
+        },
+        {
+          text: "Video Call",
+          onPress: () => initiateCall(otherParticipant, "video"),
+        },
+      ]);
+    };
+
+    return (
+      <TouchableOpacity style={styles.callItem} onPress={handleCallBack}>
+        <View style={styles.avatarContainer}>
+          {contact?.avatar ? (
+            <Image source={{ uri: contact.avatar }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarText}>
+                {displayName.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.callContent}>
+          <Text style={styles.contactName}>{displayName}</Text>
+          <View style={styles.callInfo}>
+            <MaterialCommunityIcons
+              name={isOutgoing ? "call-made" : "call-received"}
+              size={14}
+              color={getCallStatusColor()}
+            />
+            <Text style={[styles.callStatus, { color: getCallStatusColor() }]}>
+              {isOutgoing ? "Outgoing" : "Incoming"} • {item.status}
+            </Text>
+            {item.duration && (
+              <Text style={styles.callDuration}>
+                • {Math.floor(item.duration / 60)}:
+                {(item.duration % 60).toString().padStart(2, "0")}
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.callActions}>
+          <Text style={styles.timestamp}>{timeAgo}</Text>
+          <TouchableOpacity
+            style={styles.callBackButton}
+            onPress={handleCallBack}
+          >
+            <MaterialCommunityIcons
+              name={getCallIcon()}
+              size={20}
+              color={colors.primary}
+            />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <Screen>
@@ -192,7 +440,19 @@ export const MessagesHomeScreen: React.FC = () => {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <Text style={styles.title}>BlockFinaX Chat</Text>
+            <View style={styles.titleContainer}>
+              <Text style={styles.title}>BlockFinaX Chat</Text>
+              <View
+                style={[
+                  styles.connectionStatus,
+                  { backgroundColor: isConnected ? "#4CAF50" : "#F44336" },
+                ]}
+              >
+                <Text style={styles.connectionText}>
+                  {isConnected ? "Online" : "Offline"}
+                </Text>
+              </View>
+            </View>
             <View style={styles.headerActions}>
               <TouchableOpacity
                 style={styles.headerButton}
@@ -289,6 +549,13 @@ export const MessagesHomeScreen: React.FC = () => {
                   renderItem={renderMessageItem}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.listContent}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={handleRefresh}
+                      tintColor={colors.primary}
+                    />
+                  }
                 />
               ) : (
                 <View style={styles.emptyState}>
@@ -297,9 +564,15 @@ export const MessagesHomeScreen: React.FC = () => {
                     size={64}
                     color={colors.textSecondary + "40"}
                   />
-                  <Text style={styles.emptyTitle}>No conversations yet</Text>
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery
+                      ? "No conversations found"
+                      : "No conversations yet"}
+                  </Text>
                   <Text style={styles.emptySubtitle}>
-                    Start a new conversation to begin messaging
+                    {searchQuery
+                      ? "Try a different search term"
+                      : "Start a new conversation to begin messaging"}
                   </Text>
                 </View>
               )}
@@ -315,17 +588,38 @@ export const MessagesHomeScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.callsTab}>
-              <View style={styles.emptyState}>
-                <MaterialCommunityIcons
-                  name="phone-outline"
-                  size={64}
-                  color={colors.textSecondary + "40"}
+              {filteredCallHistory.length > 0 ? (
+                <FlatList
+                  data={filteredCallHistory}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderCallItem}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.listContent}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={handleRefresh}
+                      tintColor={colors.primary}
+                    />
+                  }
                 />
-                <Text style={styles.emptyTitle}>No call history</Text>
-                <Text style={styles.emptySubtitle}>
-                  Start a voice or video call with your contacts
-                </Text>
-              </View>
+              ) : (
+                <View style={styles.emptyState}>
+                  <MaterialCommunityIcons
+                    name="phone-outline"
+                    size={64}
+                    color={colors.textSecondary + "40"}
+                  />
+                  <Text style={styles.emptyTitle}>
+                    {searchQuery ? "No calls found" : "No call history"}
+                  </Text>
+                  <Text style={styles.emptySubtitle}>
+                    {searchQuery
+                      ? "Try a different search term"
+                      : "Start a voice or video call with your contacts"}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -551,10 +845,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: spacing.md,
   },
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   title: {
     fontSize: 24,
     fontWeight: "700",
     color: colors.text,
+  },
+  connectionStatus: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  connectionText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "white",
   },
   headerActions: {
     flexDirection: "row",
@@ -675,10 +984,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
   },
+  lastMessageContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   lastMessage: {
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
+    flex: 1,
   },
   unreadBadge: {
     backgroundColor: colors.primary,
@@ -822,13 +1136,28 @@ const styles = StyleSheet.create({
     fontFamily: "monospace",
     marginTop: spacing.xs,
   },
+  contactStatus: {
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: 2,
+    fontWeight: "500",
+  },
   contactNotes: {
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: spacing.xs,
     fontStyle: "italic",
   },
+  contactActions: {
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
   chatButton: {
+    padding: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: colors.primary + "20",
+  },
+  callButton: {
     padding: spacing.sm,
     borderRadius: 8,
     backgroundColor: colors.primary + "20",
@@ -1007,5 +1336,48 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: colors.text,
+  },
+  // Call styles
+  callItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  callContent: {
+    flex: 1,
+    marginLeft: spacing.md,
+  },
+  callInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  callStatus: {
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  callDuration: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  callActions: {
+    alignItems: "flex-end",
+    gap: spacing.xs,
+  },
+  callBackButton: {
+    padding: spacing.sm,
+    borderRadius: 8,
+    backgroundColor: colors.primary + "20",
   },
 });

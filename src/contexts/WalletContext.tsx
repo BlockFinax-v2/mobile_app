@@ -1,5 +1,10 @@
 import { secureStorage } from "@/utils/secureStorage";
 import { getAllTokenBalances } from "@/utils/tokenUtils";
+import { priceService } from "@/services/priceService";
+import {
+  realTransactionService,
+  RealTransaction,
+} from "@/services/realTransactionService";
 import { ethers } from "ethers";
 import { getRandomBytes } from "expo-crypto";
 import React, {
@@ -317,7 +322,8 @@ export interface WalletSettings {
 
 export interface WalletBalances {
   primary: number;
-  usd: number;
+  primaryUsd: number; // USD value of native token only
+  usd: number; // Total USD value of all tokens
   tokens: Array<{
     symbol: string;
     balance: string;
@@ -332,6 +338,8 @@ interface WalletContextValue {
   hasWallet: boolean;
   address?: string;
   balances: WalletBalances;
+  transactions: RealTransaction[];
+  isLoadingTransactions: boolean;
   selectedNetwork: WalletNetwork;
   mainnetNetworks: WalletNetwork[];
   testnetNetworks: WalletNetwork[];
@@ -349,6 +357,7 @@ interface WalletContextValue {
   unlockWithBiometrics: () => Promise<void>;
   lockWallet: () => Promise<void>;
   refreshBalance: () => Promise<void>;
+  refreshTransactions: () => Promise<void>;
   switchNetwork: (networkId: SupportedNetworkId) => Promise<void>;
   updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
   enableBiometricAuth: (password: string) => Promise<void>;
@@ -373,32 +382,16 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const [hasWallet, setHasWallet] = useState(false);
   const [address, setAddress] = useState<string | undefined>();
   const [balances, setBalances] = useState<WalletBalances>({
-    primary: 0.001, // ETH balance for native token
-    usd: 2.40, // USD value of native token
-    tokens: [
-      {
-        symbol: "USDC",
-        balance: "50.00",
-        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c1",
-        usdValue: 50.00,
-      },
-      {
-        symbol: "USDT",
-        balance: "0.00",
-        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c2",
-        usdValue: 0.00,
-      },
-      {
-        symbol: "DAI",
-        balance: "0.00",
-        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c3",
-        usdValue: 0.00,
-      },
-    ],
+    primary: 0,
+    primaryUsd: 0,
+    usd: 0,
+    tokens: [],
   });
   const [selectedNetwork, setSelectedNetwork] = useState<WalletNetwork>(
     NETWORKS["polygon-mumbai"]
   );
+  const [transactions, setTransactions] = useState<RealTransaction[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [lastUnlockTime, setLastUnlockTime] = useState<Date | undefined>();
   const [settings, setSettings] = useState<WalletSettings>(defaultSettings);
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
@@ -423,7 +416,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const lockWallet = useCallback(async () => {
     setIsUnlocked(false);
     setAddress(undefined);
-    setBalances({ primary: 0, usd: 0, tokens: [] });
+    setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
     clearAutoLockTimer();
   }, [clearAutoLockTimer]);
 
@@ -452,7 +445,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
   const refreshBalance = useCallback(async () => {
     if (!address) {
-      setBalances({ primary: 0, usd: 0, tokens: [] });
+      setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
       return;
     }
 
@@ -470,11 +463,79 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         provider
       );
 
-      // Placeholder conversion until real FX service is wired.
-      setBalances({ primary: formatted, usd: formatted * 1, tokens });
+      // Calculate real USD values using price service
+      const primaryUsdValue = await priceService.calculateUSDValue(
+        selectedNetwork.primaryCurrency,
+        formatted,
+        selectedNetwork
+      );
+
+      // Calculate USD values for tokens
+      const tokensWithUSD = await Promise.all(
+        tokens.map(async (token) => {
+          const usdValue = await priceService.calculateUSDValue(
+            token.symbol,
+            token.balance,
+            selectedNetwork
+          );
+          return {
+            ...token,
+            usdValue,
+          };
+        })
+      );
+
+      // Calculate total USD value
+      const totalTokenUsdValue = tokensWithUSD.reduce(
+        (sum, token) => sum + (token.usdValue || 0),
+        0
+      );
+      const totalUsdValue = primaryUsdValue + totalTokenUsdValue;
+
+      console.log("🔄 Balance Update:", {
+        network: selectedNetwork.name,
+        primary: `${formatted} ${selectedNetwork.primaryCurrency}`,
+        primaryUSD: `$${primaryUsdValue.toFixed(2)}`,
+        tokenCount: tokensWithUSD.length,
+        totalUSD: `$${totalUsdValue.toFixed(2)}`,
+      });
+
+      setBalances({
+        primary: formatted,
+        primaryUsd: primaryUsdValue,
+        usd: totalUsdValue,
+        tokens: tokensWithUSD,
+      });
     } catch (error) {
       console.warn("Failed to refresh balance", error);
-      setBalances({ primary: 0, usd: 0, tokens: [] });
+      setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
+    }
+  }, [address, selectedNetwork]);
+
+  const refreshTransactions = useCallback(async () => {
+    if (!address) {
+      setTransactions([]);
+      return;
+    }
+
+    setIsLoadingTransactions(true);
+    try {
+      console.log("🔄 Fetching REAL transaction history...");
+
+      const realTransactions =
+        await realTransactionService.getTransactionHistory(
+          address,
+          selectedNetwork,
+          { limit: 20 } // Get last 20 transactions
+        );
+
+      console.log("✅ Real transactions loaded:", realTransactions.length);
+      setTransactions(realTransactions);
+    } catch (error) {
+      console.error("Failed to refresh transactions", error);
+      setTransactions([]);
+    } finally {
+      setIsLoadingTransactions(false);
     }
   }, [address, selectedNetwork]);
 
@@ -763,9 +824,16 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const now = new Date();
       setLastUnlockTime(now);
       await secureStorage.setItem(LAST_UNLOCK_KEY, now.toISOString());
+
+      // Load real data after unlock
+      setTimeout(() => {
+        refreshBalance();
+        refreshTransactions();
+      }, 1000);
+
       scheduleAutoLock();
     },
-    [hydrateWallet, scheduleAutoLock]
+    [hydrateWallet, scheduleAutoLock, refreshBalance, refreshTransactions]
   );
 
   const switchNetwork = useCallback(
@@ -786,7 +854,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       setIsUnlocked(false);
       setHasWallet(false);
       setAddress(undefined);
-      setBalances({ primary: 0, usd: 0, tokens: [] });
+      setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
       setSelectedNetwork(NETWORKS["polygon-mumbai"]);
       setLastUnlockTime(undefined);
       setSettings({ ...defaultSettings });
@@ -838,6 +906,8 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       hasWallet,
       address,
       balances,
+      transactions,
+      isLoadingTransactions,
       selectedNetwork,
       mainnetNetworks,
       testnetNetworks,
@@ -851,6 +921,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       unlockWithBiometrics,
       lockWallet,
       refreshBalance,
+      refreshTransactions,
       switchNetwork,
       updateSettings,
       enableBiometricAuth,
@@ -860,6 +931,8 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     [
       address,
       balances,
+      transactions,
+      isLoadingTransactions,
       createWallet,
       hasWallet,
       importWallet,
@@ -875,6 +948,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       settings,
       isBiometricAvailable,
       refreshBalance,
+      refreshTransactions,
       switchNetwork,
       updateSettings,
       lockWallet,

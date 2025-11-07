@@ -58,7 +58,14 @@ export type WalletStackParamList = {
 
 export type MessagesStackParamList = {
   MessagesHome: undefined;
-  Chat: { id: string } | undefined;
+  Chat: { 
+    contactAddress: string;
+  };
+  Calling: {
+    contactAddress: string;
+    callType: 'voice' | 'video';
+    isIncoming: boolean;
+  };
 };
 
 export type TradeStackParamList = {

@@ -1,3 +1,4 @@
+import { CommunicationProvider } from "@/contexts/CommunicationContext";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -19,7 +20,9 @@ const AppProviders: React.FC<React.PropsWithChildren> = ({ children }) => {
   return (
     <QueryClientProvider client={client}>
       <NetworkProvider>
-        <WalletProvider>{children}</WalletProvider>
+        <WalletProvider>
+          <CommunicationProvider>{children}</CommunicationProvider>
+        </WalletProvider>
       </NetworkProvider>
     </QueryClientProvider>
   );

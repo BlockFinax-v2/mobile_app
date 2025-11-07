@@ -24,7 +24,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 const getNetworkIcon = (networkId: SupportedNetworkId): string => {
   if (networkId.includes("ethereum")) return "ethereum";
   if (networkId.includes("base")) return "alpha-b-circle-outline";
-  if (networkId.includes("lisk")) return "flash-circle";
+  if (networkId.includes("lisk")) return "alpha-l-circle";
   if (networkId.includes("polygon")) return "triangle";
   if (networkId.includes("bsc") || networkId.includes("bnb"))
     return "alpha-b-circle";

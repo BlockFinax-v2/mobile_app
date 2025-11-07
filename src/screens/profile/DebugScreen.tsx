@@ -2,12 +2,9 @@ import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { useWallet } from "@/contexts/WalletContext";
-import { RootStackParamList } from "@/navigation/types";
 import { secureStorage } from "@/utils/secureStorage";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
-import { useNavigation } from "@react-navigation/native";
-import { StackNavigationProp } from "@react-navigation/stack";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -34,10 +31,7 @@ interface WalletDebugInfo {
   asyncDataKeys: string[];
 }
 
-type DebugScreenNavigationProp = StackNavigationProp<RootStackParamList>;
-
 export const DebugScreen: React.FC = () => {
-  const navigation = useNavigation<DebugScreenNavigationProp>();
   const {
     hasWallet,
     isUnlocked,
@@ -188,30 +182,13 @@ export const DebugScreen: React.FC = () => {
   };
 
   const handleLockWallet = async () => {
-    Alert.alert(
-      "🔒 Lock Wallet",
-      "This will lock your wallet and redirect you to the landing page. You'll need to unlock your wallet again to access it.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Lock & Redirect",
-          style: "default",
-          onPress: async () => {
-            try {
-              await lockWallet();
-              // Automatically redirect to landing page (Auth screen) after locking
-              navigation.reset({
-                index: 0,
-                routes: [{ name: "Auth" }],
-              });
-            } catch (error) {
-              console.error("Failed to lock wallet:", error);
-              Alert.alert("Error", "Failed to lock wallet");
-            }
-          },
-        },
-      ]
-    );
+    try {
+      await lockWallet();
+      Alert.alert("🔒 Wallet Locked", "Wallet has been locked successfully.");
+      loadDebugInfo();
+    } catch (error) {
+      Alert.alert("Error", "Failed to lock wallet");
+    }
   };
 
   const handleExportDebugInfo = async () => {
@@ -470,7 +447,12 @@ Tokens: ${debugInfo.balances.tokens.length}
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Primary Balance:</Text>
             <Text style={styles.infoValue}>
-              {debugInfo.balances.primary.toFixed(6)}
+              {debugInfo.balances.primary.toFixed(6)}{" "}
+              {debugInfo.selectedNetwork.includes("Polygon")
+                ? "MATIC"
+                : debugInfo.selectedNetwork.includes("BSC")
+                ? "BNB"
+                : "ETH"}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -483,6 +465,65 @@ Tokens: ${debugInfo.balances.tokens.length}
             <Text style={styles.infoLabel}>Token Count:</Text>
             <Text style={styles.infoValue}>
               {debugInfo.balances.tokens.length}
+            </Text>
+          </View>
+
+          {/* Real-time Balance Verification */}
+          <View style={styles.verificationSection}>
+            <Text style={styles.verificationTitle}>
+              🔍 Balance Verification
+            </Text>
+            <Text style={styles.verificationInfo}>
+              These balances are fetched LIVE from blockchain:
+            </Text>
+            <Text style={styles.rpcInfo}>
+              RPC:{" "}
+              {selectedNetwork.rpcUrl.includes("llamarpc")
+                ? "🟢 LlamaRPC (Free)"
+                : selectedNetwork.rpcUrl.includes("publicnode")
+                ? "🟢 PublicNode (Free)"
+                : selectedNetwork.rpcUrl.includes("binance")
+                ? "🟢 Binance (Official)"
+                : selectedNetwork.rpcUrl.includes("base.org")
+                ? "🟢 Base (Official)"
+                : "🟢 Official RPC"}
+            </Text>
+            <Text style={styles.networkInfo}>
+              Chain ID: {selectedNetwork.chainId} (Real blockchain)
+            </Text>
+          </View>
+
+          {/* Token Details */}
+          {debugInfo.balances.tokens.length > 0 && (
+            <View style={styles.tokenSection}>
+              <Text style={styles.tokenSectionTitle}>
+                📊 Token Balances (Real Data)
+              </Text>
+              {debugInfo.balances.tokens.map((token: any, index: number) => (
+                <View key={index} style={styles.tokenDetail}>
+                  <Text style={styles.tokenSymbol}>{token.symbol}</Text>
+                  <Text style={styles.tokenBalance}>
+                    {parseFloat(token.balance).toFixed(6)}
+                  </Text>
+                  <Text style={styles.tokenContract}>
+                    Contract: {token.address.slice(0, 8)}...
+                    {token.address.slice(-6)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Mock Data Warning */}
+          <View style={styles.mockWarning}>
+            <MaterialCommunityIcons
+              name="alert-circle-outline"
+              size={16}
+              color={palette.warningYellow}
+            />
+            <Text style={styles.mockWarningText}>
+              ⚠️ Dashboard transactions are MOCK data for demo purposes. Only
+              these balances above are real blockchain data.
             </Text>
           </View>
         </InfoCard>
@@ -508,7 +549,7 @@ Tokens: ${debugInfo.balances.tokens.length}
 
           {debugInfo.isUnlocked && (
             <Button
-              label="🔒 Lock Wallet & Go to Landing"
+              label="🔒 Lock Wallet"
               variant="outline"
               onPress={handleLockWallet}
               style={styles.actionButton}
@@ -669,5 +710,85 @@ const styles = StyleSheet.create({
     color: palette.neutralMid,
     textAlign: "center",
     lineHeight: 18,
+  },
+  verificationSection: {
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    backgroundColor: palette.surface,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: palette.accentGreen,
+  },
+  verificationTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.accentGreen,
+    marginBottom: spacing.xs,
+  },
+  verificationInfo: {
+    fontSize: 12,
+    color: palette.neutralDark,
+    marginBottom: spacing.xs,
+  },
+  rpcInfo: {
+    fontSize: 11,
+    color: palette.primaryBlue,
+    fontFamily: "monospace",
+    marginBottom: 4,
+  },
+  networkInfo: {
+    fontSize: 11,
+    color: palette.neutralMid,
+    fontFamily: "monospace",
+  },
+  tokenSection: {
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    backgroundColor: "#f8f9fa",
+    borderRadius: 8,
+  },
+  tokenSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.primaryBlue,
+    marginBottom: spacing.sm,
+  },
+  tokenDetail: {
+    marginBottom: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: palette.neutralLighter,
+  },
+  tokenSymbol: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+  },
+  tokenBalance: {
+    fontSize: 12,
+    fontFamily: "monospace",
+    color: palette.accentGreen,
+  },
+  tokenContract: {
+    fontSize: 10,
+    fontFamily: "monospace",
+    color: palette.neutralMid,
+  },
+  mockWarning: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    backgroundColor: palette.warningYellow + "15",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.warningYellow + "30",
+  },
+  mockWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: palette.neutralDark,
+    lineHeight: 16,
   },
 });
