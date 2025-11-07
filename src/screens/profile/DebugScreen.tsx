@@ -2,9 +2,12 @@ import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { useWallet } from "@/contexts/WalletContext";
+import { RootStackParamList } from "@/navigation/types";
 import { secureStorage } from "@/utils/secureStorage";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -31,7 +34,10 @@ interface WalletDebugInfo {
   asyncDataKeys: string[];
 }
 
+type DebugScreenNavigationProp = StackNavigationProp<RootStackParamList>;
+
 export const DebugScreen: React.FC = () => {
+  const navigation = useNavigation<DebugScreenNavigationProp>();
   const {
     hasWallet,
     isUnlocked,
@@ -182,13 +188,30 @@ export const DebugScreen: React.FC = () => {
   };
 
   const handleLockWallet = async () => {
-    try {
-      await lockWallet();
-      Alert.alert("🔒 Wallet Locked", "Wallet has been locked successfully.");
-      loadDebugInfo();
-    } catch (error) {
-      Alert.alert("Error", "Failed to lock wallet");
-    }
+    Alert.alert(
+      "🔒 Lock Wallet",
+      "This will lock your wallet and redirect you to the landing page. You'll need to unlock your wallet again to access it.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Lock & Redirect",
+          style: "default",
+          onPress: async () => {
+            try {
+              await lockWallet();
+              // Automatically redirect to landing page (Auth screen) after locking
+              navigation.reset({
+                index: 0,
+                routes: [{ name: "Auth" }],
+              });
+            } catch (error) {
+              console.error("Failed to lock wallet:", error);
+              Alert.alert("Error", "Failed to lock wallet");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleExportDebugInfo = async () => {
@@ -485,7 +508,7 @@ Tokens: ${debugInfo.balances.tokens.length}
 
           {debugInfo.isUnlocked && (
             <Button
-              label="🔒 Lock Wallet"
+              label="🔒 Lock Wallet & Go to Landing"
               variant="outline"
               onPress={handleLockWallet}
               style={styles.actionButton}

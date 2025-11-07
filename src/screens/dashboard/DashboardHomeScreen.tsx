@@ -15,7 +15,7 @@ import {
   useNavigation,
 } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Modal,
   Platform,
@@ -150,83 +150,236 @@ type DashboardNavigation = CompositeNavigationProp<
 >;
 
 export const DashboardHomeScreen: React.FC = () => {
-  const { balances, address, selectedNetwork, switchNetwork } = useWallet();
+  const { balances, address, selectedNetwork, switchNetwork, refreshBalance } =
+    useWallet();
   const [showNetworkConfig, setShowNetworkConfig] = useState(false);
+  const [selectedTokenSymbol, setSelectedTokenSymbol] =
+    useState<string>("USDC"); // Default to USDC
+  const [expandedNetworkId, setExpandedNetworkId] = useState<string | null>(
+    null
+  );
   const accountDisplay = useMemo(
     () => address?.slice(0, 6) + "..." + address?.slice(-4),
     [address]
   );
   const navigation = useNavigation<DashboardNavigation>();
 
+  // Debug logging for balances
+  console.log("Current balances:", balances);
+  console.log("Selected token symbol:", selectedTokenSymbol);
+  console.log("Selected network:", selectedNetwork);
+
+  // Refresh balance when component mounts or network changes
+  useEffect(() => {
+    console.log("Refreshing balance due to network change or mount");
+    refreshBalance();
+  }, [selectedNetwork.id, refreshBalance]);
+
+  // Ensure selected token is valid for current network
+  useEffect(() => {
+    // Check if current selected token is available in current network
+    const isTokenAvailable =
+      selectedTokenSymbol === selectedNetwork.primaryCurrency ||
+      selectedNetwork.stablecoins?.some(
+        (coin) => coin.symbol === selectedTokenSymbol
+      );
+
+    if (!isTokenAvailable) {
+      console.log(
+        "Selected token not available on current network, switching to native currency"
+      );
+      setSelectedTokenSymbol(selectedNetwork.primaryCurrency);
+    }
+  }, [selectedNetwork, selectedTokenSymbol]);
+
   // Get organized networks for the config modal
   const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
   const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
+
+  // Calculate dynamic balance based on selected token
+  const selectedTokenBalance = useMemo(() => {
+    console.log("Calculating balance for token:", selectedTokenSymbol);
+    console.log("Available tokens:", balances.tokens);
+
+    if (selectedTokenSymbol === selectedNetwork.primaryCurrency) {
+      // Show native token balance
+      console.log("Showing native token balance:", balances.primary);
+      return {
+        balance: balances.primary,
+        symbol: selectedNetwork.primaryCurrency,
+        usdValue: balances.usd,
+      };
+    } else {
+      // Show stablecoin balance
+      const tokenBalance = balances.tokens.find(
+        (token) => token.symbol === selectedTokenSymbol
+      );
+      console.log("Found token balance:", tokenBalance);
+
+      return {
+        balance: tokenBalance ? parseFloat(tokenBalance.balance) : 0,
+        symbol: selectedTokenSymbol,
+        usdValue:
+          tokenBalance?.usdValue || parseFloat(tokenBalance?.balance || "0"),
+      };
+    }
+  }, [selectedTokenSymbol, selectedNetwork.primaryCurrency, balances]);
 
   const handleNetworkConfigSelect = async (networkId: SupportedNetworkId) => {
     try {
       await switchNetwork(networkId);
       setShowNetworkConfig(false); // Close modal after selection
+
+      // Reset to the native token when switching networks
+      const network =
+        getMainnetNetworks().find((n) => n.id === networkId) ||
+        getTestnetNetworks().find((n) => n.id === networkId);
+
+      if (network) {
+        setSelectedTokenSymbol(network.primaryCurrency);
+        console.log(
+          "Switched to network:",
+          network.name,
+          "with primary currency:",
+          network.primaryCurrency
+        );
+      }
     } catch (error) {
       console.error("Failed to switch network:", error);
     }
   };
 
+  const handleTokenSelect = (symbol: string) => {
+    setSelectedTokenSymbol(symbol);
+    setShowNetworkConfig(false); // Close modal after token selection
+  };
+
+  const handleNetworkExpand = (networkId: string) => {
+    setExpandedNetworkId(expandedNetworkId === networkId ? null : networkId);
+  };
+
   const renderNetworkConfigItem = (network: WalletNetwork) => {
     const isActive = selectedNetwork.id === network.id;
+    const isExpanded = expandedNetworkId === network.id;
     const icon = getNetworkIcon(network.id);
     const color = getNetworkColor(network.id);
 
+    // Get all available tokens for this network (native + stablecoins)
+    const availableTokens = [
+      {
+        symbol: network.primaryCurrency,
+        name: network.primaryCurrency,
+        isNative: true,
+      },
+      ...(network.stablecoins || []).map((coin) => ({
+        symbol: coin.symbol,
+        name: coin.name,
+        isNative: false,
+      })),
+    ];
+
     return (
-      <Pressable
-        key={network.id}
-        style={[styles.networkCard, isActive && styles.activeNetworkCard]}
-        onPress={() => handleNetworkConfigSelect(network.id)}
-      >
-        <View style={styles.networkCardContent}>
-          <View style={styles.networkInfo}>
-            <View style={[styles.networkIcon, { backgroundColor: color }]}>
-              <MaterialCommunityIcons
-                name={icon as any}
-                size={24}
-                color={palette.white}
-              />
-            </View>
-            <View style={styles.networkDetails}>
-              <Text style={styles.networkName}>{network.name}</Text>
-              <Text style={styles.networkMeta}>
-                Chain ID: {network.chainId}
-              </Text>
-              <Text style={styles.networkMeta} numberOfLines={1}>
-                {network.primaryCurrency}
-              </Text>
-              {network.stablecoins && network.stablecoins.length > 0 && (
-                <Text style={styles.tokenCount}>
-                  {network.stablecoins.length} stablecoin
-                  {network.stablecoins.length !== 1 ? "s" : ""} supported
+      <View key={network.id}>
+        <Pressable
+          style={[styles.networkCard, isActive && styles.activeNetworkCard]}
+          onPress={() =>
+            isActive
+              ? handleNetworkExpand(network.id)
+              : handleNetworkConfigSelect(network.id)
+          }
+        >
+          <View style={styles.networkCardContent}>
+            <View style={styles.networkInfo}>
+              <View style={[styles.networkIcon, { backgroundColor: color }]}>
+                <MaterialCommunityIcons
+                  name={icon as any}
+                  size={24}
+                  color={palette.white}
+                />
+              </View>
+              <View style={styles.networkDetails}>
+                <Text style={styles.networkName}>{network.name}</Text>
+                <Text style={styles.networkMeta}>
+                  Chain ID: {network.chainId}
                 </Text>
+                <Text style={styles.networkMeta} numberOfLines={1}>
+                  {network.primaryCurrency}
+                </Text>
+                {network.stablecoins && network.stablecoins.length > 0 && (
+                  <Text style={styles.tokenCount}>
+                    {network.stablecoins.length} stablecoin
+                    {network.stablecoins.length !== 1 ? "s" : ""} supported
+                  </Text>
+                )}
+              </View>
+            </View>
+            <View style={styles.networkActions}>
+              {isActive ? (
+                <View style={styles.activeIndicator}>
+                  <MaterialCommunityIcons
+                    name="check-circle"
+                    size={24}
+                    color={palette.accentGreen}
+                  />
+                  <Text style={styles.activeText}>Active</Text>
+                </View>
+              ) : (
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={24}
+                  color={palette.neutralMid}
+                />
               )}
             </View>
           </View>
-          <View style={styles.networkActions}>
-            {isActive ? (
-              <View style={styles.activeIndicator}>
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={24}
-                  color={palette.accentGreen}
-                />
-                <Text style={styles.activeText}>Active</Text>
-              </View>
-            ) : (
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={24}
-                color={palette.neutralMid}
-              />
-            )}
+        </Pressable>
+
+        {/* Token Selection Dropdown - only show for active network when expanded */}
+        {isActive && isExpanded && (
+          <View style={styles.tokenSelectionContainer}>
+            <Text style={styles.tokenSelectionTitle}>Select Token:</Text>
+            {availableTokens.map((token) => {
+              const isSelectedToken = selectedTokenSymbol === token.symbol;
+              return (
+                <Pressable
+                  key={token.symbol}
+                  style={[
+                    styles.tokenItem,
+                    isSelectedToken && styles.selectedTokenItem,
+                  ]}
+                  onPress={() => handleTokenSelect(token.symbol)}
+                >
+                  <View style={styles.tokenInfo}>
+                    <Text
+                      style={[
+                        styles.tokenSymbol,
+                        isSelectedToken && styles.selectedTokenText,
+                      ]}
+                    >
+                      {token.symbol}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.tokenName,
+                        isSelectedToken && styles.selectedTokenText,
+                      ]}
+                    >
+                      {token.name} {token.isNative ? "(Native)" : ""}
+                    </Text>
+                  </View>
+                  {isSelectedToken && (
+                    <MaterialCommunityIcons
+                      name="check"
+                      size={20}
+                      color={palette.primaryBlue}
+                    />
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
-        </View>
-      </Pressable>
+        )}
+      </View>
     );
   };
 
@@ -299,26 +452,40 @@ export const DashboardHomeScreen: React.FC = () => {
         {/* Balance Card - Your original portfolio balance */}
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Available Balance</Text>
-            <Pressable
-              onPress={() =>
-                navigation.navigate("WalletTab", {
-                  screen: "TransactionDetails",
-                  params: { id: "portfolio" },
-                })
-              }
-            >
-              <MaterialCommunityIcons
-                name="chevron-right"
-                size={20}
-                color={palette.white}
-              />
-            </Pressable>
+            <Text style={styles.balanceLabel}>
+              Available Balance ({selectedTokenBalance.symbol})
+            </Text>
+            <View style={styles.headerActions}>
+              <Pressable onPress={refreshBalance} style={styles.refreshButton}>
+                <MaterialCommunityIcons
+                  name="refresh"
+                  size={20}
+                  color={palette.white}
+                />
+              </Pressable>
+              <Pressable
+                onPress={() =>
+                  navigation.navigate("WalletTab", {
+                    screen: "TransactionDetails",
+                    params: { id: "portfolio" },
+                  })
+                }
+              >
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={20}
+                  color={palette.white}
+                />
+              </Pressable>
+            </View>
           </View>
           <Text style={styles.balanceAmount}>
-            {balances.primary.toFixed(2)} USDC
+            {selectedTokenBalance.balance.toFixed(2)}{" "}
+            {selectedTokenBalance.symbol}
           </Text>
-          <Text style={styles.balanceUsd}>${balances.usd.toFixed(2)} USD</Text>
+          <Text style={styles.balanceUsd}>
+            ${selectedTokenBalance.usdValue.toFixed(2)} USD
+          </Text>
 
           {/* Network Configuration Button */}
           <View style={styles.networkSelectorContainer}>
@@ -698,6 +865,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.9,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  refreshButton: {
+    padding: spacing.xs,
+    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
   balanceAmount: {
     color: palette.white,
     fontSize: 32,
@@ -1013,5 +1190,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: palette.neutralDark,
     lineHeight: 20,
+  },
+  // Token Selection Styles
+  tokenSelectionContainer: {
+    backgroundColor: palette.surface,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+  },
+  tokenSelectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.neutralDark,
+    marginBottom: spacing.sm,
+  },
+  tokenItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 8,
+    marginBottom: spacing.xs,
+  },
+  selectedTokenItem: {
+    backgroundColor: "#EEF2FF",
+    borderWidth: 1,
+    borderColor: palette.primaryBlue,
+  },
+  tokenInfo: {
+    flex: 1,
+  },
+  tokenSymbol: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: palette.neutralDark,
+  },
+  tokenName: {
+    fontSize: 12,
+    color: palette.neutralMid,
+    marginTop: 2,
+  },
+  selectedTokenText: {
+    color: palette.primaryBlue,
   },
 });

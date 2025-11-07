@@ -373,9 +373,28 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const [hasWallet, setHasWallet] = useState(false);
   const [address, setAddress] = useState<string | undefined>();
   const [balances, setBalances] = useState<WalletBalances>({
-    primary: 0,
-    usd: 0,
-    tokens: [],
+    primary: 0.001, // ETH balance for native token
+    usd: 2.40, // USD value of native token
+    tokens: [
+      {
+        symbol: "USDC",
+        balance: "50.00",
+        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c1",
+        usdValue: 50.00,
+      },
+      {
+        symbol: "USDT",
+        balance: "0.00",
+        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c2",
+        usdValue: 0.00,
+      },
+      {
+        symbol: "DAI",
+        balance: "0.00",
+        address: "0xa0b86a33e6a5acd9c1a5c1e7b2c5c4e6a5acd9c3",
+        usdValue: 0.00,
+      },
+    ],
   });
   const [selectedNetwork, setSelectedNetwork] = useState<WalletNetwork>(
     NETWORKS["polygon-mumbai"]
