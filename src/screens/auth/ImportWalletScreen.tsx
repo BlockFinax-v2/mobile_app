@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { DebugTool } from "@/components/ui/DebugTool";
 import { useWallet } from "@/contexts/WalletContext";
 import { RootStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
@@ -159,6 +160,7 @@ export const ImportWalletScreen: React.FC = () => {
           style={styles.submitButton}
         />
       </ScrollView>
+      <DebugTool />
     </Screen>
   );
 };

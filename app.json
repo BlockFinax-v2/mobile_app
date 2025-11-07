@@ -1,23 +1,35 @@
 {
   "expo": {
-  "name": "BlockFinaX",
-  "slug": "blockfinax-mobile",
+    "name": "BlockFinaX",
+    "slug": "blockfinax-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-  "scheme": "blockfinax",
+    "scheme": "blockfinax",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "BlockFinaX needs camera access for video calls",
+        "NSMicrophoneUsageDescription": "BlockFinaX needs microphone access for voice and video calls"
+      }
     },
     "android": {
+      "package": "com.blockfinax.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE"
+      ],
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
@@ -27,6 +39,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
       [
         "expo-splash-screen",
         {
@@ -43,6 +56,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ae4573b5-e8f2-4e9c-875f-07a6b886a57d"
+      }
     }
   }
 }

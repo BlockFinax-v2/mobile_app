@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { DebugTool } from "@/components/ui/DebugTool";
 import { gradients, palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { LinearGradient } from "expo-linear-gradient";
@@ -58,11 +59,18 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
   return (
     <Screen padded={false}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <LinearGradient colors={gradients.hero} style={styles.hero}>
           <Animated.View style={[styles.heroContent, { opacity: fadeAnim }]}>
             <View style={styles.logoContainer}>
-              <MaterialCommunityIcons name="shield-star" size={72} color={palette.white} />
+              <MaterialCommunityIcons
+                name="shield-star"
+                size={72}
+                color={palette.white}
+              />
             </View>
             <Text
               variant="display"
@@ -83,7 +91,11 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
         </LinearGradient>
 
         <View style={styles.benefitsCard}>
-          <Text variant="title" color={palette.neutralDark} style={styles.benefitsTitle}>
+          <Text
+            variant="title"
+            color={palette.neutralDark}
+            style={styles.benefitsTitle}
+          >
             Why Choose BlockFinaX?
           </Text>
           {BENEFITS.map((benefit, index) => (
@@ -104,7 +116,12 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 },
               ]}
             >
-              <View style={[styles.benefitIcon, { backgroundColor: benefit.color + '15' }]}>
+              <View
+                style={[
+                  styles.benefitIcon,
+                  { backgroundColor: benefit.color + "15" },
+                ]}
+              >
                 <MaterialCommunityIcons
                   name={benefit.icon}
                   size={28}
@@ -112,10 +129,17 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
                 />
               </View>
               <View style={styles.benefitCopy}>
-                <Text variant="subtitle" color={palette.neutralDark} style={styles.benefitTitle}>
+                <Text
+                  variant="subtitle"
+                  color={palette.neutralDark}
+                  style={styles.benefitTitle}
+                >
                   {benefit.title}
                 </Text>
-                <Text color={palette.neutralMid} style={styles.benefitDescription}>
+                <Text
+                  color={palette.neutralMid}
+                  style={styles.benefitDescription}
+                >
                   {benefit.description}
                 </Text>
               </View>
@@ -128,19 +152,37 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             label="Create New Wallet"
             variant="gradient"
             onPress={onCreateWallet}
-            icon={<MaterialCommunityIcons name="plus-circle" size={20} color={palette.white} />}
+            icon={
+              <MaterialCommunityIcons
+                name="plus-circle"
+                size={20}
+                color={palette.white}
+              />
+            }
           />
           <Button
             label="Import Wallet"
             variant="primary"
             onPress={onImportWallet}
-            icon={<MaterialCommunityIcons name="import" size={20} color={palette.white} />}
+            icon={
+              <MaterialCommunityIcons
+                name="import"
+                size={20}
+                color={palette.white}
+              />
+            }
           />
           <Button
             label="Unlock Existing Wallet"
             variant="outline"
             onPress={onUnlockWallet}
-            icon={<MaterialCommunityIcons name="lock-open-outline" size={20} color={palette.primaryBlue} />}
+            icon={
+              <MaterialCommunityIcons
+                name="lock-open-outline"
+                size={20}
+                color={palette.primaryBlue}
+              />
+            }
           />
         </View>
 
@@ -148,6 +190,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
           Secure. Fast. Borderless.
         </Text>
       </ScrollView>
+      <DebugTool />
     </Screen>
   );
 };
@@ -164,22 +207,22 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 32,
   },
   heroContent: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: spacing.md,
   },
   logoContainer: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: spacing.md,
   },
   heroTitle: {
     textAlign: "center",
     fontSize: 36,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
   heroSubtitle: {
@@ -202,21 +245,21 @@ const styles = StyleSheet.create({
   },
   benefitsTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: spacing.sm,
-    textAlign: 'center',
+    textAlign: "center",
   },
   benefitRow: {
     flexDirection: "row",
     gap: spacing.md,
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
   },
   benefitIcon: {
     width: 56,
     height: 56,
     borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   bullet: {
     width: 12,
@@ -231,7 +274,7 @@ const styles = StyleSheet.create({
   },
   benefitTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   benefitDescription: {
     fontSize: 14,
@@ -243,11 +286,11 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   footer: {
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: spacing.xl,
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: "500",
     letterSpacing: 1,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
   },
 });

@@ -10,7 +10,7 @@ import React, {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import { Alert, AppState } from "react-native";
-import { v4 as uuidv4 } from "react-native-uuid";
+import uuid from "react-native-uuid";
 
 // Types
 export interface Message {
@@ -28,6 +28,8 @@ export interface Message {
     voiceDuration?: number;
     paymentAmount?: string;
     paymentToken?: string;
+    fileUri?: string;
+    voiceUri?: string;
   };
 }
 
@@ -35,6 +37,7 @@ export interface Contact {
   id: string;
   name: string;
   walletAddress: string;
+  address: string; // Alias for walletAddress for consistency
   notes?: string;
   lastSeen?: Date;
   isOnline?: boolean;
@@ -45,6 +48,7 @@ export interface Contact {
 export interface Conversation {
   id: string;
   participants: string[]; // wallet addresses
+  messages?: Message[]; // Include messages array
   lastMessage?: Message;
   unreadCount: number;
   updatedAt: Date;
@@ -55,12 +59,24 @@ export interface Conversation {
 
 export interface CallInfo {
   id: string;
-  fromAddress: string;
-  toAddress: string;
+  participantAddress: string;
+  participantName: string;
   type: "voice" | "video";
-  status: "connecting" | "ringing" | "active" | "ended" | "rejected" | "missed";
+  status:
+    | "active"
+    | "connecting"
+    | "ringing"
+    | "connected"
+    | "ended"
+    | "rejected"
+    | "missed";
+  timestamp: number;
+  isIncoming: boolean;
+  localStream?: any;
+  remoteStream?: any;
+  fromAddress: string;
+  toAddress?: string;
   startTime?: Date;
-  endTime?: Date;
   duration?: number;
 }
 
@@ -125,6 +141,9 @@ interface CommunicationContextType {
   acceptCall: (callId: string) => Promise<void>;
   rejectCall: (callId: string) => Promise<void>;
   endCall: (callId: string) => Promise<void>;
+  startVoiceCall: (toAddress: string) => Promise<void>;
+  startVideoCall: (toAddress: string) => Promise<void>;
+  currentCall?: CallInfo | null; // Alias for activeCall
 
   // Typing indicators
   sendTypingIndicator: (conversationId: string, isTyping: boolean) => void;
@@ -171,13 +190,18 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [callHistory, setCallHistory] = useState<CallInfo[]>([]);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
 
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  const typingTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const typingTimeoutRef = useRef<
+    Record<string, ReturnType<typeof setTimeout>>
+  >({});
 
   // Initialize socket connection
   useEffect(() => {
     if (!address) return;
 
+    console.log("Attempting to connect to socket server:", SOCKET_URL);
     const newSocket = io(SOCKET_URL, {
       transports: ["websocket"],
       reconnection: true,
@@ -270,11 +294,17 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     // Call events
     newSocket.on("incoming_call", (callInfo: any) => {
       const formattedCall: CallInfo = {
-        id: callInfo.id,
+        id: callInfo.callId,
         fromAddress: callInfo.fromAddress,
         toAddress: callInfo.toAddress,
-        type: callInfo.callType,
+        participantAddress: callInfo.fromAddress,
+        participantName:
+          getContactByAddress(callInfo.fromAddress)?.name ||
+          callInfo.fromAddress,
+        type: callInfo.type,
         status: "ringing",
+        timestamp: callInfo.timestamp,
+        isIncoming: true,
         startTime: new Date(callInfo.timestamp),
       };
       handleIncomingCall(formattedCall);
@@ -290,16 +320,26 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
           id: data.callId,
           fromAddress: data.fromAddress,
           toAddress: address,
+          participantAddress: data.fromAddress,
+          participantName:
+            getContactByAddress(data.fromAddress)?.name || data.fromAddress,
           type: activeCall?.type || "voice",
           status: "active",
+          timestamp: Date.now(),
+          isIncoming: false,
         });
       } else {
         handleCallRejected({
           id: data.callId,
           fromAddress: data.fromAddress,
           toAddress: address,
+          participantAddress: data.fromAddress,
+          participantName:
+            getContactByAddress(data.fromAddress)?.name || data.fromAddress,
           type: activeCall?.type || "voice",
           status: "rejected",
+          timestamp: Date.now(),
+          isIncoming: false,
         });
       }
     });
@@ -397,7 +437,14 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (storedConversations) {
         const parsedConversations: Conversation[] =
           JSON.parse(storedConversations);
-        setConversations(parsedConversations);
+
+        // Deduplicate conversations
+        const conversationMap = new Map<string, Conversation>();
+        parsedConversations.forEach((conv) => {
+          conversationMap.set(conv.id, conv);
+        });
+
+        setConversations(Array.from(conversationMap.values()));
 
         // Load messages for each conversation
         const messagesMap: Record<string, Message[]> = {};
@@ -442,21 +489,25 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Update conversation
       setConversations((prev) => {
-        const existingConversation = prev.find((c) => c.id === conversationId);
+        // Use Map to ensure uniqueness
+        const conversationMap = new Map<string, Conversation>();
+
+        // Add existing conversations
+        prev.forEach((conv) => {
+          conversationMap.set(conv.id, conv);
+        });
+
+        const existingConversation = conversationMap.get(conversationId);
         if (existingConversation) {
-          const updated = prev.map((c) =>
-            c.id === conversationId
-              ? {
-                  ...c,
-                  lastMessage: message,
-                  unreadCount: c.unreadCount + 1,
-                  updatedAt: new Date(),
-                }
-              : c
-          );
-          persistConversations(updated);
-          return updated;
+          // Update existing conversation
+          conversationMap.set(conversationId, {
+            ...existingConversation,
+            lastMessage: message,
+            unreadCount: existingConversation.unreadCount + 1,
+            updatedAt: new Date(),
+          });
         } else {
+          // Create new conversation
           const newConversation: Conversation = {
             id: conversationId,
             participants: [message.fromAddress, message.toAddress],
@@ -464,10 +515,12 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
             unreadCount: 1,
             updatedAt: new Date(),
           };
-          const updated = [newConversation, ...prev];
-          persistConversations(updated);
-          return updated;
+          conversationMap.set(conversationId, newConversation);
         }
+
+        const updated = Array.from(conversationMap.values());
+        persistConversations(updated);
+        return updated;
       });
 
       // Send delivery confirmation
@@ -616,10 +669,25 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       type: Message["type"] = "text",
       metadata?: Message["metadata"]
     ) => {
-      if (!socket || !address) throw new Error("Not connected");
+      console.log("sendMessage called:", {
+        toAddress,
+        text,
+        type,
+        hasSocket: !!socket,
+        hasAddress: !!address,
+      });
+
+      if (!socket || !address) {
+        const error = new Error("Not connected");
+        console.error("Send message failed - not connected:", {
+          hasSocket: !!socket,
+          hasAddress: !!address,
+        });
+        throw error;
+      }
 
       const message: Message = {
-        id: uuidv4() as string,
+        id: uuid.v4() as string,
         fromAddress: address,
         toAddress: toAddress.toLowerCase(),
         text,
@@ -630,11 +698,17 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       };
 
       const conversationId = getConversationId(address, toAddress);
+      console.log("Generated conversationId:", conversationId);
 
       // Add to local messages immediately
       setMessages((prev) => {
         const conversationMessages = prev[conversationId] || [];
         const updatedMessages = [...conversationMessages, message];
+        console.log("Adding message to local state:", {
+          conversationId,
+          messageCount: updatedMessages.length,
+          messageId: message.id,
+        });
         persistMessages(conversationId, updatedMessages);
         return {
           ...prev,
@@ -679,7 +753,18 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         };
 
         setConversations((prev) => {
-          const updated = [newConversation, ...prev];
+          // Use Map to ensure uniqueness
+          const conversationMap = new Map<string, Conversation>();
+
+          // Add existing conversations
+          prev.forEach((conv) => {
+            conversationMap.set(conv.id, conv);
+          });
+
+          // Add new conversation (will replace if exists)
+          conversationMap.set(conversationId, newConversation);
+
+          const updated = Array.from(conversationMap.values());
           persistConversations(updated);
           return updated;
         });
@@ -692,7 +777,12 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const getConversationMessages = useCallback(
     (conversationId: string): Message[] => {
-      return messages[conversationId] || [];
+      const conversationMessages = messages[conversationId] || [];
+      console.log("getConversationMessages:", {
+        conversationId,
+        messageCount: conversationMessages.length,
+      });
+      return conversationMessages;
     },
     [messages]
   );
@@ -721,10 +811,12 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const addContact = useCallback(
     async (contactData: Omit<Contact, "id">) => {
+      const normalizedAddress = contactData.walletAddress.toLowerCase();
       const newContact: Contact = {
         ...contactData,
-        id: uuidv4() as string,
-        walletAddress: contactData.walletAddress.toLowerCase(),
+        id: uuid.v4() as string,
+        walletAddress: normalizedAddress,
+        address: normalizedAddress, // Set both address properties
       };
 
       setContacts((prev) => {
@@ -750,11 +842,16 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!socket || !address) throw new Error("Not connected");
 
       const callInfo: CallInfo = {
-        id: uuidv4() as string,
+        id: uuid.v4() as string,
         fromAddress: address,
         toAddress: toAddress.toLowerCase(),
+        participantAddress: toAddress.toLowerCase(),
+        participantName:
+          getContactByAddress(toAddress.toLowerCase())?.name || toAddress,
         type,
         status: "connecting",
+        timestamp: Date.now(),
+        isIncoming: false,
         startTime: new Date(),
       };
 
@@ -877,9 +974,23 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       fileSize: number
     ) => {
       // Implementation for sending files
-      await sendMessage(toAddress, "", "file", { fileName, fileSize });
+      await sendMessage(toAddress, "", "file", { fileName, fileSize, fileUri });
     },
     [sendMessage]
+  );
+
+  const startVoiceCall = useCallback(
+    async (toAddress: string) => {
+      await initiateCall(toAddress, "voice");
+    },
+    [initiateCall]
+  );
+
+  const startVideoCall = useCallback(
+    async (toAddress: string) => {
+      await initiateCall(toAddress, "video");
+    },
+    [initiateCall]
   );
 
   const contextValue: CommunicationContextType = {
@@ -933,6 +1044,11 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     sendImage,
     sendVoiceMessage,
     sendFile,
+
+    // Additional call methods
+    startVoiceCall,
+    startVideoCall,
+    currentCall: activeCall, // Alias for activeCall
   };
 
   return (

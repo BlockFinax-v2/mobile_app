@@ -13,6 +13,7 @@ export const palette = {
   neutralLighter: '#E5E7EB',
   surface: '#F8FAFC', // Light gray background
   cardBackground: '#FFFFFF', // Pure white for cards
+  shadowColor: '#000000', // Shadow color for components
 };
 
 // Additional color system for new screens

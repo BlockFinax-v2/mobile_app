@@ -109,6 +109,7 @@ export const MessagesHomeScreen: React.FC = () => {
   const filteredCallHistory = callHistory.filter((call) => {
     const otherParticipant =
       call.fromAddress === address ? call.toAddress : call.fromAddress;
+    if (!otherParticipant) return false;
     const contact = getContactByAddress(otherParticipant);
     const displayName = contact?.name || otherParticipant;
 
@@ -125,6 +126,7 @@ export const MessagesHomeScreen: React.FC = () => {
       await addContact({
         name: newContact.name,
         walletAddress: newContact.walletAddress,
+        address: newContact.walletAddress,
         notes: newContact.notes,
       });
 
@@ -149,8 +151,7 @@ export const MessagesHomeScreen: React.FC = () => {
 
       // Navigate to chat screen
       navigation.navigate("Chat", {
-        id: conversationId,
-        participantAddress: newChatAddress,
+        contactAddress: newChatAddress,
       });
     } catch (error) {
       Alert.alert("Error", "Failed to start conversation. Please try again.");
@@ -182,8 +183,7 @@ export const MessagesHomeScreen: React.FC = () => {
     const handlePress = () => {
       if (otherParticipant) {
         navigation.navigate("Chat", {
-          id: item.id,
-          participantAddress: otherParticipant,
+          contactAddress: otherParticipant,
         });
       }
     };
@@ -262,8 +262,7 @@ export const MessagesHomeScreen: React.FC = () => {
           item.walletAddress
         );
         navigation.navigate("Chat", {
-          id: conversationId,
-          participantAddress: item.walletAddress,
+          contactAddress: item.walletAddress,
         });
         setShowContactModal(false);
       } catch (error) {
@@ -342,6 +341,7 @@ export const MessagesHomeScreen: React.FC = () => {
   const renderCallItem = ({ item }: { item: CallInfo }) => {
     const otherParticipant =
       item.fromAddress === address ? item.toAddress : item.fromAddress;
+    if (!otherParticipant) return null;
     const contact = getContactByAddress(otherParticipant);
     const displayName =
       contact?.name ||
@@ -374,11 +374,13 @@ export const MessagesHomeScreen: React.FC = () => {
         { text: "Cancel", style: "cancel" },
         {
           text: "Voice Call",
-          onPress: () => initiateCall(otherParticipant, "voice"),
+          onPress: () =>
+            otherParticipant && initiateCall(otherParticipant, "voice"),
         },
         {
           text: "Video Call",
-          onPress: () => initiateCall(otherParticipant, "video"),
+          onPress: () =>
+            otherParticipant && initiateCall(otherParticipant, "video"),
         },
       ]);
     };
@@ -545,7 +547,9 @@ export const MessagesHomeScreen: React.FC = () => {
               {filteredConversations.length > 0 ? (
                 <FlatList
                   data={filteredConversations}
-                  keyExtractor={(item) => item.id}
+                  keyExtractor={(item, index) =>
+                    `conversation-${item.id}-${index}`
+                  }
                   renderItem={renderMessageItem}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.listContent}
@@ -591,7 +595,7 @@ export const MessagesHomeScreen: React.FC = () => {
               {filteredCallHistory.length > 0 ? (
                 <FlatList
                   data={filteredCallHistory}
-                  keyExtractor={(item) => item.id}
+                  keyExtractor={(item, index) => `call-${item.id}-${index}`}
                   renderItem={renderCallItem}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.listContent}
@@ -668,7 +672,7 @@ export const MessagesHomeScreen: React.FC = () => {
             {contacts.length > 0 ? (
               <FlatList
                 data={contacts}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item, index) => `contact-${item.id}-${index}`}
                 renderItem={renderContactItem}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.contactsList}
