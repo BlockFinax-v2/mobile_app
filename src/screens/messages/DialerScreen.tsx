@@ -9,6 +9,8 @@ import {
   Vibration,
   Dimensions,
   Alert,
+  ScrollView,
+  FlatList,
 } from "react-native";
 import { Screen } from "@/components/ui/Screen";
 import { useCommunication } from "@/contexts/CommunicationContext";
@@ -30,8 +32,9 @@ import {
   looksLikeWalletAddress,
 } from "@/utils/walletValidation";
 
-const { width } = Dimensions.get("window");
-const BUTTON_SIZE = (width - spacing.xl * 2 - spacing.lg * 2) / 3;
+const { width, height } = Dimensions.get("window");
+const BUTTON_SIZE = Math.min((width - spacing.xl * 3) / 5, 64); // Max 64px, responsive
+const IS_SMALL_SCREEN = width < 380;
 
 const DIALPAD_LAYOUT = {
   numbers: [
@@ -66,8 +69,45 @@ export const DialerScreen: React.FC = () => {
   >("numbers");
   const [isScanning, setIsScanning] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
+  const [showRecentContacts, setShowRecentContacts] = useState(false);
+  const [contactSearchQuery, setContactSearchQuery] = useState("");
   const { initiateCall, getContactByAddress, contacts } = useCommunication();
   const navigation = useNavigation();
+
+  // Generate avatar color based on address
+  const getAvatarColor = (address: string) => {
+    const colors = [
+      "#FF6B35",
+      "#F7931E",
+      "#FFD23F",
+      "#06FFA5",
+      "#118AB2",
+      "#073B4C",
+      "#8E44AD",
+      "#E74C3C",
+    ];
+    const index = parseInt(address.slice(-2), 16) % colors.length;
+    return colors[index];
+  };
+
+  // Filter recent contacts based on search query
+  const filteredContacts = useMemo(() => {
+    if (!contactSearchQuery.trim()) {
+      return contacts.slice(0, 10); // Show recent 10 contacts
+    }
+
+    return contacts
+      .filter(
+        (contact) =>
+          contact.name
+            .toLowerCase()
+            .includes(contactSearchQuery.toLowerCase()) ||
+          contact.walletAddress
+            .toLowerCase()
+            .includes(contactSearchQuery.toLowerCase())
+      )
+      .slice(0, 10);
+  }, [contacts, contactSearchQuery]);
 
   // Enhanced validation for Web3 identifiers
   const validationStatus = useMemo(() => {
@@ -339,389 +379,471 @@ export const DialerScreen: React.FC = () => {
 
   return (
     <Screen>
-      <View style={styles.container}>
-        {/* Web3 Identifier Display */}
-        <View style={styles.displayContainer}>
-          <View style={styles.addressContainer}>
-            <Text style={styles.addressDisplay}>
-              {walletInput || "Enter Web3 ID..."}
-            </Text>
-            <Text
-              style={[
-                styles.validationText,
-                {
-                  color: validationStatus.isValid
-                    ? "#34C759"
-                    : colors.textSecondary,
-                },
-              ]}
-            >
-              {validationStatus.message}
-            </Text>
-
-            {/* Input Type Indicator */}
-            <View style={styles.inputTypeContainer}>
-              {walletInput.startsWith("0x") && (
-                <View style={styles.inputTypeTag}>
-                  <Text style={styles.inputTypeText}>Wallet Address</Text>
-                </View>
-              )}
-              {walletInput.endsWith(".eth") && (
-                <View
-                  style={[styles.inputTypeTag, { backgroundColor: "#6366F1" }]}
-                >
-                  <Text style={styles.inputTypeText}>ENS Name</Text>
-                </View>
-              )}
-              {walletInput &&
-                !walletInput.startsWith("0x") &&
-                !walletInput.endsWith(".eth") && (
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.innerContainer}>
+          {/* Web3 Identifier Display */}
+          <View style={styles.displayContainer}>
+            <View style={styles.addressContainer}>
+              {/* Input Type Indicator */}
+              <View style={styles.inputTypeContainer}>
+                {walletInput.startsWith("0x") && (
+                  <View style={styles.inputTypeTag}>
+                    <Text style={styles.inputTypeText}>Wallet Address</Text>
+                  </View>
+                )}
+                {walletInput.endsWith(".eth") && (
                   <View
                     style={[
                       styles.inputTypeTag,
-                      { backgroundColor: "#10B981" },
+                      { backgroundColor: "#6366F1" },
                     ]}
                   >
-                    <Text style={styles.inputTypeText}>Username</Text>
+                    <Text style={styles.inputTypeText}>ENS Name</Text>
                   </View>
                 )}
-            </View>
-          </View>
-
-          {/* QR Code Scanner and Toggle Buttons */}
-          <View style={styles.inputActionsContainer}>
-            <TouchableOpacity
-              style={styles.qrScanButton}
-              onPress={handleQRScan}
-            >
-              <MaterialCommunityIcons
-                name="qrcode-scan"
-                size={20}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.inputToggleButton}
-              onPress={() => setShowManualInput(!showManualInput)}
-            >
-              <MaterialCommunityIcons
-                name={showManualInput ? "dialpad" : "keyboard"}
-                size={20}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
-          </View>
-
-          {walletInput.length > 0 && (
-            <TouchableOpacity
-              style={styles.clearButton}
-              onPress={() => setWalletInput("")}
-            >
-              <MaterialCommunityIcons
-                name="close-circle"
-                size={24}
-                color={colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Input Method */}
-        {showManualInput ? (
-          <View style={styles.manualInputContainer}>
-            <Text style={styles.inputLabel}>Enter Web3 Address</Text>
-            <Text style={styles.inputSubLabel}>
-              Wallet address, ENS name, or username
-            </Text>
-
-            <TextInput
-              style={styles.manualInput}
-              placeholder="0x1234... or alice.eth or @username"
-              placeholderTextColor={colors.textSecondary}
-              value={walletInput}
-              onChangeText={handleManualInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="ascii-capable"
-              maxLength={100}
-              multiline={false}
-              returnKeyType="done"
-            />
-
-            {/* Quick Action Buttons */}
-            <View style={styles.quickInputActions}>
-              <TouchableOpacity
-                style={styles.quickActionButton}
-                onPress={handleQRScan}
-              >
-                <MaterialCommunityIcons
-                  name="qrcode-scan"
-                  size={18}
-                  color={colors.primary}
-                />
-                <Text style={styles.quickActionText}>Scan QR</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickActionButton}
-                onPress={handlePasteFromClipboard}
-              >
-                <MaterialCommunityIcons
-                  name="clipboard-outline"
-                  size={18}
-                  color={colors.primary}
-                />
-                <Text style={styles.quickActionText}>Paste</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.quickActionButton}
-                onPress={() => setWalletInput("")}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={18}
-                  color={colors.textSecondary}
-                />
-                <Text style={styles.quickActionText}>Clear</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.dialpadContainer}>
-            {/* Keypad Mode Selector */}
-            <View style={styles.modeSelector}>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  keypadMode === "numbers" && styles.activeModeButton,
-                ]}
-                onPress={() => setKeypadMode("numbers")}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    keypadMode === "numbers" && styles.activeModeButtonText,
-                  ]}
-                >
-                  123
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  keypadMode === "lowercase" && styles.activeModeButton,
-                ]}
-                onPress={() => setKeypadMode("lowercase")}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    keypadMode === "lowercase" && styles.activeModeButtonText,
-                  ]}
-                >
-                  abc
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.modeButton,
-                  keypadMode === "uppercase" && styles.activeModeButton,
-                ]}
-                onPress={() => setKeypadMode("uppercase")}
-              >
-                <Text
-                  style={[
-                    styles.modeButtonText,
-                    keypadMode === "uppercase" && styles.activeModeButtonText,
-                  ]}
-                >
-                  ABC
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Compact Keypad */}
-            <View style={styles.compactDialpad}>
-              {DIALPAD_LAYOUT[keypadMode].map((row, rowIndex) => (
-                <View key={rowIndex} style={styles.compactRow}>
-                  {row.map((char) => (
-                    <TouchableOpacity
-                      key={char}
-                      style={[
-                        styles.compactButton,
-                        char === "⌫" && styles.backspaceButton,
-                        char === "0x" && styles.prefixButton,
-                        char === "↑" && styles.shiftButton,
-                        char === "↓" && styles.shiftButton,
-                        char === "␣" && styles.spaceButton,
-                        char === "✓" && styles.confirmButton,
-                      ]}
-                      onPress={() => handleCharPress(char)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.compactButtonText,
-                          char === "⌫" && styles.backspaceText,
-                          char === "0x" && styles.prefixText,
-                          char === "↑" && styles.shiftText,
-                          char === "↓" && styles.shiftText,
-                          char === "␣" && styles.spaceText,
-                          char === "✓" && styles.confirmText,
-                        ]}
-                      >
-                        {char === "␣" ? "space" : char}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Call Actions */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={[
-              styles.videoCallButton,
-              !validationStatus.isValid && styles.disabledButton,
-            ]}
-            onPress={() => handleCall("video")}
-            disabled={!validationStatus.isValid}
-          >
-            <MaterialCommunityIcons
-              name="video"
-              size={28}
-              color={validationStatus.isValid ? "white" : colors.textSecondary}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.voiceCallButton,
-              !validationStatus.isValid && styles.disabledCallButton,
-            ]}
-            onPress={() => handleCall("voice")}
-            disabled={!validationStatus.isValid}
-          >
-            <MaterialCommunityIcons name="phone" size={32} color="white" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.videoCallButton,
-              !validationStatus.isValid && styles.disabledButton,
-            ]}
-            onPress={() => {
-              if (
-                validationStatus.isValid &&
-                validationStatus.checksumAddress
-              ) {
-                Alert.alert("Add Contact", "Feature coming soon!");
-              }
-            }}
-            disabled={!validationStatus.isValid}
-          >
-            <MaterialCommunityIcons
-              name="account-plus"
-              size={28}
-              color={validationStatus.isValid ? "white" : colors.textSecondary}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* Web3 Identifier Examples & Recent Contacts */}
-        <View style={styles.quickActionsContainer}>
-          <Text style={styles.quickActionsTitle}>Web3 Calling</Text>
-
-          {contacts.length > 0 ? (
-            <>
-              <Text style={styles.sectionSubtitle}>Recent Contacts</Text>
-              <View style={styles.recentContactsList}>
-                {contacts.slice(0, 3).map((contact) => (
-                  <TouchableOpacity
-                    key={contact.address}
-                    style={styles.recentContactItem}
-                    onPress={() => {
-                      setWalletInput(contact.address);
-                    }}
-                  >
+                {walletInput &&
+                  !walletInput.startsWith("0x") &&
+                  !walletInput.endsWith(".eth") && (
                     <View
                       style={[
-                        styles.recentContactAvatar,
-                        { backgroundColor: getAvatarColor(contact.address) },
+                        styles.inputTypeTag,
+                        { backgroundColor: "#10B981" },
                       ]}
                     >
-                      <Text style={styles.recentContactInitials}>
-                        {contact.name.substring(0, 2).toUpperCase()}
-                      </Text>
+                      <Text style={styles.inputTypeText}>Username</Text>
                     </View>
-                    <Text style={styles.recentContactName} numberOfLines={1}>
-                      {contact.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                  )}
               </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.sectionSubtitle}>Quick Input Options</Text>
-              <View style={styles.quickOptionsGrid}>
+            </View>
+
+            {/* QR Code Scanner and Toggle Buttons */}
+            <View style={styles.inputActionsContainer}>
+              <TouchableOpacity
+                style={styles.inputToggleButton}
+                onPress={() => setShowManualInput(!showManualInput)}
+              >
+                <MaterialCommunityIcons
+                  name={showManualInput ? "dialpad" : "keyboard"}
+                  size={20}
+                  color={colors.primary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.rightActionsContainer}>
+              <TouchableOpacity
+                style={styles.recentContactsButton}
+                onPress={() => setShowRecentContacts(true)}
+              >
+                <MaterialCommunityIcons
+                  name="clock-outline"
+                  size={20}
+                  color="white"
+                />
+              </TouchableOpacity>
+
+              {walletInput.length > 0 && (
                 <TouchableOpacity
-                  style={styles.quickOptionCard}
+                  style={styles.clearButton}
+                  onPress={() => setWalletInput("")}
+                >
+                  <MaterialCommunityIcons
+                    name="close-circle"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Input Method */}
+          {showManualInput ? (
+            <View style={styles.manualInputContainer}>
+              <Text style={styles.inputLabel}>Enter Web3 Address</Text>
+              <Text style={styles.inputSubLabel}>
+                Wallet address, ENS name, or username
+              </Text>
+
+              <TextInput
+                style={styles.manualInput}
+                placeholder="0x1234... or alice.eth or @username"
+                placeholderTextColor={colors.textSecondary}
+                value={walletInput}
+                onChangeText={handleManualInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="ascii-capable"
+                maxLength={100}
+                multiline={false}
+                returnKeyType="done"
+              />
+
+              {/* Quick Action Buttons */}
+              <View style={styles.quickInputActions}>
+                <TouchableOpacity
+                  style={styles.quickActionButton}
                   onPress={handleQRScan}
                 >
                   <MaterialCommunityIcons
                     name="qrcode-scan"
-                    size={32}
+                    size={18}
                     color={colors.primary}
                   />
-                  <Text style={styles.quickOptionTitle}>Scan QR Code</Text>
-                  <Text style={styles.quickOptionDesc}>Camera scanner</Text>
+                  <Text style={styles.quickActionText}>Scan QR</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.quickOptionCard}
+                  style={styles.quickActionButton}
                   onPress={handlePasteFromClipboard}
                 >
                   <MaterialCommunityIcons
                     name="clipboard-outline"
-                    size={32}
+                    size={18}
                     color={colors.primary}
                   />
-                  <Text style={styles.quickOptionTitle}>Paste Address</Text>
-                  <Text style={styles.quickOptionDesc}>From clipboard</Text>
+                  <Text style={styles.quickActionText}>Paste</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickActionButton}
+                  onPress={() => setWalletInput("")}
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={18}
+                    color={colors.textSecondary}
+                  />
+                  <Text style={styles.quickActionText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.dialpadContainer}>
+              {/* Keypad Mode Selector */}
+              <View style={styles.modeSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.modeButton,
+                    keypadMode === "numbers" && styles.activeModeButton,
+                  ]}
+                  onPress={() => setKeypadMode("numbers")}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      keypadMode === "numbers" && styles.activeModeButtonText,
+                    ]}
+                  >
+                    123
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modeButton,
+                    keypadMode === "lowercase" && styles.activeModeButton,
+                  ]}
+                  onPress={() => setKeypadMode("lowercase")}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      keypadMode === "lowercase" && styles.activeModeButtonText,
+                    ]}
+                  >
+                    abc
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.modeButton,
+                    keypadMode === "uppercase" && styles.activeModeButton,
+                  ]}
+                  onPress={() => setKeypadMode("uppercase")}
+                >
+                  <Text
+                    style={[
+                      styles.modeButtonText,
+                      keypadMode === "uppercase" && styles.activeModeButtonText,
+                    ]}
+                  >
+                    ABC
+                  </Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.sectionSubtitle}>Supported Formats</Text>
-              <View style={styles.examplesList}>
-                <View style={styles.exampleItem}>
-                  <Text style={styles.exampleType}>Wallet:</Text>
-                  <Text style={styles.exampleValue}>0x742d...5c74</Text>
-                </View>
-                <View style={styles.exampleItem}>
-                  <Text style={styles.exampleType}>ENS:</Text>
-                  <Text style={styles.exampleValue}>alice.eth</Text>
-                </View>
-                <View style={styles.exampleItem}>
-                  <Text style={styles.exampleType}>Username:</Text>
-                  <Text style={styles.exampleValue}>@blockfinax</Text>
-                </View>
+              {/* Compact Keypad */}
+              <View style={styles.compactDialpad}>
+                {DIALPAD_LAYOUT[keypadMode].map((row, rowIndex) => (
+                  <View key={rowIndex} style={styles.compactRow}>
+                    {row.map((char) => (
+                      <TouchableOpacity
+                        key={char}
+                        style={[
+                          styles.compactButton,
+                          char === "⌫" && styles.backspaceButton,
+                          char === "0x" && styles.prefixButton,
+                          char === "↑" && styles.shiftButton,
+                          char === "↓" && styles.shiftButton,
+                          char === "␣" && styles.spaceButton,
+                          char === "✓" && styles.confirmButton,
+                        ]}
+                        onPress={() => handleCharPress(char)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.compactButtonText,
+                            char === "⌫" && styles.backspaceText,
+                            char === "0x" && styles.prefixText,
+                            char === "↑" && styles.shiftText,
+                            char === "↓" && styles.shiftText,
+                            char === "␣" && styles.spaceText,
+                            char === "✓" && styles.confirmText,
+                          ]}
+                        >
+                          {char === "␣" ? "space" : char}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))}
               </View>
-            </>
+            </View>
           )}
+
+          {/* Call Actions */}
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.videoCallButton,
+                !validationStatus.isValid && styles.disabledButton,
+              ]}
+              onPress={() => handleCall("video")}
+              disabled={!validationStatus.isValid}
+            >
+              <MaterialCommunityIcons
+                name="video"
+                size={28}
+                color={
+                  validationStatus.isValid ? "white" : colors.textSecondary
+                }
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.voiceCallButton,
+                !validationStatus.isValid && styles.disabledCallButton,
+              ]}
+              onPress={() => handleCall("voice")}
+              disabled={!validationStatus.isValid}
+            >
+              <MaterialCommunityIcons name="phone" size={32} color="white" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.contactsButton,
+                !validationStatus.isValid && styles.disabledButton,
+              ]}
+              onPress={() => {
+                if (
+                  validationStatus.isValid &&
+                  validationStatus.checksumAddress
+                ) {
+                  Alert.alert("Add Contact", "Feature coming soon!");
+                }
+              }}
+              disabled={!validationStatus.isValid}
+            >
+              <MaterialCommunityIcons
+                name="account-plus"
+                size={26}
+                color={
+                  validationStatus.isValid ? "white" : colors.textSecondary
+                }
+              />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
+
+      {/* Recent Contacts Modal */}
+      <Modal
+        visible={showRecentContacts}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => {
+          setShowRecentContacts(false);
+          setContactSearchQuery("");
+        }}
+      >
+        <View style={styles.recentContactsModal}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Recent Contacts</Text>
+            <TouchableOpacity
+              style={styles.closeModalButton}
+              onPress={() => {
+                setShowRecentContacts(false);
+                setContactSearchQuery("");
+              }}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.searchContainer}>
+            <MaterialCommunityIcons
+              name="magnify"
+              size={20}
+              color={colors.textSecondary}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search contacts by name..."
+              placeholderTextColor={colors.textSecondary}
+              value={contactSearchQuery}
+              onChangeText={setContactSearchQuery}
+              autoFocus={false}
+            />
+            {contactSearchQuery.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearSearchButton}
+                onPress={() => setContactSearchQuery("")}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <FlatList
+            data={filteredContacts}
+            keyExtractor={(item) => item.walletAddress}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.contactsList}
+            renderItem={({ item: contact }) => (
+              <TouchableOpacity
+                style={styles.contactItem}
+                onPress={() => {
+                  Alert.alert("Call Contact", `Call ${contact.name}?`, [
+                    { text: "Cancel", style: "cancel" },
+                    {
+                      text: "Voice Call",
+                      onPress: () => {
+                        initiateCall(contact.walletAddress, "voice");
+                        setShowRecentContacts(false);
+                        setContactSearchQuery("");
+                      },
+                    },
+                    {
+                      text: "Video Call",
+                      onPress: () => {
+                        initiateCall(contact.walletAddress, "video");
+                        setShowRecentContacts(false);
+                        setContactSearchQuery("");
+                      },
+                    },
+                  ]);
+                }}
+              >
+                <View
+                  style={[
+                    styles.contactAvatar,
+                    { backgroundColor: getAvatarColor(contact.walletAddress) },
+                  ]}
+                >
+                  <Text style={styles.contactInitials}>
+                    {contact.name.substring(0, 2).toUpperCase()}
+                  </Text>
+                </View>
+
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactName}>{contact.name}</Text>
+                  <Text style={styles.contactAddress} numberOfLines={1}>
+                    {formatWalletAddress(contact.walletAddress)}
+                  </Text>
+                </View>
+
+                <View style={styles.callActions}>
+                  <TouchableOpacity
+                    style={styles.callActionButton}
+                    onPress={() => {
+                      initiateCall(contact.walletAddress, "voice");
+                      setShowRecentContacts(false);
+                      setContactSearchQuery("");
+                    }}
+                  >
+                    <MaterialCommunityIcons
+                      name="phone"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.callActionButton}
+                    onPress={() => {
+                      initiateCall(contact.walletAddress, "video");
+                      setShowRecentContacts(false);
+                      setContactSearchQuery("");
+                    }}
+                  >
+                    <MaterialCommunityIcons
+                      name="video"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <MaterialCommunityIcons
+                  name="account-search"
+                  size={64}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.emptyStateText}>
+                  {contactSearchQuery.trim()
+                    ? "No contacts found matching your search"
+                    : "No recent contacts yet"}
+                </Text>
+                <Text style={styles.emptyStateSubtext}>
+                  {contactSearchQuery.trim()
+                    ? "Try a different search term"
+                    : "Start making calls to see contacts here"}
+                </Text>
+              </View>
+            }
+          />
+        </View>
+      </Modal>
 
       {/* QR Code Scanner Modal */}
       <Modal
         visible={isScanning}
         animationType="slide"
         presentationStyle="fullScreen"
+        onRequestClose={() => {
+          setIsScanning(false);
+          setHasScanned(false);
+        }}
       >
         <View style={styles.scannerContainer}>
           <View style={styles.scannerHeader}>
@@ -732,15 +854,14 @@ export const DialerScreen: React.FC = () => {
                 setHasScanned(false);
               }}
             >
-              <MaterialCommunityIcons name="close" size={28} color="white" />
+              <MaterialCommunityIcons name="close" size={24} color="white" />
             </TouchableOpacity>
             <Text style={styles.scannerTitle}>Scan QR Code</Text>
             <TouchableOpacity
-              style={styles.manualQRButton}
+              style={styles.closeScannerButton}
               onPress={() => {
-                setIsScanning(false);
                 Alert.prompt(
-                  "Enter QR Content",
+                  "Manual QR Entry",
                   "Paste the QR code content manually:",
                   [
                     { text: "Cancel", style: "cancel" },
@@ -781,18 +902,12 @@ export const DialerScreen: React.FC = () => {
                 <View style={[styles.corner, styles.bottomLeft]} />
                 <View style={[styles.corner, styles.bottomRight]} />
               </View>
-
-              <Text style={styles.scannerInstructions}>
-                Point your camera at a QR code containing a wallet address
-              </Text>
-
               <TouchableOpacity
                 style={styles.manualEntryButton}
                 onPress={() => {
-                  setIsScanning(false);
                   Alert.prompt(
                     "Manual QR Entry",
-                    "Enter the QR code content:",
+                    "Paste the QR code content manually:",
                     [
                       { text: "Cancel", style: "cancel" },
                       {
@@ -822,122 +937,186 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: spacing.xl,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
+  innerContainer: {
+    flex: 1,
   },
   displayContainer: {
-    alignItems: "center",
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    minHeight: 120,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+    minHeight: 140,
     justifyContent: "center",
+    alignItems: "center",
     position: "relative",
-    flexDirection: "row",
   },
   addressContainer: {
-    flex: 1,
+    width: "100%",
     alignItems: "center",
+    paddingHorizontal: spacing.lg,
   },
   addressDisplay: {
-    fontSize: 18,
-    fontWeight: "500",
+    fontSize: 16,
+    fontWeight: "600",
     color: colors.text,
     textAlign: "center",
-    letterSpacing: 0.5,
-    marginBottom: spacing.xs,
+    letterSpacing: 0.3,
+    marginBottom: spacing.sm,
     fontFamily: "monospace",
+    lineHeight: 24,
+    flexWrap: "wrap",
+    maxWidth: "90%",
   },
   validationText: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: "center",
     fontWeight: "500",
+    marginTop: spacing.xs,
   },
   inputActionsContainer: {
     position: "absolute",
-    left: spacing.md,
+    left: spacing.lg,
     top: "50%",
-    marginTop: -25,
-    gap: spacing.xs,
+    transform: [{ translateY: -20 }],
+    gap: spacing.sm,
   },
   inputToggleButton: {
-    padding: spacing.sm,
+    width: 40,
+    height: 40,
     borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  qrScanButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  rightActionsContainer: {
+    position: "absolute",
+    right: spacing.lg,
+    top: "50%",
+    transform: [{ translateY: -20 }],
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  recentContactsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#FF6B35",
+    borderWidth: 1.5,
+    borderColor: "#FF6B35",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#FF6B35",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  clearButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  qrScanButton: {
-    padding: spacing.sm,
-    borderRadius: 20,
-    backgroundColor: colors.primary,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  clearButton: {
-    position: "absolute",
-    right: spacing.md,
-    top: "50%",
-    marginTop: -12,
-    padding: spacing.sm,
-  },
   dialpadContainer: {
     flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
   },
   modeSelector: {
     flexDirection: "row",
     justifyContent: "center",
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
     backgroundColor: colors.surface,
-    borderRadius: 25,
-    padding: spacing.xs,
-    borderWidth: 1,
+    borderRadius: 28,
+    padding: 4,
+    borderWidth: 1.5,
     borderColor: colors.border,
+    marginHorizontal: spacing.xl,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   modeButton: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: 20,
-    marginHorizontal: spacing.xs,
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: 24,
+    alignItems: "center",
+    marginHorizontal: 2,
   },
   activeModeButton: {
     backgroundColor: colors.primary,
+    elevation: 4,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   modeButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: colors.text,
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textSecondary,
   },
   activeModeButtonText: {
     color: "white",
   },
   compactDialpad: {
     alignItems: "center",
+    paddingVertical: spacing.md,
   },
   compactRow: {
     flexDirection: "row",
     justifyContent: "center",
-    marginBottom: spacing.xs,
-    gap: spacing.xs,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
   },
   compactButton: {
-    width: 50,
-    height: 45,
-    borderRadius: 8,
+    width: BUTTON_SIZE,
+    height: BUTTON_SIZE * 0.9,
+    borderRadius: IS_SMALL_SCREEN ? 10 : 12,
     backgroundColor: colors.surface,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    elevation: 1,
+    elevation: 2,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
   },
   compactButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: IS_SMALL_SCREEN ? 16 : 18,
+    fontWeight: "700",
     color: colors.text,
   },
   dialpadChar: {
@@ -962,58 +1141,80 @@ const styles = StyleSheet.create({
   },
   actionsContainer: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-evenly",
     alignItems: "center",
     paddingVertical: spacing.xl,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   voiceCallButton: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     backgroundColor: "#34C759",
     alignItems: "center",
     justifyContent: "center",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    elevation: 4,
+    shadowColor: "#34C759",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   videoCallButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    elevation: 3,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  contactsButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#8A2BE2",
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#8A2BE2",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
   },
   disabledCallButton: {
     backgroundColor: colors.border,
   },
   disabledButton: {
     backgroundColor: colors.border,
+    elevation: 0,
+    shadowOpacity: 0,
   },
   backspaceButton: {
     backgroundColor: "#FF6B6B",
+    borderColor: "#FF6B6B",
   },
   prefixButton: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   shiftButton: {
     backgroundColor: "#4ECDC4",
+    borderColor: "#4ECDC4",
   },
   spaceButton: {
     backgroundColor: colors.border,
-    width: 80,
+    width: 88,
   },
   confirmButton: {
     backgroundColor: "#34C759",
+    borderColor: "#34C759",
   },
   shiftText: {
     color: "white",
@@ -1028,103 +1229,130 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   quickActionsContainer: {
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.xl,
     alignItems: "center",
+    backgroundColor: colors.surface,
+    marginTop: spacing.sm,
   },
   quickActionsTitle: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
     color: colors.text,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   quickActionsSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textSecondary,
     textAlign: "center",
+    lineHeight: 18,
   },
   manualInputContainer: {
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
   },
   inputLabel: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     color: colors.text,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
     textAlign: "center",
   },
   inputSubLabel: {
-    fontSize: 14,
+    fontSize: 15,
     color: colors.textSecondary,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
     textAlign: "center",
+    lineHeight: 22,
   },
   manualInput: {
     backgroundColor: colors.surface,
     borderWidth: 2,
     borderColor: colors.border,
-    borderRadius: 16,
-    paddingHorizontal: spacing.lg,
+    borderRadius: 20,
+    paddingHorizontal: spacing.xl,
     paddingVertical: spacing.lg,
     fontSize: 16,
     color: colors.text,
     fontFamily: "monospace",
     textAlign: "center",
-    minHeight: 60,
+    minHeight: 64,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   quickInputActions: {
     flexDirection: "row",
     justifyContent: "center",
-    marginTop: spacing.lg,
-    gap: spacing.md,
+    marginTop: spacing.xl,
+    gap: spacing.lg,
   },
   quickActionButton: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: 20,
-    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: 24,
+    borderWidth: 1.5,
     borderColor: colors.border,
-    gap: spacing.xs,
+    gap: spacing.sm,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    minWidth: 100,
+    justifyContent: "center",
   },
   quickActionText: {
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 13,
+    fontWeight: "600",
     color: colors.text,
   },
   recentContactsList: {
     flexDirection: "row",
     justifyContent: "center",
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
     marginTop: spacing.sm,
   },
   recentContactItem: {
     alignItems: "center",
-    padding: spacing.sm,
-    borderRadius: 12,
+    padding: spacing.md,
+    borderRadius: 16,
     backgroundColor: colors.surface,
-    minWidth: 70,
+    minWidth: 80,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   recentContactAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
+    elevation: 1,
   },
   recentContactInitials: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 17,
+    fontWeight: "700",
     color: "white",
   },
   recentContactName: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.text,
-    fontWeight: "500",
+    fontWeight: "600",
+    textAlign: "center",
   },
   inputTypeContainer: {
     marginTop: spacing.xs,
@@ -1299,25 +1527,139 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
+
+  // Recent Contacts Modal Styles
+  recentContactsModal: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  closeModalButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: spacing.xl,
+    marginVertical: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: 25,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  searchIcon: {
+    marginRight: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    fontSize: 16,
+    color: colors.text,
+  },
+  clearSearchButton: {
+    padding: spacing.xs,
+  },
+  contactsList: {
+    paddingHorizontal: spacing.xl,
+  },
+  contactItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  contactAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.lg,
+  },
+  contactInitials: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "white",
+  },
+  contactInfo: {
+    flex: 1,
+  },
+  contactName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: 2,
+  },
+  contactAddress: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontFamily: "monospace",
+  },
+  callActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  callActionButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.xl * 2,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: spacing.lg,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
 });
-
-// Helper function to generate avatar colors
-const getAvatarColor = (address: string): string => {
-  const colors_list = [
-    "#FF6B6B",
-    "#4ECDC4",
-    "#45B7D1",
-    "#96CEB4",
-    "#FFEAA7",
-    "#DDA0DD",
-    "#98D8C8",
-    "#F7DC6F",
-    "#BB8FCE",
-    "#85C1E9",
-  ];
-
-  const hash = address
-    .split("")
-    .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return colors_list[hash % colors_list.length];
-};
