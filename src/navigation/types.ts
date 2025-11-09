@@ -66,6 +66,10 @@ export type MessagesStackParamList = {
     callType: 'voice' | 'video';
     isIncoming: boolean;
   };
+  Dialer: undefined;
+  ContactSelector: {
+    callType: 'voice' | 'video';
+  };
 };
 
 export type TradeStackParamList = {

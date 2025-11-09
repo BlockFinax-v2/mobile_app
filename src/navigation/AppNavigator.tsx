@@ -4,6 +4,8 @@ import { TransactionDetailsScreen } from "@/screens/dashboard/TransactionDetails
 import { CreateInvoiceScreen } from "@/screens/invoices";
 import { ChatScreen } from "@/screens/messages/ChatScreen";
 import { MessagesHomeScreen } from "@/screens/messages/MessagesHomeScreen";
+import { DialerScreen } from "@/screens/messages/DialerScreen";
+import { ContactSelector } from "@/screens/messages/ContactSelector";
 import { DebugScreen } from "@/screens/profile/DebugScreen";
 import { NetworkConfigScreen } from "@/screens/profile/NetworkConfigScreen";
 import { ProfileHomeScreen } from "@/screens/profile/ProfileHomeScreen";
@@ -194,6 +196,28 @@ const MessagesNavigator = () => (
       name="Chat"
       component={ChatScreen}
       options={{ title: "Chat" }}
+    />
+    <MessagesStack.Screen
+      name="Dialer"
+      component={DialerScreen}
+      options={{
+        headerShown: true,
+        title: "Dialer",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <MessagesStack.Screen
+      name="ContactSelector"
+      component={ContactSelector}
+      options={{
+        headerShown: true,
+        title: "Select Contact",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
     />
   </MessagesStack.Navigator>
 );

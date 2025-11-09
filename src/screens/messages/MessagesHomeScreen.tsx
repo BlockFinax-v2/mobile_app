@@ -377,88 +377,96 @@ export const MessagesHomeScreen: React.FC = () => {
     const timeAgo = formatTimeAgo(item.startTime || new Date());
 
     const getCallIcon = () => {
-      if (item.type === "video") {
-        return item.status === "missed" ? "video-off" : "video";
+      if (isOutgoing) {
+        return item.status === "missed" || item.status === "rejected"
+          ? "phone-outgoing"
+          : "phone-outgoing";
+      } else {
+        return item.status === "missed" ? "phone-missed" : "phone-incoming";
       }
-      return item.status === "missed" ? "phone-missed" : "phone";
     };
 
-    const getCallStatusColor = () => {
-      switch (item.status) {
-        case "missed":
-          return colors.error;
-        case "rejected":
-          return colors.error;
-        case "ended":
-          return colors.textSecondary;
-        default:
-          return colors.primary;
+    const getCallIconColor = () => {
+      if (item.status === "missed") {
+        return "#FF3B30"; // Red for missed calls
+      } else if (item.status === "rejected") {
+        return "#FF3B30"; // Red for rejected calls
       }
+      return "#34C759"; // Green for successful calls
+    };
+
+    const getCallStatusText = () => {
+      const duration = item.duration
+        ? `${Math.floor(item.duration / 60)}:${(item.duration % 60)
+            .toString()
+            .padStart(2, "0")}`
+        : null;
+
+      if (item.status === "missed") {
+        return `${timeAgo}`;
+      } else if (item.status === "rejected") {
+        return `${timeAgo}`;
+      } else if (duration) {
+        return `${timeAgo}`;
+      }
+      return timeAgo;
     };
 
     const handleCallBack = () => {
-      Alert.alert("Call Back", `Call ${displayName}?`, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Voice Call",
-          onPress: () =>
-            otherParticipant && initiateCall(otherParticipant, "voice"),
-        },
-        {
-          text: "Video Call",
-          onPress: () =>
-            otherParticipant && initiateCall(otherParticipant, "video"),
-        },
-      ]);
+      // Directly call back with the same type as the previous call
+      initiateCall(otherParticipant, item.type);
     };
 
     return (
       <TouchableOpacity style={styles.callItem} onPress={handleCallBack}>
-        <View style={styles.avatarContainer}>
-          {contact?.avatar ? (
-            <Image source={{ uri: contact.avatar }} style={styles.avatar} />
-          ) : (
-            <View style={[styles.avatar, { backgroundColor: colors.primary }]}>
-              <Text style={styles.avatarText}>
-                {displayName.charAt(0).toUpperCase()}
+        <View style={styles.callItemLeft}>
+          <View style={styles.callAvatarContainer}>
+            {contact?.avatar ? (
+              <Image
+                source={{ uri: contact.avatar }}
+                style={styles.callAvatar}
+              />
+            ) : (
+              <View
+                style={[styles.callAvatar, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.callAvatarText}>
+                  {displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.callDetails}>
+            <Text style={styles.callContactName}>{displayName}</Text>
+            <View style={styles.callStatusRow}>
+              <MaterialCommunityIcons
+                name={getCallIcon()}
+                size={16}
+                color={getCallIconColor()}
+              />
+              <Text
+                style={[
+                  styles.callStatusText,
+                  item.status === "missed" && { color: "#FF3B30" },
+                ]}
+              >
+                {getCallStatusText()}
               </Text>
             </View>
-          )}
-        </View>
-
-        <View style={styles.callContent}>
-          <Text style={styles.contactName}>{displayName}</Text>
-          <View style={styles.callInfo}>
-            <MaterialCommunityIcons
-              name={isOutgoing ? "call-made" : "call-received"}
-              size={14}
-              color={getCallStatusColor()}
-            />
-            <Text style={[styles.callStatus, { color: getCallStatusColor() }]}>
-              {isOutgoing ? "Outgoing" : "Incoming"} • {item.status}
-            </Text>
-            {item.duration && (
-              <Text style={styles.callDuration}>
-                • {Math.floor(item.duration / 60)}:
-                {(item.duration % 60).toString().padStart(2, "0")}
-              </Text>
-            )}
           </View>
         </View>
 
-        <View style={styles.callActions}>
-          <Text style={styles.timestamp}>{timeAgo}</Text>
-          <TouchableOpacity
-            style={styles.callBackButton}
-            onPress={handleCallBack}
-          >
-            <MaterialCommunityIcons
-              name={getCallIcon()}
-              size={20}
-              color={colors.primary}
-            />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.callBackButton}
+          onPress={() => initiateCall(otherParticipant, "voice")}
+        >
+          <MaterialCommunityIcons
+            name="phone"
+            size={20}
+            color={colors.primary}
+          />
+        </TouchableOpacity>
       </TouchableOpacity>
     );
   };
@@ -483,6 +491,16 @@ export const MessagesHomeScreen: React.FC = () => {
               </View>
             </View>
             <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={styles.headerButton}
+                onPress={() => navigation.navigate("Dialer")}
+              >
+                <MaterialCommunityIcons
+                  name="dialpad"
+                  size={24}
+                  color={colors.primary}
+                />
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.headerButton}
                 onPress={() => setShowContactModal(true)}
@@ -655,6 +673,17 @@ export const MessagesHomeScreen: React.FC = () => {
           )}
         </View>
       </View>
+
+      {/* Floating Dialer Button - Only show on calls tab */}
+      {activeTab === "calls" && (
+        <TouchableOpacity
+          style={styles.floatingDialerButton}
+          onPress={() => navigation.navigate("Dialer")}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons name="dialpad" size={28} color="white" />
+        </TouchableOpacity>
+      )}
 
       {/* Contact Management Modal */}
       <Modal
@@ -1428,7 +1457,65 @@ const styles = StyleSheet.create({
   },
   callBackButton: {
     padding: spacing.sm,
-    borderRadius: 8,
-    backgroundColor: colors.primary + "20",
+    borderRadius: 20,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  callItemLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  callAvatarContainer: {
+    marginRight: spacing.md,
+  },
+  callAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  callAvatarText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "white",
+  },
+  callDetails: {
+    flex: 1,
+  },
+  callContactName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: 2,
+  },
+  callStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  callStatusText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  floatingDialerButton: {
+    position: "absolute",
+    bottom: spacing.xl,
+    right: spacing.lg,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
 });

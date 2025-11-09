@@ -24,6 +24,8 @@
     "ethers": "^5.8.0",
     "expo": "~54.0.20",
     "expo-av": "^16.0.7",
+    "expo-barcode-scanner": "^13.0.1",
+    "expo-camera": "^17.0.9",
     "expo-clipboard": "~8.0.7",
     "expo-constants": "~18.0.10",
     "expo-crypto": "^13.0.2",
