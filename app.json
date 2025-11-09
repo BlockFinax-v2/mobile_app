@@ -61,7 +61,9 @@
       "router": {},
       "eas": {
         "projectId": "ae4573b5-e8f2-4e9c-875f-07a6b886a57d"
-      }
-    }
+      },
+      "socketUrl": "https://server-production-2529.up.railway.app"
+    },
+    "owner": "sobil"
   }
 }

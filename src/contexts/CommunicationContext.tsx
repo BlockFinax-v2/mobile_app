@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useWallet } from "@/contexts/WalletContext";
+import AppConfig from "@/config/AppConfig";
 import React, {
   createContext,
   useContext,
@@ -168,9 +169,8 @@ const CommunicationContext = createContext<
   CommunicationContextType | undefined
 >(undefined);
 
-// WebSocket server URL - replace with your actual server
-const SOCKET_URL =
-  process.env.EXPO_PUBLIC_SOCKET_URL || "http://localhost:3001";
+// WebSocket server URL - using configuration from AppConfig
+const SOCKET_URL = AppConfig.socketUrl;
 
 export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -201,7 +201,11 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     if (!address) return;
 
-    console.log("Attempting to connect to socket server:", SOCKET_URL);
+    console.log("🔗 Initializing socket connection...");
+    console.log("📍 Socket URL:", SOCKET_URL);
+    console.log("👤 User address:", address);
+    console.log("🔧 AppConfig debug:", AppConfig.debug);
+
     const newSocket = io(SOCKET_URL, {
       transports: ["websocket"],
       reconnection: true,
@@ -211,11 +215,16 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Connection events
     newSocket.on("connect", () => {
-      console.log("Connected to communication server");
+      console.log("✅ Connected to communication server successfully!");
+      console.log("🆔 Socket ID:", newSocket.id);
       setIsConnected(true);
       setSocket(newSocket);
 
       // Authenticate with server
+      console.log("🔐 Authenticating with server...", {
+        address,
+        name: `User ${address.slice(-4)}`,
+      });
       newSocket.emit("authenticate", {
         address,
         name: `User ${address.slice(-4)}`,
@@ -223,15 +232,22 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     newSocket.on("disconnect", (reason) => {
-      console.log("Disconnected from communication server:", reason);
+      console.warn("❌ Disconnected from server:", reason);
       setIsConnected(false);
       if (reason === "io server disconnect") {
+        console.log("🔄 Attempting reconnection...");
         newSocket.connect();
       }
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("Connection error:", error);
+      console.error("🚫 Connection error:", error);
+      console.error("🚫 Error details:", {
+        message: error.message,
+        description: (error as any).description || "No description",
+        context: (error as any).context || "No context",
+        type: (error as any).type || "Unknown type",
+      });
       setIsConnected(false);
     });
 
