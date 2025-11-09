@@ -59,6 +59,10 @@ export const MessagesHomeScreen: React.FC = () => {
     notes: "",
   });
   const [newChatAddress, setNewChatAddress] = useState("");
+  const [newChatContact, setNewChatContact] = useState({
+    name: "",
+    walletAddress: "",
+  });
 
   // Utility functions
   const formatTimeAgo = (timestamp: Date): string => {
@@ -139,19 +143,42 @@ export const MessagesHomeScreen: React.FC = () => {
   };
 
   const handleStartNewChat = async () => {
-    if (!newChatAddress) {
+    if (!newChatContact.walletAddress) {
       Alert.alert("Error", "Please enter a wallet address");
       return;
     }
 
     try {
-      const conversationId = await getOrCreateConversation(newChatAddress);
+      // Check if contact already exists
+      const existingContact = getContactByAddress(newChatContact.walletAddress);
+
+      // If contact doesn't exist and name is provided, add them as a contact
+      if (!existingContact && newChatContact.name.trim()) {
+        try {
+          await addContact({
+            name: newChatContact.name.trim(),
+            walletAddress: newChatContact.walletAddress,
+            address: newChatContact.walletAddress,
+            notes: `Added via new conversation on ${new Date().toLocaleDateString()}`,
+          });
+        } catch (error) {
+          console.warn(
+            "Failed to add contact, but continuing with chat:",
+            error
+          );
+        }
+      }
+
+      const conversationId = await getOrCreateConversation(
+        newChatContact.walletAddress
+      );
       setShowNewChatModal(false);
-      setNewChatAddress("");
+      setNewChatContact({ name: "", walletAddress: "" });
+      setNewChatAddress(""); // Keep for backward compatibility
 
       // Navigate to chat screen
       navigation.navigate("Chat", {
-        contactAddress: newChatAddress,
+        contactAddress: newChatContact.walletAddress,
       });
     } catch (error) {
       Alert.alert("Error", "Failed to start conversation. Please try again.");
@@ -795,13 +822,33 @@ export const MessagesHomeScreen: React.FC = () => {
             </View>
 
             <View style={styles.newChatForm}>
-              <TextInput
-                style={styles.newChatInput}
-                placeholder="Enter wallet address (0x...)"
-                value={newChatAddress}
-                onChangeText={setNewChatAddress}
-                autoCapitalize="none"
-              />
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Contact Name (Optional)</Text>
+                <TextInput
+                  style={styles.newChatInput}
+                  placeholder="Enter contact name"
+                  value={newChatContact.name}
+                  onChangeText={(text) =>
+                    setNewChatContact({ ...newChatContact, name: text })
+                  }
+                />
+              </View>
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Wallet Address *</Text>
+                <TextInput
+                  style={styles.newChatInput}
+                  placeholder="Enter wallet address (0x...)"
+                  value={newChatContact.walletAddress}
+                  onChangeText={(text) =>
+                    setNewChatContact({
+                      ...newChatContact,
+                      walletAddress: text,
+                    })
+                  }
+                  autoCapitalize="none"
+                />
+              </View>
 
               <View style={styles.newChatActions}>
                 <TouchableOpacity

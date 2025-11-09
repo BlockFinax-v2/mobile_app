@@ -175,7 +175,7 @@ const SOCKET_URL = AppConfig.socketUrl;
 export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { address } = useWallet();
+  const { address, settings } = useWallet();
 
   // State
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -221,13 +221,14 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       setSocket(newSocket);
 
       // Authenticate with server
+      const displayName = settings.displayName || `User ${address.slice(-4)}`;
       console.log("🔐 Authenticating with server...", {
         address,
-        name: `User ${address.slice(-4)}`,
+        name: displayName,
       });
       newSocket.emit("authenticate", {
         address,
-        name: `User ${address.slice(-4)}`,
+        name: displayName,
       });
     });
 
@@ -383,9 +384,11 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     const handleAppStateChange = (nextAppState: string) => {
       if (socket && address) {
         if (nextAppState === "active") {
+          const displayName =
+            settings.displayName || `User ${address.slice(-4)}`;
           socket.emit("authenticate", {
             address,
-            name: `User ${address.slice(-4)}`,
+            name: displayName,
           });
         } else if (
           nextAppState === "background" ||

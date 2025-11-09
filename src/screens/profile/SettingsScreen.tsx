@@ -43,6 +43,8 @@ export const SettingsScreen: React.FC = () => {
   const [biometricPassword, setBiometricPassword] = useState("");
   const [biometricError, setBiometricError] = useState<string | null>(null);
   const [isResetting, setIsResetting] = useState(false);
+  const [displayName, setDisplayName] = useState(settings.displayName || "");
+  const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
 
   const handleToggle = async (
     key: "enableBiometrics" | "notificationsEnabled",
@@ -122,6 +124,16 @@ export const SettingsScreen: React.FC = () => {
     }
   };
 
+  const handleSaveDisplayName = async () => {
+    try {
+      await updateSettings({ displayName: displayName.trim() || undefined });
+      setShowDisplayNameModal(false);
+      Alert.alert("Success", "Display name updated successfully");
+    } catch (error) {
+      Alert.alert("Error", "Failed to update display name");
+    }
+  };
+
   const handleResetWallet = () => {
     Alert.alert(
       "Reset Wallet Data",
@@ -157,6 +169,35 @@ export const SettingsScreen: React.FC = () => {
 
   return (
     <Screen>
+      <View style={styles.card}>
+        <Text variant="subtitle" color={palette.primaryBlue}>
+          Profile
+        </Text>
+        <Pressable
+          style={styles.networkRow}
+          onPress={() => setShowDisplayNameModal(true)}
+        >
+          <View style={styles.networkRowLeft}>
+            <MaterialCommunityIcons
+              name="account-circle"
+              size={24}
+              color={palette.primaryBlue}
+            />
+            <View>
+              <Text style={styles.networkRowTitle}>Display Name</Text>
+              <Text variant="small" color={palette.neutralMid}>
+                {settings.displayName || "Not set - using wallet address"}
+              </Text>
+            </View>
+          </View>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={palette.neutralMid}
+          />
+        </Pressable>
+      </View>
+
       <View style={styles.card}>
         <Text variant="subtitle" color={palette.primaryBlue}>
           Blockchain Networks
@@ -321,6 +362,53 @@ export const SettingsScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      {/* Display Name Modal */}
+      <Modal
+        visible={showDisplayNameModal}
+        animationType="slide"
+        transparent={true}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <Text
+              variant="subtitle"
+              color={palette.primaryBlue}
+              style={styles.modalTitle}
+            >
+              Set Display Name
+            </Text>
+            <Text
+              variant="small"
+              color={palette.neutralMid}
+              style={styles.modalDescription}
+            >
+              Choose how others see you in conversations. Leave empty to show
+              your wallet address.
+            </Text>
+
+            <Input
+              label="Display Name"
+              value={displayName}
+              onChangeText={setDisplayName}
+              placeholder="Enter your name"
+              autoCapitalize="words"
+            />
+
+            <View style={styles.modalActions}>
+              <Button
+                label="Cancel"
+                variant="outline"
+                onPress={() => {
+                  setDisplayName(settings.displayName || "");
+                  setShowDisplayNameModal(false);
+                }}
+              />
+              <Button label="Save" onPress={handleSaveDisplayName} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 };
@@ -385,5 +473,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     gap: spacing.sm,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.lg,
+  },
+  modalContainer: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: 24,
+    backgroundColor: palette.white,
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  modalDescription: {
+    marginBottom: spacing.sm,
   },
 });

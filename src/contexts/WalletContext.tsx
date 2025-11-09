@@ -318,6 +318,7 @@ export interface WalletSettings {
   notificationsEnabled: boolean;
   preferredCurrency: string;
   persistWallet: boolean;
+  displayName?: string; // User's chosen display name
 }
 
 export interface WalletBalances {
@@ -372,6 +373,7 @@ const defaultSettings: WalletSettings = {
   notificationsEnabled: true,
   preferredCurrency: "USD",
   persistWallet: false,
+  displayName: undefined, // No display name by default
 };
 
 export const WalletProvider: React.FC<React.PropsWithChildren> = ({
