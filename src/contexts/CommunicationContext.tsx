@@ -11,7 +11,12 @@ import React, {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import { Alert, AppState } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import uuid from "react-native-uuid";
+import WebRTCCallingService, {
+  CallData,
+  CallEvents,
+} from "@/services/WebRTCCallingService";
 
 // Types
 export interface Message {
@@ -110,6 +115,11 @@ interface CommunicationContextType {
   callHistory: CallInfo[];
   isInCall: boolean;
 
+  // WebRTC Streams
+  localStream: any | null;
+  remoteStream: any | null;
+  currentCallData: CallData | null;
+
   // Actions
   sendMessage: (
     toAddress: string,
@@ -146,6 +156,17 @@ interface CommunicationContextType {
   startVideoCall: (toAddress: string) => Promise<void>;
   currentCall?: CallInfo | null; // Alias for activeCall
 
+  // WebRTC Call Controls
+  toggleMute: () => boolean;
+  toggleVideo: () => boolean;
+  isAudioEnabled: () => boolean;
+  isVideoEnabled: () => boolean;
+
+  // Call Screen Navigation
+  showIncomingCallScreen: (callData: CallData) => void;
+  showActiveCallScreen: () => void;
+  hideCallScreens: () => void;
+
   // Typing indicators
   sendTypingIndicator: (conversationId: string, isTyping: boolean) => void;
   typingUsers: Record<string, string[]>; // conversationId -> typing user addresses[]
@@ -177,6 +198,14 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { address, settings } = useWallet();
 
+  // Use navigation only if available (inside NavigationContainer)
+  let navigation: any = null;
+  try {
+    navigation = useNavigation();
+  } catch (error) {
+    console.warn("Navigation not available in CommunicationProvider");
+  }
+
   // State
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -190,12 +219,84 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [callHistory, setCallHistory] = useState<CallInfo[]>([]);
   const [typingUsers, setTypingUsers] = useState<Record<string, string[]>>({});
 
+  // WebRTC State
+  const [localStream, setLocalStream] = useState<any | null>(null);
+  const [remoteStream, setRemoteStream] = useState<any | null>(null);
+  const [currentCallData, setCurrentCallData] = useState<CallData | null>(null);
+  const [showIncomingCall, setShowIncomingCall] = useState(false);
+  const [showActiveCall, setShowActiveCall] = useState(false);
+
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
   const typingTimeoutRef = useRef<
     Record<string, ReturnType<typeof setTimeout>>
   >({});
+  const webrtcServiceRef = useRef<WebRTCCallingService | null>(null);
+
+  // Initialize WebRTC Service
+  useEffect(() => {
+    if (!address) return;
+
+    console.log("🔗 Initializing WebRTC service...");
+    const webrtcService = new WebRTCCallingService(SOCKET_URL);
+    webrtcServiceRef.current = webrtcService;
+
+    // Setup WebRTC event handlers
+    const callEvents: CallEvents = {
+      onIncomingCall: (callData: CallData) => {
+        console.log("📞 Incoming call received:", callData);
+        setCurrentCallData(callData);
+        showIncomingCallScreen(callData);
+      },
+      onCallAccepted: (callId: string) => {
+        console.log("✅ Call accepted:", callId);
+        if (currentCallData) {
+          setCurrentCallData((prev) =>
+            prev ? { ...prev, status: "connecting" } : null
+          );
+          showActiveCallScreen();
+        }
+      },
+      onCallDeclined: (callId: string, reason?: string) => {
+        console.log("❌ Call declined:", callId, reason);
+        handleCallEnded();
+      },
+      onCallEnded: (callId: string, reason?: string) => {
+        console.log("📞 Call ended:", callId, reason);
+        handleCallEnded();
+      },
+      onCallError: (error: string) => {
+        console.error("☎️ Call error:", error);
+        Alert.alert("Call Error", error);
+        handleCallEnded();
+      },
+      onRemoteStream: (stream: MediaStream) => {
+        console.log("📺 Remote stream received");
+        setRemoteStream(stream);
+        if (currentCallData) {
+          setCurrentCallData((prev) =>
+            prev ? { ...prev, status: "connected" } : null
+          );
+        }
+      },
+      onLocalStream: (stream: MediaStream) => {
+        console.log("📹 Local stream received");
+        setLocalStream(stream);
+      },
+    };
+
+    webrtcService.setEventHandlers(callEvents);
+
+    // Authenticate with WebRTC service
+    const displayName = settings.displayName || `User ${address.slice(-4)}`;
+    webrtcService.authenticate(address, displayName);
+
+    return () => {
+      webrtcService.disconnect();
+      webrtcServiceRef.current = null;
+    };
+  }, [address, settings.displayName]);
 
   // Initialize socket connection
   useEffect(() => {
@@ -620,6 +721,49 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     []
   );
 
+  // Call screen navigation helpers
+  const showIncomingCallScreen = useCallback(
+    (callData: CallData) => {
+      setShowIncomingCall(true);
+      setShowActiveCall(false);
+      if (navigation) {
+        navigation.navigate("IncomingCallScreen", { callData });
+      }
+    },
+    [navigation]
+  );
+
+  const showActiveCallScreen = useCallback(() => {
+    setShowIncomingCall(false);
+    setShowActiveCall(true);
+    if (navigation) {
+      navigation.navigate("ActiveCallScreen", {
+        callData: currentCallData,
+        localStream,
+        remoteStream,
+      });
+    }
+  }, [navigation, currentCallData, localStream, remoteStream]);
+
+  const hideCallScreens = useCallback(() => {
+    setShowIncomingCall(false);
+    setShowActiveCall(false);
+  }, []);
+
+  const handleCallEnded = useCallback(() => {
+    // Clean up call state
+    setCurrentCallData(null);
+    setLocalStream(null);
+    setRemoteStream(null);
+    setActiveCall(null);
+    hideCallScreens();
+
+    // Navigate back to main app if navigation is available
+    if (navigation) {
+      navigation.goBack();
+    }
+  }, [navigation, hideCallScreens]);
+
   // Call handlers
   const handleIncomingCall = useCallback((callInfo: CallInfo) => {
     setActiveCall(callInfo);
@@ -648,15 +792,6 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const handleCallRejected = useCallback((callInfo: CallInfo) => {
-    setActiveCall(null);
-    setCallHistory((prev) => {
-      const updated = [callInfo, ...prev];
-      AsyncStorage.setItem("callHistory", JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  const handleCallEnded = useCallback((callInfo: CallInfo) => {
     setActiveCall(null);
     setCallHistory((prev) => {
       const updated = [callInfo, ...prev];
@@ -858,66 +993,101 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const initiateCall = useCallback(
     async (toAddress: string, type: "voice" | "video") => {
-      if (!socket || !address) throw new Error("Not connected");
+      if (!webrtcServiceRef.current || !address)
+        throw new Error("WebRTC service not available");
 
-      const callInfo: CallInfo = {
-        id: uuid.v4() as string,
-        fromAddress: address,
-        toAddress: toAddress.toLowerCase(),
-        participantAddress: toAddress.toLowerCase(),
-        participantName:
-          getContactByAddress(toAddress.toLowerCase())?.name || toAddress,
-        type,
-        status: "connecting",
-        timestamp: Date.now(),
-        isIncoming: false,
-        startTime: new Date(),
-      };
+      console.log("🔄 Initiating call:", { toAddress, type });
 
-      setActiveCall(callInfo);
-      socket.emit("start_call", { toAddress, callType: type });
+      try {
+        await webrtcServiceRef.current.initiateCall(toAddress, type);
+
+        // Create local call info for UI
+        const callInfo: CallInfo = {
+          id: uuid.v4() as string,
+          fromAddress: address,
+          toAddress: toAddress.toLowerCase(),
+          participantAddress: toAddress.toLowerCase(),
+          participantName:
+            getContactByAddress(toAddress.toLowerCase())?.name || toAddress,
+          type,
+          status: "connecting",
+          timestamp: Date.now(),
+          isIncoming: false,
+          startTime: new Date(),
+        };
+
+        setActiveCall(callInfo);
+        // Don't auto-navigate here, let the calling component handle navigation
+      } catch (error) {
+        console.error("❌ Failed to initiate call:", error);
+        Alert.alert("Call Failed", `Failed to initiate call: ${error}`);
+      }
     },
-    [socket, address]
+    [address, showActiveCallScreen, getContactByAddress]
   );
 
   const acceptCall = useCallback(
     async (callId: string) => {
-      if (!socket || !activeCall) return;
-      socket.emit("call_response", {
-        callId,
-        response: "accept",
-        toAddress: activeCall.fromAddress,
-      });
-      setActiveCall((prev) => (prev ? { ...prev, status: "active" } : null));
+      if (!webrtcServiceRef.current || !currentCallData) return;
+
+      console.log("✅ Accepting call:", callId);
+
+      try {
+        await webrtcServiceRef.current.acceptCall(callId);
+        setCurrentCallData((prev) =>
+          prev ? { ...prev, status: "connecting" } : null
+        );
+      } catch (error) {
+        console.error("❌ Failed to accept call:", error);
+        Alert.alert("Call Error", `Failed to accept call: ${error}`);
+        handleCallEnded();
+      }
     },
-    [socket, activeCall]
+    [currentCallData, handleCallEnded]
   );
 
   const rejectCall = useCallback(
     async (callId: string) => {
-      if (!socket || !activeCall) return;
-      socket.emit("call_response", {
-        callId,
-        response: "decline",
-        toAddress: activeCall.fromAddress,
-      });
-      setActiveCall(null);
+      if (!webrtcServiceRef.current) return;
+
+      console.log("❌ Rejecting call:", callId);
+      webrtcServiceRef.current.declineCall(callId);
+      handleCallEnded();
     },
-    [socket, activeCall]
+    [handleCallEnded]
   );
 
   const endCall = useCallback(
-    async (callId: string) => {
-      if (!socket) return;
-      socket.emit("call_response", {
-        callId,
-        response: "end",
-        toAddress: activeCall?.toAddress || activeCall?.fromAddress,
-      });
-      setActiveCall(null);
+    async (callId?: string) => {
+      if (!webrtcServiceRef.current) return;
+
+      console.log("📞 Ending call:", callId);
+      webrtcServiceRef.current.endCall();
+      handleCallEnded();
     },
-    [socket, activeCall]
+    [handleCallEnded]
   );
+
+  // WebRTC Controls
+  const toggleMute = useCallback((): boolean => {
+    if (!webrtcServiceRef.current) return false;
+    return webrtcServiceRef.current.toggleAudio();
+  }, []);
+
+  const toggleVideo = useCallback((): boolean => {
+    if (!webrtcServiceRef.current) return false;
+    return webrtcServiceRef.current.toggleVideo();
+  }, []);
+
+  const isAudioEnabled = useCallback((): boolean => {
+    if (!webrtcServiceRef.current) return false;
+    return webrtcServiceRef.current.isAudioEnabled();
+  }, []);
+
+  const isVideoEnabled = useCallback((): boolean => {
+    if (!webrtcServiceRef.current) return false;
+    return webrtcServiceRef.current.isVideoEnabled();
+  }, []);
 
   // Placeholder implementations for other functions
   const markMessageAsRead = useCallback(
@@ -1031,7 +1201,14 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     // Calls
     activeCall,
     callHistory,
-    isInCall: activeCall?.status === "active",
+    isInCall:
+      activeCall?.status === "active" ||
+      currentCallData?.status === "connected",
+
+    // WebRTC Streams
+    localStream,
+    remoteStream,
+    currentCallData,
 
     // Actions
     sendMessage,
@@ -1054,6 +1231,17 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     acceptCall,
     rejectCall,
     endCall,
+
+    // WebRTC Call Controls
+    toggleMute,
+    toggleVideo,
+    isAudioEnabled,
+    isVideoEnabled,
+
+    // Call Screen Navigation
+    showIncomingCallScreen,
+    showActiveCallScreen,
+    hideCallScreens,
 
     // Typing
     sendTypingIndicator,

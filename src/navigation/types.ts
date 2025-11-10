@@ -70,6 +70,29 @@ export type MessagesStackParamList = {
   ContactSelector: {
     callType: 'voice' | 'video';
   };
+  IncomingCallScreen: {
+    callData: {
+      callId: string;
+      participantAddress: string;
+      participantName: string;
+      callType: 'voice' | 'video';
+      isIncoming: boolean;
+      status: string;
+      startTime?: string;
+    };
+  };
+  ActiveCallScreen: {
+    callData: {
+      callId: string;
+      participantAddress: string;
+      participantName: string;
+      callType: 'voice' | 'video';
+      isIncoming: boolean;
+      status: string;
+    };
+    localStream: any | null;
+    remoteStream: any | null;
+  };
 };
 
 export type TradeStackParamList = {

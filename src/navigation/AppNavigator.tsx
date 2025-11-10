@@ -6,6 +6,8 @@ import { ChatScreen } from "@/screens/messages/ChatScreen";
 import { MessagesHomeScreen } from "@/screens/messages/MessagesHomeScreen";
 import { DialerScreen } from "@/screens/messages/DialerScreen";
 import { ContactSelector } from "@/screens/messages/ContactSelector";
+import IncomingCallScreen from "@/screens/IncomingCallScreen";
+import ActiveCallScreen from "@/screens/ActiveCallScreen";
 import { DebugScreen } from "@/screens/profile/DebugScreen";
 import { NetworkConfigScreen } from "@/screens/profile/NetworkConfigScreen";
 import { ProfileHomeScreen } from "@/screens/profile/ProfileHomeScreen";
@@ -217,6 +219,24 @@ const MessagesNavigator = () => (
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <MessagesStack.Screen
+      name="IncomingCallScreen"
+      component={IncomingCallScreen}
+      options={{
+        headerShown: false,
+        presentation: "modal",
+        gestureEnabled: false,
+      }}
+    />
+    <MessagesStack.Screen
+      name="ActiveCallScreen"
+      component={ActiveCallScreen}
+      options={{
+        headerShown: false,
+        presentation: "modal",
+        gestureEnabled: false,
       }}
     />
   </MessagesStack.Navigator>
