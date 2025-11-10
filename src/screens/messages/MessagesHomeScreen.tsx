@@ -13,7 +13,7 @@ import { spacing } from "@/theme/spacing";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Alert,
   FlatList,
@@ -279,6 +279,36 @@ export const MessagesHomeScreen: React.FC = () => {
     );
   };
 
+  const handleCallWithNavigation = useCallback(
+    async (contactAddress: string, callType: "voice" | "video") => {
+      // Find contact name
+      const contact = contacts.find((c) => c.walletAddress === contactAddress);
+      const participantName = contact?.name || "Unknown";
+
+      // Navigate to ActiveCallScreen first
+      navigation.navigate("ActiveCallScreen", {
+        callData: {
+          callId: `call_${Date.now()}`,
+          participantAddress: contactAddress,
+          participantName: participantName,
+          callType: callType,
+          isIncoming: false,
+          status: "connecting",
+        },
+        localStream: null,
+        remoteStream: null,
+      });
+
+      // Then initiate the actual call
+      try {
+        await initiateCall(contactAddress, callType);
+      } catch (error) {
+        console.error("Failed to initiate call:", error);
+      }
+    },
+    [navigation, contacts, initiateCall]
+  );
+
   const renderContactItem = ({ item }: { item: Contact }) => {
     const isOnline = onlineUsers[item.walletAddress]?.isOnline;
     const lastSeen = onlineUsers[item.walletAddress]?.lastSeen;
@@ -302,11 +332,11 @@ export const MessagesHomeScreen: React.FC = () => {
         { text: "Cancel", style: "cancel" },
         {
           text: "Voice Call",
-          onPress: () => initiateCall(item.walletAddress, "voice"),
+          onPress: () => handleCallWithNavigation(item.walletAddress, "voice"),
         },
         {
           text: "Video Call",
-          onPress: () => initiateCall(item.walletAddress, "video"),
+          onPress: () => handleCallWithNavigation(item.walletAddress, "video"),
         },
       ]);
     };
@@ -414,7 +444,7 @@ export const MessagesHomeScreen: React.FC = () => {
 
     const handleCallBack = () => {
       // Directly call back with the same type as the previous call
-      initiateCall(otherParticipant, item.type);
+      handleCallWithNavigation(otherParticipant, item.type);
     };
 
     return (
@@ -459,7 +489,7 @@ export const MessagesHomeScreen: React.FC = () => {
 
         <TouchableOpacity
           style={styles.callBackButton}
-          onPress={() => initiateCall(otherParticipant, "voice")}
+          onPress={() => handleCallWithNavigation(otherParticipant, "voice")}
         >
           <MaterialCommunityIcons
             name="phone"

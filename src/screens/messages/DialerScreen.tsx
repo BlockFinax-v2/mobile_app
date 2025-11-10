@@ -18,6 +18,8 @@ import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { useNavigation } from "@react-navigation/native";
+import type { StackNavigationProp } from "@react-navigation/stack";
+import type { MessagesStackParamList } from "@/navigation/types";
 import {
   CameraView,
   Camera,
@@ -72,7 +74,8 @@ export const DialerScreen: React.FC = () => {
   const [showRecentContacts, setShowRecentContacts] = useState(false);
   const [contactSearchQuery, setContactSearchQuery] = useState("");
   const { initiateCall, getContactByAddress, contacts } = useCommunication();
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<StackNavigationProp<MessagesStackParamList>>();
 
   // Generate avatar color based on address
   const getAvatarColor = (address: string) => {
@@ -214,7 +217,7 @@ export const DialerScreen: React.FC = () => {
     setWalletInput((prev) => prev.slice(0, -1));
   };
 
-  const handleCall = (type: "voice" | "video") => {
+  const handleCall = async (type: "voice" | "video") => {
     if (!validationStatus.isValid) {
       Alert.alert("Invalid Identifier", validationStatus.message);
       return;
@@ -237,20 +240,29 @@ export const DialerScreen: React.FC = () => {
       displayName = `@${walletInput}`;
     }
 
-    Alert.alert(
-      `${type === "voice" ? "Voice" : "Video"} Call`,
-      `Call ${displayName}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Call",
-          onPress: () => {
-            initiateCall(targetAddress, type);
-            navigation.goBack();
-          },
+    try {
+      console.log("🔄 Starting call and navigation...");
+      await initiateCall(targetAddress, type);
+
+      console.log("✅ Call initiated, navigating to ActiveCallScreen");
+      // Navigate to ActiveCallScreen directly
+      navigation.navigate("ActiveCallScreen", {
+        callData: {
+          callId: "temp-" + Date.now(),
+          participantAddress: targetAddress,
+          participantName: displayName,
+          callType: type,
+          isIncoming: false,
+          status: "connecting",
         },
-      ]
-    );
+        localStream: null,
+        remoteStream: null,
+      });
+      console.log("🎯 Navigation called successfully");
+    } catch (error) {
+      console.error("❌ Failed to initiate call:", error);
+      Alert.alert("Call Failed", `Failed to start call: ${error}`);
+    }
   };
 
   const handleManualInput = (text: string) => {
@@ -744,18 +756,52 @@ export const DialerScreen: React.FC = () => {
                     { text: "Cancel", style: "cancel" },
                     {
                       text: "Voice Call",
-                      onPress: () => {
-                        initiateCall(contact.walletAddress, "voice");
-                        setShowRecentContacts(false);
-                        setContactSearchQuery("");
+                      onPress: async () => {
+                        try {
+                          await initiateCall(contact.walletAddress, "voice");
+                          setShowRecentContacts(false);
+                          setContactSearchQuery("");
+
+                          navigation.navigate("ActiveCallScreen", {
+                            callData: {
+                              callId: "temp-" + Date.now(),
+                              participantAddress: contact.walletAddress,
+                              participantName: contact.name,
+                              callType: "voice",
+                              isIncoming: false,
+                              status: "connecting",
+                            },
+                            localStream: null,
+                            remoteStream: null,
+                          });
+                        } catch (error) {
+                          console.error("Failed to initiate call:", error);
+                        }
                       },
                     },
                     {
                       text: "Video Call",
-                      onPress: () => {
-                        initiateCall(contact.walletAddress, "video");
-                        setShowRecentContacts(false);
-                        setContactSearchQuery("");
+                      onPress: async () => {
+                        try {
+                          await initiateCall(contact.walletAddress, "video");
+                          setShowRecentContacts(false);
+                          setContactSearchQuery("");
+
+                          navigation.navigate("ActiveCallScreen", {
+                            callData: {
+                              callId: "temp-" + Date.now(),
+                              participantAddress: contact.walletAddress,
+                              participantName: contact.name,
+                              callType: "video",
+                              isIncoming: false,
+                              status: "connecting",
+                            },
+                            localStream: null,
+                            remoteStream: null,
+                          });
+                        } catch (error) {
+                          console.error("Failed to initiate call:", error);
+                        }
                       },
                     },
                   ]);
@@ -782,10 +828,27 @@ export const DialerScreen: React.FC = () => {
                 <View style={styles.callActions}>
                   <TouchableOpacity
                     style={styles.callActionButton}
-                    onPress={() => {
-                      initiateCall(contact.walletAddress, "voice");
-                      setShowRecentContacts(false);
-                      setContactSearchQuery("");
+                    onPress={async () => {
+                      try {
+                        await initiateCall(contact.walletAddress, "voice");
+                        setShowRecentContacts(false);
+                        setContactSearchQuery("");
+
+                        navigation.navigate("ActiveCallScreen", {
+                          callData: {
+                            callId: "temp-" + Date.now(),
+                            participantAddress: contact.walletAddress,
+                            participantName: contact.name,
+                            callType: "voice",
+                            isIncoming: false,
+                            status: "connecting",
+                          },
+                          localStream: null,
+                          remoteStream: null,
+                        });
+                      } catch (error) {
+                        console.error("Failed to initiate call:", error);
+                      }
                     }}
                   >
                     <MaterialCommunityIcons
@@ -797,10 +860,27 @@ export const DialerScreen: React.FC = () => {
 
                   <TouchableOpacity
                     style={styles.callActionButton}
-                    onPress={() => {
-                      initiateCall(contact.walletAddress, "video");
-                      setShowRecentContacts(false);
-                      setContactSearchQuery("");
+                    onPress={async () => {
+                      try {
+                        await initiateCall(contact.walletAddress, "video");
+                        setShowRecentContacts(false);
+                        setContactSearchQuery("");
+
+                        navigation.navigate("ActiveCallScreen", {
+                          callData: {
+                            callId: "temp-" + Date.now(),
+                            participantAddress: contact.walletAddress,
+                            participantName: contact.name,
+                            callType: "video",
+                            isIncoming: false,
+                            status: "connecting",
+                          },
+                          localStream: null,
+                          remoteStream: null,
+                        });
+                      } catch (error) {
+                        console.error("Failed to initiate call:", error);
+                      }
                     }}
                   >
                     <MaterialCommunityIcons

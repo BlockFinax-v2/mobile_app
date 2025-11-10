@@ -74,7 +74,7 @@ export const ContactSelector: React.FC = () => {
     );
   }, [allContacts, searchQuery]);
 
-  const handleContactPress = (contact: Contact) => {
+  const handleContactPress = async (contact: Contact) => {
     Alert.alert(
       `${callType === "voice" ? "Voice" : "Video"} Call`,
       `Call ${contact.name}?`,
@@ -82,13 +82,27 @@ export const ContactSelector: React.FC = () => {
         { text: "Cancel", style: "cancel" },
         {
           text: "Call",
-          onPress: () => {
-            initiateCall(contact.address, callType);
-            navigation.navigate("Calling", {
-              contactAddress: contact.address,
-              callType: callType,
-              isIncoming: false,
+          onPress: async () => {
+            // Navigate to ActiveCallScreen first
+            navigation.navigate("ActiveCallScreen", {
+              callData: {
+                callId: `call_${Date.now()}`,
+                participantAddress: contact.address,
+                participantName: contact.name,
+                callType: callType,
+                isIncoming: false,
+                status: "connecting",
+              },
+              localStream: null,
+              remoteStream: null,
             });
+
+            // Then initiate the actual call
+            try {
+              await initiateCall(contact.address, callType);
+            } catch (error) {
+              console.error("Failed to initiate call:", error);
+            }
           },
         },
       ]

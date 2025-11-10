@@ -209,11 +209,39 @@ export const ChatScreen: React.FC = () => {
     }
   };
 
-  const handleCall = (type: "voice" | "video") => {
-    if (type === "voice") {
-      startVoiceCall(contactAddress);
-    } else {
-      startVideoCall(contactAddress);
+  const handleCall = async (type: "voice" | "video") => {
+    try {
+      console.log("🔄 Starting call from ChatScreen...", {
+        type,
+        contactAddress,
+      });
+
+      if (type === "voice") {
+        await startVoiceCall(contactAddress);
+      } else {
+        await startVideoCall(contactAddress);
+      }
+
+      console.log("✅ Call initiated, navigating to ActiveCallScreen");
+
+      // Navigate to ActiveCallScreen
+      navigation.navigate("ActiveCallScreen", {
+        callData: {
+          callId: "temp-" + Date.now(),
+          participantAddress: contactAddress,
+          participantName: displayName,
+          callType: type,
+          isIncoming: false,
+          status: "connecting",
+        },
+        localStream: null,
+        remoteStream: null,
+      });
+
+      console.log("🎯 Navigation called successfully from ChatScreen");
+    } catch (error) {
+      console.error("❌ Failed to initiate call from ChatScreen:", error);
+      Alert.alert("Call Failed", `Failed to start call: ${error}`);
     }
   };
 

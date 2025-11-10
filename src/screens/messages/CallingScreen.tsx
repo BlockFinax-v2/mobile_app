@@ -9,7 +9,28 @@ import {
   StatusBar,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { RTCView } from "react-native-webrtc";
+
+// RTCView replacement for Expo compatibility
+const RTCView: React.FC<{
+  streamURL?: string;
+  style?: any;
+  objectFit?: string;
+}> = ({ streamURL, style, objectFit }) => (
+  <View
+    style={[
+      style,
+      {
+        backgroundColor: "#000",
+        justifyContent: "center",
+        alignItems: "center",
+      },
+    ]}
+  >
+    <Text style={{ color: "white", fontSize: 16 }}>
+      {streamURL ? "Video Stream" : "No Stream"}
+    </Text>
+  </View>
+);
 
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
@@ -34,12 +55,13 @@ export const CallingScreen: React.FC<CallingScreenProps> = ({
   onDecline,
   onEndCall,
 }) => {
-  const { contacts, currentCall } = useCommunication();
+  const { contacts, currentCall, localStream, remoteStream } =
+    useCommunication();
+
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [isVideoOn, setIsVideoOn] = useState(callType === "video");
-
   const contact = contacts.find((c) => c.address === contactAddress);
   const contactName = contact?.name || `User ${contactAddress.slice(-4)}`;
 
@@ -116,10 +138,9 @@ export const CallingScreen: React.FC<CallingScreenProps> = ({
           <View style={styles.localVideoContainer}>
             {currentCall?.localStream && (
               <RTCView
-                style={styles.localVideo}
-                streamURL={currentCall.localStream.toURL()}
+                style={{ width: "100%", height: "100%" }}
+                streamURL={localStream?.toURL()}
                 objectFit="cover"
-                mirror={true}
               />
             )}
           </View>
