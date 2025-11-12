@@ -8,14 +8,18 @@ import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { RouteProp, useNavigation, useRoute } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Linking,
   StyleSheet,
   TouchableOpacity,
   View,
+  Vibration,
+  Share,
+  Clipboard,
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
@@ -25,16 +29,158 @@ type NavigationProps = StackNavigationProp<
   "SendPaymentReview"
 >;
 
+interface TransactionStatus {
+  status: "pending" | "confirming" | "confirmed" | "failed";
+  confirmations: number;
+  blockNumber?: number;
+  message: string;
+}
+
 export const SendPaymentReviewScreen: React.FC = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProps>();
   const { selectedNetwork, refreshBalance } = useWallet();
+  
+  // Transaction states
   const [isProcessing, setIsProcessing] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string>("");
   const [explorerUrl, setExplorerUrl] = useState<string>("");
+  const [txStatus, setTxStatus] = useState<TransactionStatus | null>(null);
+  
+  // Animation values
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const scaleAnim = React.useRef(new Animated.Value(0.8)).current;
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
 
   const details = route.params;
+
+  // Animate status changes
+  useEffect(() => {
+    if (txStatus) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [txStatus]);
+
+  // Pulse animation for pending states
+  useEffect(() => {
+    if (txStatus?.status === "pending" || txStatus?.status === "confirming") {
+      const pulse = () => {
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          if (txStatus?.status === "pending" || txStatus?.status === "confirming") {
+            pulse();
+          }
+        });
+      };
+      pulse();
+    }
+  }, [txStatus?.status]);
+
+  // Poll transaction status
+  const pollTransactionStatus = async (hash: string) => {
+    try {
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max polling
+      
+      const poll = async () => {
+        try {
+          const status = await transactionService.getTransactionStatus(hash, selectedNetwork);
+          
+          if (status.status === "pending") {
+            setTxStatus({
+              status: "pending",
+              confirmations: 0,
+              message: "Transaction submitted to network...",
+            });
+          } else if (status.status === "confirmed") {
+            if (status.confirmations === 0) {
+              setTxStatus({
+                status: "confirming",
+                confirmations: 0,
+                blockNumber: status.blockNumber,
+                message: "Transaction included in block, waiting for confirmations...",
+              });
+            } else {
+              setTxStatus({
+                status: "confirmed",
+                confirmations: status.confirmations,
+                blockNumber: status.blockNumber,
+                message: `Transaction confirmed with ${status.confirmations} confirmations!`,
+              });
+              
+              // Success haptic feedback
+              Vibration.vibrate([100, 200, 100]);
+              
+              // Refresh balance after confirmation
+              await refreshBalance();
+              
+              // Auto navigate back after 3 seconds
+              setTimeout(() => {
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: "WalletHome" }],
+                });
+              }, 3000);
+              return;
+            }
+          } else if (status.status === "failed") {
+            setTxStatus({
+              status: "failed",
+              confirmations: 0,
+              message: "Transaction failed. Please try again.",
+            });
+            Vibration.vibrate([200, 100, 200]);
+            return;
+          }
+
+          attempts++;
+          if (attempts < maxAttempts) {
+            // Poll every 5 seconds
+            setTimeout(poll, 5000);
+          } else {
+            setTxStatus({
+              status: "pending",
+              confirmations: 0,
+              message: "Taking longer than expected. Check explorer for updates.",
+            });
+          }
+        } catch (error) {
+          console.error("Status polling error:", error);
+          // Continue polling on error, just less frequently
+          if (attempts < maxAttempts) {
+            setTimeout(poll, 10000);
+          }
+        }
+      };
+
+      // Start polling
+      poll();
+    } catch (error) {
+      console.error("Failed to start transaction polling:", error);
+    }
+  };
 
   const handleConfirm = async () => {
     setIsProcessing(true);
@@ -54,30 +200,25 @@ export const SendPaymentReviewScreen: React.FC = () => {
       if (result.explorerUrl) {
         setExplorerUrl(result.explorerUrl);
       }
-      setSuccess(true);
 
-      // Wait for confirmation in background
-      transactionService
-        .waitForTransaction(result.hash, selectedNetwork, 1)
-        .then(() => {
-          console.log("Transaction confirmed!");
-          // Refresh balance after confirmation
-          refreshBalance();
-        })
-        .catch((error) => {
-          console.error("Transaction confirmation error:", error);
-        });
+      setIsProcessing(false);
+      
+      // Start polling transaction status
+      pollTransactionStatus(result.hash);
 
-      // Navigate back after showing success
-      setTimeout(() => navigation.popToTop(), 3000);
     } catch (error: any) {
       console.error("Transaction error:", error);
+      setIsProcessing(false);
+      Vibration.vibrate([200, 100, 200]); // Error vibration
+      
       Alert.alert(
         "Transaction Failed",
         error.message || "Failed to send transaction. Please try again.",
-        [{ text: "OK", onPress: () => setIsProcessing(false) }]
+        [
+          { text: "Retry", onPress: handleConfirm },
+          { text: "Cancel", style: "cancel" }
+        ]
       );
-      setIsProcessing(false);
     }
   };
 
@@ -87,78 +228,181 @@ export const SendPaymentReviewScreen: React.FC = () => {
     }
   };
 
-  if (success) {
+  const handleCopyHash = () => {
+    if (transactionHash) {
+      Clipboard.setString(transactionHash);
+      Vibration.vibrate(50);
+      Alert.alert("✅ Copied!", "Transaction hash copied to clipboard");
+    }
+  };
+
+  const handleShare = async () => {
+    try {
+      const message = `Transaction sent!\n\nAmount: ${details.amount} ${details.currency}\nNetwork: ${details.network}\nHash: ${transactionHash}\n\n${explorerUrl ? `View on Explorer: ${explorerUrl}` : ''}`;
+      
+      await Share.share({
+        message,
+        title: "Transaction Receipt",
+      });
+    } catch (error) {
+      console.error("Share failed:", error);
+    }
+  };
+
+  const getStatusIcon = () => {
+    if (!txStatus) return null;
+    
+    switch (txStatus.status) {
+      case "pending":
+        return "clock-outline";
+      case "confirming":
+        return "check-circle-outline";
+      case "confirmed":
+        return "check-circle";
+      case "failed":
+        return "close-circle";
+      default:
+        return "help-circle";
+    }
+  };
+
+  const getStatusColor = () => {
+    if (!txStatus) return palette.neutralMid;
+    
+    switch (txStatus.status) {
+      case "pending":
+        return palette.warningYellow;
+      case "confirming":
+        return palette.primaryBlue;
+      case "confirmed":
+        return palette.successGreen;
+      case "failed":
+        return palette.errorRed;
+      default:
+        return palette.neutralMid;
+    }
+  };
+
+  // Show transaction status if hash exists
+  if (transactionHash && txStatus) {
     return (
       <Screen>
-        <View style={styles.successContainer}>
-          <View style={styles.successIcon}>
-            <MaterialCommunityIcons
-              name="check-circle"
-              size={80}
-              color={palette.accentGreen}
-            />
-          </View>
-          <Text variant="title" style={styles.successTitle}>
-            Transaction Sent!
-          </Text>
-          <Text color={palette.neutralMid} style={styles.successMessage}>
-            Your payment has been successfully broadcasted to the network
-          </Text>
+        <View style={styles.statusContainer}>
+          <Animated.View 
+            style={[
+              styles.statusIconContainer,
+              {
+                opacity: fadeAnim,
+                transform: [
+                  { scale: scaleAnim },
+                  { scale: pulseAnim },
+                ],
+              },
+            ]}
+          >
+            <View style={[styles.statusIcon, { backgroundColor: getStatusColor() + "20" }]}>
+              <MaterialCommunityIcons
+                name={getStatusIcon() as any}
+                size={60}
+                color={getStatusColor()}
+              />
+            </View>
+          </Animated.View>
 
-          <View style={styles.successDetails}>
-            <Text color={palette.neutralMid}>Amount Sent</Text>
-            <Text variant="title" color={palette.primaryBlue}>
-              {details.amount} {details.currency}
+          <Animated.View 
+            style={[
+              styles.statusContent,
+              { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }
+            ]}
+          >
+            <Text variant="title" style={styles.statusTitle}>
+              {txStatus.status === "confirmed" ? "✅ Success!" :
+               txStatus.status === "failed" ? "❌ Failed" :
+               txStatus.status === "confirming" ? "🔄 Confirming" :
+               "⏳ Processing"}
             </Text>
+            
+            <Text style={styles.statusMessage}>{txStatus.message}</Text>
 
-            {transactionHash && (
-              <View style={styles.txHashContainer}>
-                <Text color={palette.neutralMid} style={styles.txHashLabel}>
-                  Transaction Hash
-                </Text>
-                <Text style={styles.txHash} numberOfLines={1}>
-                  {transactionHash.slice(0, 10)}...{transactionHash.slice(-8)}
+            {txStatus.confirmations > 0 && (
+              <View style={styles.confirmationsContainer}>
+                <MaterialCommunityIcons
+                  name="check-all"
+                  size={16}
+                  color={palette.successGreen}
+                />
+                <Text style={styles.confirmationsText}>
+                  {txStatus.confirmations} Confirmations
                 </Text>
               </View>
             )}
+
+            {txStatus.blockNumber && (
+              <View style={styles.blockContainer}>
+                <MaterialCommunityIcons
+                  name="cube-outline"
+                  size={16}
+                  color={palette.neutralMid}
+                />
+                <Text style={styles.blockText}>
+                  Block #{txStatus.blockNumber}
+                </Text>
+              </View>
+            )}
+          </Animated.View>
+
+          <View style={styles.transactionDetails}>
+            <Text style={styles.detailsTitle}>Transaction Details</Text>
+            
+            <View style={styles.detailRow}>
+              <Text color={palette.neutralMid}>Amount</Text>
+              <Text style={styles.detailValue}>
+                {details.amount} {details.currency}
+              </Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Text color={palette.neutralMid}>Network</Text>
+              <Text style={styles.detailValue}>{details.network}</Text>
+            </View>
+            
+            <View style={styles.detailRow}>
+              <Text color={palette.neutralMid}>Hash</Text>
+              <TouchableOpacity onPress={handleCopyHash}>
+                <Text style={styles.hashText}>
+                  {transactionHash.slice(0, 10)}...{transactionHash.slice(-8)}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {explorerUrl && (
-            <TouchableOpacity
-              style={styles.explorerButton}
-              onPress={handleViewOnExplorer}
-            >
-              <MaterialCommunityIcons
-                name="open-in-new"
-                size={20}
-                color={palette.primaryBlue}
+          <View style={styles.actionButtons}>
+            {explorerUrl && (
+              <Button
+                label="View on Explorer"
+                variant="outline"
+                onPress={handleViewOnExplorer}
               />
-              <Text color={palette.primaryBlue} style={styles.explorerText}>
-                View on Block Explorer
-              </Text>
-            </TouchableOpacity>
-          )}
+            )}
+            <Button
+              label="Share Receipt"
+              variant="outline"
+              onPress={handleShare}
+            />
+            <Button
+              label={txStatus.status === "confirmed" ? "Done" : "Close"}
+              onPress={() => navigation.reset({
+                index: 0,
+                routes: [{ name: "WalletHome" }],
+              })}
+            />
+          </View>
         </View>
       </Screen>
     );
   }
 
-  if (isProcessing) {
-    return (
-      <Screen>
-        <View style={styles.processingContainer}>
-          <ActivityIndicator size="large" color={palette.primaryBlue} />
-          <Text variant="subtitle" style={styles.processingText}>
-            Processing Transaction...
-          </Text>
-          <Text color={palette.neutralMid} style={styles.processingSubtext}>
-            Please wait while we broadcast your transaction
-          </Text>
-        </View>
-      </Screen>
-    );
-  }
-
+  // Show review screen
   return (
     <Screen preset="scroll">
       <View style={styles.container}>
@@ -179,18 +423,18 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
         {/* Amount Card */}
         <View style={styles.amountCard}>
-          <Text color={palette.neutralMid} style={styles.amountLabel}>
+          <Text color={palette.white} style={styles.amountLabel}>
             You're Sending
           </Text>
           <Text style={styles.amountValue}>
             {details.amount} {details.currency}
           </Text>
-          <Text color={palette.neutralMid} style={styles.amountNetwork}>
+          <Text color={palette.white} style={styles.amountNetwork}>
             on {details.network}
           </Text>
         </View>
 
-        {/* Details Card */}
+        {/* Transaction Details */}
         <View style={styles.card}>
           <Text variant="subtitle" style={styles.cardTitle}>
             Transaction Details
@@ -234,7 +478,7 @@ export const SendPaymentReviewScreen: React.FC = () => {
             <Text style={styles.detailValue}>{details.currency}</Text>
           </View>
 
-          {details.message ? (
+          {details.message && (
             <View style={styles.detailRow}>
               <View style={styles.detailLabel}>
                 <MaterialCommunityIcons
@@ -246,48 +490,75 @@ export const SendPaymentReviewScreen: React.FC = () => {
               </View>
               <Text style={styles.detailValue}>{details.message}</Text>
             </View>
-          ) : null}
+          )}
         </View>
 
         {/* Fee Breakdown */}
         <View style={styles.feeCard}>
+          <Text variant="subtitle" style={styles.cardTitle}>
+            Fee Breakdown
+          </Text>
+          
           <View style={styles.feeRow}>
             <Text color={palette.neutralMid}>Transaction Amount</Text>
             <Text style={styles.feeValue}>
               {details.amount} {details.currency}
             </Text>
           </View>
+          
           <View style={styles.feeRow}>
             <Text color={palette.neutralMid}>Network Fee (Est.)</Text>
             <Text style={styles.feeValue}>
               {details.fee.toFixed(6)} {selectedNetwork.primaryCurrency}
             </Text>
           </View>
+          
+          <View style={styles.feeDivider} />
+          
+          <View style={styles.feeRow}>
+            <Text variant="subtitle">Total You'll Send</Text>
+            <Text variant="subtitle" color={palette.primaryBlue}>
+              {details.amount} {details.currency}
+            </Text>
+          </View>
+          
+          <View style={styles.feeRow}>
+            <Text variant="subtitle">Plus Network Fee</Text>
+            <Text variant="subtitle" color={palette.neutralDark}>
+              {details.fee.toFixed(6)} {selectedNetwork.primaryCurrency}
+            </Text>
+          </View>
+          
           <Text style={styles.feeNote}>
-            * Final gas fee may vary based on network conditions
+            * Network fees are paid separately in {selectedNetwork.primaryCurrency}
           </Text>
         </View>
 
-        {/* Warning */}
-        <View style={styles.warning}>
-          <MaterialCommunityIcons
-            name="alert-circle-outline"
-            size={20}
-            color={palette.warningYellow}
-          />
-          <Text color={palette.neutralMid} style={styles.warningText}>
-            Double-check the recipient address. Transactions cannot be reversed.
-          </Text>
-        </View>
-
-        {/* Actions */}
+        {/* Action Buttons */}
         <View style={styles.actions}>
-          <Button label="Confirm & Send" onPress={handleConfirm} />
-          <Button
-            label="Cancel"
-            variant="outline"
-            onPress={() => navigation.goBack()}
-          />
+          {isProcessing ? (
+            <View style={styles.processingContainer}>
+              <ActivityIndicator size="large" color={palette.primaryBlue} />
+              <Text style={styles.processingText}>
+                Sending transaction...
+              </Text>
+              <Text color={palette.neutralMid} style={styles.processingSubtext}>
+                This may take a few moments
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Button
+                label="Confirm & Send"
+                onPress={handleConfirm}
+              />
+              <Button
+                label="Cancel"
+                variant="outline"
+                onPress={() => navigation.goBack()}
+              />
+            </>
+          )}
         </View>
       </View>
     </Screen>
@@ -296,7 +567,6 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     gap: spacing.lg,
     paddingBottom: spacing.xxl,
   },
@@ -320,17 +590,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   amountLabel: {
-    color: palette.white,
     fontSize: 14,
     opacity: 0.8,
   },
   amountValue: {
     color: palette.white,
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: "700",
   },
   amountNetwork: {
-    color: palette.white,
     fontSize: 14,
     opacity: 0.8,
   },
@@ -349,7 +617,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: spacing.sm,
+    minHeight: 32,
   },
   detailLabel: {
     flexDirection: "row",
@@ -359,13 +627,13 @@ const styles = StyleSheet.create({
   },
   detailValue: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
     color: palette.neutralDark,
-    maxWidth: "50%",
     textAlign: "right",
+    flex: 1,
   },
   feeCard: {
-    backgroundColor: "#EEF2FF",
+    backgroundColor: "#F8F9FF",
     borderRadius: 16,
     padding: spacing.lg,
     gap: spacing.sm,
@@ -376,9 +644,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   feeValue: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 14,
+    fontWeight: "500",
     color: palette.neutralDark,
+  },
+  feeDivider: {
+    height: 1,
+    backgroundColor: "#E5E7EB",
+    marginVertical: spacing.sm,
   },
   feeNote: {
     fontSize: 11,
@@ -386,92 +659,100 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     marginTop: spacing.xs,
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#D1D5DB",
-    marginVertical: spacing.xs,
-  },
-  warning: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: "#FEF3C7",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#FCD34D",
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 12,
-  },
   actions: {
     gap: spacing.md,
   },
   processingContainer: {
-    flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    gap: spacing.lg,
+    padding: spacing.xl,
+    gap: spacing.md,
   },
   processingText: {
-    marginTop: spacing.md,
+    fontSize: 16,
+    fontWeight: "600",
+    color: palette.neutralDark,
   },
   processingSubtext: {
-    textAlign: "center",
+    fontSize: 14,
   },
-  successContainer: {
+  // Status screen styles
+  statusContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: spacing.lg,
-    paddingHorizontal: spacing.xl,
+    padding: spacing.xl,
+    gap: spacing.xl,
   },
-  successIcon: {
-    marginBottom: spacing.lg,
+  statusIconContainer: {
+    alignItems: "center",
   },
-  successTitle: {
+  statusIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statusContent: {
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  statusTitle: {
+    fontSize: 24,
     textAlign: "center",
   },
-  successMessage: {
+  statusMessage: {
+    fontSize: 16,
+    color: palette.neutralMid,
     textAlign: "center",
-    fontSize: 14,
+    lineHeight: 24,
   },
-  successDetails: {
-    backgroundColor: "#ECFDF3",
-    borderRadius: 16,
-    padding: spacing.lg,
-    width: "100%",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  txHashContainer: {
-    marginTop: spacing.md,
-    width: "100%",
-    alignItems: "center",
-    gap: spacing.xs,
-  },
-  txHashLabel: {
-    fontSize: 12,
-  },
-  txHash: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: palette.neutralDark,
-    fontFamily: "monospace",
-  },
-  explorerButton: {
+  confirmationsContainer: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    backgroundColor: "#EEF2FF",
+    backgroundColor: palette.successGreen + "15",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: 12,
-    marginTop: spacing.md,
   },
-  explorerText: {
-    fontSize: 14,
+  confirmationsText: {
+    fontSize: 12,
     fontWeight: "600",
+    color: palette.successGreen,
+  },
+  blockContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  blockText: {
+    fontSize: 12,
+    color: palette.neutralMid,
+  },
+  transactionDetails: {
+    backgroundColor: palette.white,
+    borderRadius: 16,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    gap: spacing.md,
+    width: "100%",
+  },
+  detailsTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: palette.neutralDark,
+    marginBottom: spacing.sm,
+  },
+  hashText: {
+    fontSize: 12,
+    fontFamily: "monospace",
+    color: palette.primaryBlue,
+    textDecorationLine: "underline",
+  },
+  actionButtons: {
+    gap: spacing.md,
+    width: "100%",
   },
 });

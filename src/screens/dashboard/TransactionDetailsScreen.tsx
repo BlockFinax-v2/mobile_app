@@ -1,27 +1,22 @@
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
+import { useWallet } from "@/contexts/WalletContext";
 import { DashboardStackParamList } from "@/navigation/types";
+import { realTransactionService } from "@/services/realTransactionService";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { RouteProp, useRoute } from "@react-navigation/native";
-import React from "react";
-import { Linking, Platform, ScrollView, StyleSheet, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
-
-const mockTransaction = {
-  hash: "0x1234abcd5678ef90",
-  status: "Completed",
-  date: "October 27, 2025 - 14:23",
-  sender: "0xF1a21d79A91c07fF9dCA2F3077398C2D1a2B3F56",
-  recipient: "0xb67E8136b0a4BbD5fbb3762E508a403Ef5bA0D30",
-  amount: "1,200 USDC",
-  fee: "0.45 MATIC",
-  network: "Lisk Sepolia Testnet",
-  blockNumber: "45231054",
-  type: "Escrow Funding",
-  explorerUrl: "https://sepolia-blockscout.lisk.com/tx/0x1234abcd5678ef90",
-};
 
 const statusIconMap: Record<string, string> = {
   Completed: "check-circle-outline",
@@ -29,10 +24,161 @@ const statusIconMap: Record<string, string> = {
   Failed: "close-circle-outline",
 };
 
+interface TransactionDetails {
+  hash: string;
+  status: string;
+  date: string;
+  sender: string;
+  recipient: string;
+  amount: string;
+  fee: string;
+  network: string;
+  blockNumber: string;
+  type: string;
+  explorerUrl?: string;
+}
+
 export const TransactionDetailsScreen: React.FC = () => {
   const route =
     useRoute<RouteProp<DashboardStackParamList, "TransactionDetails">>();
-  const details = { ...mockTransaction, id: route.params?.id };
+  const { selectedNetwork } = useWallet();
+  const [details, setDetails] = useState<TransactionDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const transactionHash = route.params?.id;
+
+  useEffect(() => {
+    const loadTransactionDetails = async () => {
+      if (!transactionHash || transactionHash === "portfolio") {
+        // Handle portfolio view case
+        setDetails({
+          hash: "Portfolio Overview",
+          status: "Active",
+          date: new Date().toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          sender: "Multiple Sources",
+          recipient: "Your Wallet",
+          amount: "Portfolio Balance",
+          fee: "Network Fees Apply",
+          network: selectedNetwork.name,
+          blockNumber: "Latest",
+          type: "Portfolio Summary",
+        });
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        const transaction = await realTransactionService.getTransactionByHash(
+          transactionHash,
+          selectedNetwork
+        );
+
+        if (transaction) {
+          const explorerUrl = selectedNetwork.explorerUrl
+            ? `${selectedNetwork.explorerUrl}/tx/${transaction.hash}`
+            : undefined;
+
+          setDetails({
+            hash: transaction.hash,
+            status:
+              transaction.status === "confirmed"
+                ? "Completed"
+                : transaction.status === "pending"
+                ? "Pending"
+                : "Failed",
+            date: transaction.timestamp.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            sender: transaction.from,
+            recipient: transaction.to,
+            amount: transaction.amount,
+            fee:
+              transaction.gasUsed && transaction.gasPrice
+                ? `${(
+                    (parseFloat(transaction.gasUsed) *
+                      parseFloat(transaction.gasPrice)) /
+                    1e18
+                  ).toFixed(6)} ${selectedNetwork.primaryCurrency}`
+                : "Unknown",
+            network: selectedNetwork.name,
+            blockNumber: transaction.blockNumber?.toString() || "Unknown",
+            type: transaction.description,
+            explorerUrl,
+          });
+        } else {
+          // Fallback for transaction not found
+          setDetails({
+            hash: transactionHash,
+            status: "Not Found",
+            date: "Unknown",
+            sender: "Unknown",
+            recipient: "Unknown",
+            amount: "Unknown",
+            fee: "Unknown",
+            network: selectedNetwork.name,
+            blockNumber: "Unknown",
+            type: "Transaction",
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load transaction details:", error);
+        // Show basic info even if fetch fails
+        setDetails({
+          hash: transactionHash,
+          status: "Error Loading",
+          date: "Unknown",
+          sender: "Unknown",
+          recipient: "Unknown",
+          amount: "Unknown",
+          fee: "Unknown",
+          network: selectedNetwork.name,
+          blockNumber: "Unknown",
+          type: "Transaction",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadTransactionDetails();
+  }, [transactionHash, selectedNetwork]);
+
+  if (loading) {
+    return (
+      <Screen>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={palette.primaryBlue} />
+          <Text style={styles.loadingText}>Loading transaction details...</Text>
+        </View>
+      </Screen>
+    );
+  }
+
+  if (!details) {
+    return (
+      <Screen>
+        <View style={styles.errorContainer}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={48}
+            color={palette.errorRed}
+          />
+          <Text style={styles.errorText}>Transaction not found</Text>
+        </View>
+      </Screen>
+    );
+  }
 
   const openExplorer = () => {
     if (details.explorerUrl) {
@@ -198,5 +344,26 @@ const styles = StyleSheet.create({
   footerButtons: {
     flexDirection: "row",
     gap: spacing.md,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: palette.neutralMid,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  errorText: {
+    fontSize: 18,
+    color: palette.errorRed,
+    fontWeight: "600",
   },
 });

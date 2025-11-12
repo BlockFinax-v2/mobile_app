@@ -12,8 +12,10 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "BlockFinaX needs camera access for video calls",
-        "NSMicrophoneUsageDescription": "BlockFinaX needs microphone access for voice and video calls"
-      }
+        "NSMicrophoneUsageDescription": "BlockFinaX needs microphone access for voice and video calls",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "bundleIdentifier": "com.blockfinax.mobile"
     },
     "android": {
       "package": "com.blockfinax.mobile",
@@ -38,7 +40,6 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router",
       "expo-dev-client",
       [
         "expo-splash-screen",
@@ -54,11 +55,9 @@
       ]
     ],
     "experiments": {
-      "typedRoutes": true,
       "reactCompiler": true
     },
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "ae4573b5-e8f2-4e9c-875f-07a6b886a57d"
       },
