@@ -30,10 +30,11 @@ export const SettingsScreen: React.FC = () => {
     updateSettings,
     lockWallet,
     lastUnlockTime,
+    resetWalletData,
+    isBiometricAvailable,
+    isBiometricEnabled,
     enableBiometricAuth,
     disableBiometricAuth,
-    isBiometricAvailable,
-    resetWalletData,
   } = useWallet();
   const navigation = useNavigation<SettingsScreenNavigationProp>();
   const [pendingUpdate, setPendingUpdate] = useState<
@@ -68,7 +69,7 @@ export const SettingsScreen: React.FC = () => {
       if (!isBiometricAvailable) {
         Alert.alert(
           "Biometrics Unavailable",
-          "Your device does not support fingerprint or Face ID authentication."
+          "Your device does not support biometric authentication or no biometric is enrolled."
         );
         return;
       }
@@ -234,7 +235,7 @@ export const SettingsScreen: React.FC = () => {
         <View style={styles.row}>
           <Text>Enable Biometrics</Text>
           <Switch
-            value={settings.enableBiometrics}
+            value={isBiometricEnabled}
             onValueChange={handleBiometricToggle}
             disabled={
               pendingUpdate === "enableBiometrics" || !isBiometricAvailable
@@ -242,18 +243,18 @@ export const SettingsScreen: React.FC = () => {
           />
         </View>
         <Text variant="small" color={palette.neutralMid}>
-          Use Face ID or fingerprint to unlock your wallet on this device.
+          Use biometric authentication to unlock your wallet on this device.
         </Text>
         {!isBiometricAvailable ? (
           <Text variant="small" color={palette.errorRed}>
-            Biometrics aren't available on this device or no fingerprint is
+            Biometrics aren't available on this device or no biometric is
             enrolled.
           </Text>
         ) : null}
         <Button
           label="Lock Wallet"
           variant="outline"
-          onPress={lockWallet}
+          onPress={async () => await lockWallet()}
           style={styles.button}
         />
       </View>

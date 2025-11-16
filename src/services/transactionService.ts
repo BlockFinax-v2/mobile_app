@@ -78,6 +78,24 @@ class TransactionService {
     });
   }
 
+  private providers = new Map<string, ethers.providers.JsonRpcProvider>();
+
+  /**
+   * Format amount string to prevent BigNumber precision issues
+   */
+  private formatAmountForParsing(amount: string, decimals: number): string {
+    const maxDecimals = Math.min(decimals, 18);
+    
+    // Use regex to truncate decimal places instead of toFixed to avoid adding zeros
+    const regex = new RegExp(`^\\d+(\\.\\d{0,${maxDecimals}})?`);
+    const match = amount.match(regex);
+    const formattedAmount = match ? match[0] : amount;
+    
+    console.log(`[TransactionService] Formatting amount: "${amount}" -> "${formattedAmount}" (decimals: ${decimals})`);
+    
+    return formattedAmount;
+  }
+
   /**
    * Get signer (wallet) from secure storage
    */
@@ -120,6 +138,14 @@ class TransactionService {
       throw new Error("Invalid amount");
     }
 
+    // Validate amount precision to prevent BigNumber issues
+    const decimals = params.tokenDecimals || 18;
+    const maxPrecision = Math.min(decimals, 18);
+    const decimalPlaces = (params.amount.split('.')[1] || '').length;
+    if (decimalPlaces > maxPrecision) {
+      console.warn(`Amount has ${decimalPlaces} decimal places, will be truncated to ${maxPrecision}`);
+    }
+
     if (params.tokenAddress && !isValidAddress(params.tokenAddress)) {
       throw new Error("Invalid token contract address");
     }
@@ -157,21 +183,39 @@ class TransactionService {
 
       // Estimate gas based on transaction type
       if (!params.tokenAddress) {
-        // Native token transfer
+        // Native token transfer - use parseEther directly
+        let value: ethers.BigNumber;
+        
+        try {
+          const cleanAmount = params.amount.toString().trim();
+          value = ethers.utils.parseEther(cleanAmount);
+        } catch (error) {
+          throw new Error(`Invalid amount format for gas estimation: ${params.amount}`);
+        }
+        
         const tx = {
           to: params.recipientAddress,
-          value: ethers.utils.parseEther(params.amount),
+          value: value,
         };
         gasLimit = await signer.estimateGas(tx);
       } else {
-        // ERC-20 token transfer
+        // ERC-20 token transfer - use parseUnits directly
         const contract = new ethers.Contract(
           params.tokenAddress,
           ERC20_ABI,
           signer
         );
         const decimals = params.tokenDecimals || 18;
-        const parsedAmount = ethers.utils.parseUnits(params.amount, decimals);
+        
+        let parsedAmount: ethers.BigNumber;
+        
+        try {
+          const cleanAmount = params.amount.toString().trim();
+          parsedAmount = ethers.utils.parseUnits(cleanAmount, decimals);
+        } catch (error) {
+          throw new Error(`Invalid amount format for ERC-20 gas estimation: ${params.amount}`);
+        }
+        
         gasLimit = await contract.estimateGas.transfer(
           params.recipientAddress,
           parsedAmount
@@ -221,9 +265,23 @@ class TransactionService {
     signer: ethers.Wallet,
     gasEstimate: GasEstimate
   ): Promise<ethers.providers.TransactionResponse> {
+    // Use parseEther directly on the original amount string to avoid precision issues
+    // parseEther already handles the conversion to wei (18 decimals) properly
+    let value: ethers.BigNumber;
+    
+    try {
+      // Clean the amount string and use parseEther directly
+      const cleanAmount = params.amount.toString().trim();
+      value = ethers.utils.parseEther(cleanAmount);
+      console.log(`[TransactionService] Parsing amount: "${cleanAmount}" -> ${value.toString()} wei`);
+    } catch (error) {
+      console.error(`[TransactionService] Failed to parse amount: "${params.amount}"`, error);
+      throw new Error(`Invalid amount format: ${params.amount}`);
+    }
+    
     const txRequest: ethers.providers.TransactionRequest = {
       to: params.recipientAddress,
-      value: ethers.utils.parseEther(params.amount),
+      value: value,
       gasLimit: params.gasLimit 
         ? ethers.BigNumber.from(params.gasLimit) 
         : gasEstimate.gasLimit,
@@ -232,11 +290,19 @@ class TransactionService {
     // Add gas pricing based on network support
     if (gasEstimate.maxFeePerGas && gasEstimate.maxPriorityFeePerGas) {
       // EIP-1559
+      console.log('[TransactionService] EIP-1559 gas params:', {
+        'params.maxFeePerGas': params.maxFeePerGas,
+        'gasEstimate.maxFeePerGas': gasEstimate.maxFeePerGas?.toString(),
+        'params.maxPriorityFeePerGas': params.maxPriorityFeePerGas,
+        'gasEstimate.maxPriorityFeePerGas': gasEstimate.maxPriorityFeePerGas?.toString(),
+      });
+      
+      // Use the gas estimate values directly (they're already BigNumbers)
       txRequest.maxFeePerGas = params.maxFeePerGas
-        ? ethers.BigNumber.from(params.maxFeePerGas)
+        ? (typeof params.maxFeePerGas === 'string' ? ethers.utils.parseUnits(params.maxFeePerGas, 'wei') : ethers.BigNumber.from(params.maxFeePerGas))
         : gasEstimate.maxFeePerGas;
       txRequest.maxPriorityFeePerGas = params.maxPriorityFeePerGas
-        ? ethers.BigNumber.from(params.maxPriorityFeePerGas)
+        ? (typeof params.maxPriorityFeePerGas === 'string' ? ethers.utils.parseUnits(params.maxPriorityFeePerGas, 'wei') : ethers.BigNumber.from(params.maxPriorityFeePerGas))
         : gasEstimate.maxPriorityFeePerGas;
     } else if (gasEstimate.gasPrice) {
       // Legacy
@@ -265,7 +331,18 @@ class TransactionService {
     );
 
     const decimals = params.tokenDecimals || 18;
-    const parsedAmount = ethers.utils.parseUnits(params.amount, decimals);
+    
+    // Use parseUnits directly on the original amount string to avoid precision issues
+    let parsedAmount: ethers.BigNumber;
+    
+    try {
+      const cleanAmount = params.amount.toString().trim();
+      parsedAmount = ethers.utils.parseUnits(cleanAmount, decimals);
+      console.log(`[TransactionService] Parsing ERC-20 amount: "${cleanAmount}" with ${decimals} decimals -> ${parsedAmount.toString()}`);
+    } catch (error) {
+      console.error(`[TransactionService] Failed to parse ERC-20 amount: "${params.amount}" with ${decimals} decimals`, error);
+      throw new Error(`Invalid amount format: ${params.amount}`);
+    }
 
     const txOptions: ethers.Overrides = {
       gasLimit: params.gasLimit
@@ -275,11 +352,12 @@ class TransactionService {
 
     // Add gas pricing
     if (gasEstimate.maxFeePerGas && gasEstimate.maxPriorityFeePerGas) {
+      // Use the gas estimate values directly (they're already BigNumbers)
       txOptions.maxFeePerGas = params.maxFeePerGas
-        ? ethers.BigNumber.from(params.maxFeePerGas)
+        ? (typeof params.maxFeePerGas === 'string' ? ethers.utils.parseUnits(params.maxFeePerGas, 'wei') : ethers.BigNumber.from(params.maxFeePerGas))
         : gasEstimate.maxFeePerGas;
       txOptions.maxPriorityFeePerGas = params.maxPriorityFeePerGas
-        ? ethers.BigNumber.from(params.maxPriorityFeePerGas)
+        ? (typeof params.maxPriorityFeePerGas === 'string' ? ethers.utils.parseUnits(params.maxPriorityFeePerGas, 'wei') : ethers.BigNumber.from(params.maxPriorityFeePerGas))
         : gasEstimate.maxPriorityFeePerGas;
     } else if (gasEstimate.gasPrice) {
       txOptions.gasPrice = gasEstimate.gasPrice;
@@ -359,11 +437,33 @@ class TransactionService {
 
     // Check native token balance for gas
     const nativeBalance = await provider.getBalance(address);
-    const gasCost = ethers.BigNumber.from(gasEstimate.estimatedCost);
+    
+    // Convert estimatedCost from ETH string to BigNumber (wei)
+    // estimatedCost is in ETH format (e.g., "0.000038"), so use parseEther
+    console.log(`[TransactionService] Gas estimate - estimatedCost: "${gasEstimate.estimatedCost}"`);
+    
+    let gasCost: ethers.BigNumber;
+    try {
+      gasCost = ethers.utils.parseEther(gasEstimate.estimatedCost);
+      console.log(`[TransactionService] Gas cost in wei: ${gasCost.toString()}`);
+    } catch (error) {
+      console.error(`[TransactionService] Failed to parse gas cost: "${gasEstimate.estimatedCost}"`, error);
+      throw new Error(`Invalid gas cost format: ${gasEstimate.estimatedCost}`);
+    }
 
     if (!params.tokenAddress) {
       // Native token transfer - need amount + gas
-      const totalRequired = ethers.utils.parseEther(params.amount).add(gasCost);
+      // Use parseEther directly to avoid precision issues
+      let amountInWei: ethers.BigNumber;
+      
+      try {
+        const cleanAmount = params.amount.toString().trim();
+        amountInWei = ethers.utils.parseEther(cleanAmount);
+      } catch (error) {
+        throw new Error(`Invalid amount format for balance check: ${params.amount}`);
+      }
+      
+      const totalRequired = amountInWei.add(gasCost);
       if (nativeBalance.lt(totalRequired)) {
         throw new Error(
           `Insufficient ${params.network.primaryCurrency} balance. ` +
@@ -389,7 +489,8 @@ class TransactionService {
       );
       const decimals = params.tokenDecimals || 18;
       const tokenBalance = await contract.balanceOf(address);
-      const requiredAmount = ethers.utils.parseUnits(params.amount, decimals);
+      const formattedAmount = this.formatAmountForParsing(params.amount, decimals);
+      const requiredAmount = ethers.utils.parseUnits(formattedAmount, decimals);
 
       if (tokenBalance.lt(requiredAmount)) {
         throw new Error(

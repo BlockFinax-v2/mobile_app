@@ -6,6 +6,10 @@ import {
   getTestnetNetworks,
   WalletNetwork,
 } from "@/contexts/WalletContext";
+import {
+  useInstantNavigation,
+  useDeferredUpdates,
+} from "@/hooks/usePerformantNavigation";
 import { realTransactionService } from "@/services/realTransactionService";
 import { AppTabParamList, DashboardStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
@@ -16,7 +20,7 @@ import {
   useNavigation,
 } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   Modal,
   Platform,
@@ -63,16 +67,16 @@ const quickActions = [
     color: "#00CED1",
   },
   {
-    id: "contract",
-    label: "New Contract",
-    icon: "file-plus",
-    color: palette.primaryBlue,
+    id: "buysell",
+    label: "Buy & Sell",
+    icon: "shopping-outline",
+    color: palette.accentGreen,
   },
   {
     id: "document",
     label: "Upload Document",
     icon: "cloud-upload",
-    color: palette.accentGreen,
+    color: palette.primaryBlue,
   },
 ];
 
@@ -91,17 +95,40 @@ type DashboardNavigation = CompositeNavigationProp<
   BottomTabNavigationProp<AppTabParamList>
 >;
 
-export const DashboardHomeScreen: React.FC = () => {
+// Time formatting helper
+const getTimeAgo = (date: Date) => {
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const minutes = Math.floor(diff / (1000 * 60));
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return date.toLocaleDateString();
+};
+
+export default function DashboardHomeScreen() {
   const {
     balances,
     address,
     selectedNetwork,
     switchNetwork,
     refreshBalance,
+    forceRefreshBalance,
+    refreshBalanceInstant,
     transactions,
     isLoadingTransactions,
+    isRefreshingBalance,
+    isRefreshingTransactions,
+    lastBalanceUpdate,
+    lastTransactionUpdate,
     refreshTransactions,
+    refreshTransactionsInstant,
   } = useWallet();
+
+  const { navigateInstant } = useInstantNavigation();
+  const { deferHeavyUpdate } = useDeferredUpdates();
   const [showNetworkConfig, setShowNetworkConfig] = useState(false);
   // Removed selectedTokenSymbol state - now showing total portfolio value
   const [expandedNetworkId, setExpandedNetworkId] = useState<string | null>(
@@ -118,13 +145,15 @@ export const DashboardHomeScreen: React.FC = () => {
   console.log("Selected network:", selectedNetwork);
 
   // Refresh balance and transactions when component mounts or network changes
+  // But not on every render - only when truly necessary
   useEffect(() => {
     console.log(
-      "Refreshing balance and transactions due to network change or mount"
+      "Dashboard mounted or network changed, refreshing data if needed"
     );
+    // The refresh functions now have built-in throttling to avoid excessive calls
     refreshBalance();
     refreshTransactions();
-  }, [selectedNetwork.id, refreshBalance, refreshTransactions]);
+  }, [selectedNetwork.id]); // Remove function dependencies to prevent excessive calls
 
   // Removed token availability check - now showing total portfolio
 
@@ -314,16 +343,16 @@ export const DashboardHomeScreen: React.FC = () => {
   const handleQuickAction = (id: string) => {
     switch (id) {
       case "send":
-        navigation.navigate("WalletTab", { screen: "SendPayment" });
+        navigateInstant("WalletTab", { screen: "SendPayment" });
         break;
       case "request":
-        navigation.navigate("WalletTab", { screen: "ReceivePayment" });
+        navigateInstant("WalletTab", { screen: "ReceivePayment" });
         break;
-      case "contract":
-        navigation.navigate("WalletTab", { screen: "CreateInvoice" });
+      case "buysell":
+        navigateInstant("WalletTab", { screen: "BuySellSelection" });
         break;
       case "document":
-        navigation.navigate("WalletTab", { screen: "DocumentCenter" });
+        navigateInstant("WalletTab", { screen: "DocumentCenter" });
         break;
       default:
         break;
@@ -383,13 +412,23 @@ export const DashboardHomeScreen: React.FC = () => {
             <Text style={styles.balanceLabel}>Total Portfolio Value</Text>
             <View style={styles.headerActions}>
               <Pressable
-                onPress={async () => {
-                  await Promise.all([refreshBalance(), refreshTransactions()]);
+                onPress={() => {
+                  // Instant refresh - immediate UI feedback
+                  refreshBalanceInstant();
+                  refreshTransactionsInstant();
                 }}
-                style={styles.refreshButton}
+                style={[
+                  styles.refreshButton,
+                  (isRefreshingBalance || isRefreshingTransactions) &&
+                    styles.refreshButtonActive,
+                ]}
               >
                 <MaterialCommunityIcons
-                  name="refresh"
+                  name={
+                    isRefreshingBalance || isRefreshingTransactions
+                      ? "loading"
+                      : "refresh"
+                  }
                   size={20}
                   color={palette.white}
                 />
@@ -412,6 +451,15 @@ export const DashboardHomeScreen: React.FC = () => {
           </View>
           <Text style={styles.balanceAmount}>${balances.usd.toFixed(2)}</Text>
           <Text style={styles.balanceUsd}>Total USD Value</Text>
+
+          {/* Last Update Indicator */}
+          {lastBalanceUpdate && (
+            <Text style={styles.lastUpdated}>
+              {isRefreshingBalance
+                ? "Updating..."
+                : `Updated ${getTimeAgo(lastBalanceUpdate)}`}
+            </Text>
+          )}
 
           {/* Network Configuration Button */}
           <View style={styles.networkSelectorContainer}>
@@ -497,16 +545,16 @@ export const DashboardHomeScreen: React.FC = () => {
 
             <Pressable
               style={styles.quickActionItem}
-              onPress={() => handleQuickAction("contract")}
+              onPress={() => handleQuickAction("buysell")}
             >
               <View style={styles.quickActionIcon}>
                 <MaterialCommunityIcons
-                  name="invoice-text"
+                  name="shopping-outline"
                   size={24}
-                  color={palette.primaryBlue}
+                  color={palette.accentGreen}
                 />
               </View>
-              <Text style={styles.quickActionLabel}>Create Invoice</Text>
+              <Text style={styles.quickActionLabel}>Buy & Sell</Text>
             </Pressable>
           </View>
 
@@ -575,16 +623,14 @@ export const DashboardHomeScreen: React.FC = () => {
             </Pressable>
           </View>
 
-          {isLoadingTransactions ? (
+          {isLoadingTransactions && transactions.length === 0 ? (
             <View style={styles.loadingContainer}>
               <MaterialCommunityIcons
                 name="loading"
                 size={24}
                 color={palette.primaryBlue}
               />
-              <Text style={styles.loadingText}>
-                Loading real transactions...
-              </Text>
+              <Text style={styles.loadingText}>Loading transactions...</Text>
             </View>
           ) : transactions.length === 0 ? (
             <View style={styles.noTransactionsContainer}>
@@ -750,7 +796,7 @@ export const DashboardHomeScreen: React.FC = () => {
       </Modal>
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   fullScreen: {
@@ -830,6 +876,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
+  refreshButtonActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
   balanceAmount: {
     color: palette.white,
     fontSize: 32,
@@ -840,6 +889,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.9,
     marginTop: -spacing.xs,
+  },
+  lastUpdated: {
+    color: palette.white,
+    fontSize: 12,
+    opacity: 0.7,
+    marginTop: spacing.xs,
+    fontStyle: "italic",
   },
   networkSelectorContainer: {
     marginTop: spacing.sm,

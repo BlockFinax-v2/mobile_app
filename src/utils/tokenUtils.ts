@@ -1,6 +1,22 @@
 import { WalletNetwork } from "@/contexts/WalletContext";
 import { ethers } from "ethers";
 
+/**
+ * Format amount string to prevent BigNumber precision issues
+ */
+function formatAmountForParsing(amount: string, decimals: number): string {
+  const maxDecimals = Math.min(decimals, 18);
+  
+  // Use regex to truncate decimal places instead of toFixed to avoid adding zeros
+  const regex = new RegExp(`^\\d+(\\.\\d{0,${maxDecimals}})?`);
+  const match = amount.match(regex);
+  const formattedAmount = match ? match[0] : amount;
+  
+  console.log(`[TokenUtils] Formatting amount: "${amount}" -> "${formattedAmount}" (decimals: ${decimals})`);
+  
+  return formattedAmount;
+}
+
 // Standard ERC-20 ABI for basic token operations
 export const ERC20_ABI = [
   "function name() view returns (string)",
@@ -56,14 +72,16 @@ export async function createTokenTransfer(
 ): Promise<ethers.providers.TransactionResponse> {
   if (tokenAddress === "0x0000000000000000000000000000000000000000") {
     // Native token transfer
+    const formattedAmount = formatAmountForParsing(amount, 18);
     return signer.sendTransaction({
       to: recipientAddress,
-      value: ethers.utils.parseEther(amount),
+      value: ethers.utils.parseEther(formattedAmount),
     });
   } else {
     // ERC-20 token transfer
     const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-    const parsedAmount = ethers.utils.parseUnits(amount, decimals);
+    const formattedAmount = formatAmountForParsing(amount, decimals);
+    const parsedAmount = ethers.utils.parseUnits(formattedAmount, decimals);
     return contract.transfer(recipientAddress, parsedAmount);
   }
 }
@@ -81,14 +99,16 @@ export async function estimateTokenTransferGas(
   try {
     if (tokenAddress === "0x0000000000000000000000000000000000000000") {
       // Native token transfer
+      const formattedAmount = formatAmountForParsing(amount, 18);
       return signer.estimateGas({
         to: recipientAddress,
-        value: ethers.utils.parseEther(amount),
+        value: ethers.utils.parseEther(formattedAmount),
       });
     } else {
       // ERC-20 token transfer
       const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
-      const parsedAmount = ethers.utils.parseUnits(amount, decimals);
+      const formattedAmount = formatAmountForParsing(amount, decimals);
+      const parsedAmount = ethers.utils.parseUnits(formattedAmount, decimals);
       return contract.estimateGas.transfer(recipientAddress, parsedAmount);
     }
   } catch (error) {

@@ -28,8 +28,10 @@ import {
   Vibration,
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { useRoute, RouteProp } from "@react-navigation/native";
 
 type NavigationProp = StackNavigationProp<WalletStackParamList, "SendPayment">;
+type RouteProps = RouteProp<WalletStackParamList, "SendPayment">;
 
 type FormValues = {
   recipient: string;
@@ -39,7 +41,16 @@ type FormValues = {
 
 export const SendPaymentScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { selectedNetwork, balances, switchNetwork } = useWallet();
+  const route = useRoute<RouteProps>();
+  const {
+    selectedNetwork,
+    balances,
+    switchNetwork,
+    isLoading,
+    isRefreshingBalance,
+    refreshBalance,
+    forceRefreshBalance,
+  } = useWallet();
 
   // State management
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
@@ -59,17 +70,56 @@ export const SendPaymentScreen: React.FC = () => {
   // Set default token when network changes
   useEffect(() => {
     if (availableTokens.length > 0) {
-      // Prefer USDC, then first stablecoin, then native token
-      const preferredToken =
-        availableTokens.find((t) => t.symbol === "USDC") ||
-        availableTokens.find(
-          (t) => t.address !== "0x0000000000000000000000000000000000000000"
-        ) ||
-        availableTokens[0];
+      let preferredToken;
+
+      // If a specific token is prefilled (from marketplace), use that
+      if (route.params?.prefilledToken) {
+        preferredToken = availableTokens.find(
+          (t) => t.symbol === route.params?.prefilledToken
+        );
+      }
+
+      // Otherwise, prefer native token for marketplace flows, or USDC for regular flows
+      if (!preferredToken) {
+        if (route.params?.returnTo === "MarketplaceFlow") {
+          // For marketplace flows, prefer native token
+          preferredToken = availableTokens.find(
+            (t) => t.address === "0x0000000000000000000000000000000000000000"
+          );
+        } else {
+          // For regular flows, prefer USDC, then first stablecoin, then native token
+          preferredToken =
+            availableTokens.find((t) => t.symbol === "USDC") ||
+            availableTokens.find(
+              (t) => t.address !== "0x0000000000000000000000000000000000000000"
+            );
+        }
+      }
+
+      // Fallback to first available token
+      preferredToken = preferredToken || availableTokens[0];
 
       setSelectedToken(preferredToken);
     }
-  }, [availableTokens]);
+  }, [availableTokens, route.params?.prefilledToken, route.params?.returnTo]);
+
+  // Handle prefilled network switch
+  useEffect(() => {
+    const prefilledNetwork = route.params?.prefilledNetwork;
+    if (prefilledNetwork && prefilledNetwork !== selectedNetwork.id) {
+      switchNetwork(prefilledNetwork as SupportedNetworkId).catch((error) => {
+        console.warn("Failed to switch to prefilled network:", error);
+      });
+    }
+  }, [route.params?.prefilledNetwork, selectedNetwork.id, switchNetwork]);
+
+  // Refresh balances when component mounts or network changes (get fresh data for transactions)
+  useEffect(() => {
+    // Use force refresh for payment screen to ensure accurate balances before transaction
+    forceRefreshBalance().catch((error) => {
+      console.warn("Failed to refresh balance in SendPaymentScreen:", error);
+    });
+  }, [selectedNetwork.id]); // Only depend on network change, not the function itself
 
   // Form setup
   const {
@@ -81,9 +131,9 @@ export const SendPaymentScreen: React.FC = () => {
     reset,
   } = useForm<FormValues>({
     defaultValues: {
-      recipient: "",
-      amount: "",
-      message: "",
+      recipient: route.params?.prefilledRecipient || "",
+      amount: route.params?.prefilledAmount || "",
+      message: route.params?.prefilledMessage || "",
     },
   });
 
@@ -92,6 +142,7 @@ export const SendPaymentScreen: React.FC = () => {
 
   // Get balance for selected token
   const availableBalance = React.useMemo(() => {
+    // Don't return 0 while refreshing - return last known value or wait for data
     if (!selectedToken) return "0";
 
     if (
@@ -106,11 +157,18 @@ export const SendPaymentScreen: React.FC = () => {
       );
       return tokenBalance?.balance || "0";
     }
-  }, [selectedToken, balances]);
+  }, [selectedToken, balances]); // Remove isLoading dependency to prevent zero flicker
 
   // Estimate gas when inputs change
   const estimateGas = useCallback(async () => {
+    // Don't estimate gas while balances are refreshing, but allow if we have existing data
     if (!recipientValue || !amountValue || !selectedToken) {
+      setEstimatedFee(null);
+      return;
+    }
+
+    // If we're refreshing but have no existing balance data, wait
+    if (isRefreshingBalance && parseFloat(availableBalance) === 0) {
       setEstimatedFee(null);
       return;
     }
@@ -198,6 +256,7 @@ export const SendPaymentScreen: React.FC = () => {
     selectedNetwork,
     availableBalance,
     balances.primary,
+    isRefreshingBalance,
   ]);
 
   // Debounce gas estimation
@@ -361,6 +420,8 @@ export const SendPaymentScreen: React.FC = () => {
       message: values.message || undefined,
       tokenAddress: selectedToken.address,
       tokenDecimals: selectedToken.decimals,
+      returnTo: route.params?.returnTo,
+      returnParams: route.params?.returnParams,
     });
   };
 
@@ -511,7 +572,9 @@ export const SendPaymentScreen: React.FC = () => {
                   {selectedToken ? selectedToken.symbol : "Select Token"}
                 </Text>
                 <Text style={styles.selectorSubtitle}>
-                  {selectedToken && availableBalance
+                  {isRefreshingBalance && parseFloat(availableBalance) === 0
+                    ? "Loading balance..."
+                    : selectedToken && availableBalance
                     ? `Balance: ${parseFloat(availableBalance).toFixed(4)} ${
                         selectedToken.symbol
                       }`
@@ -615,7 +678,9 @@ export const SendPaymentScreen: React.FC = () => {
                 placeholder="0.00"
                 error={fieldState.error?.message}
                 helperText={
-                  selectedToken
+                  isRefreshingBalance && parseFloat(availableBalance) === 0
+                    ? "Loading balance..."
+                    : selectedToken
                     ? `Available: ${parseFloat(availableBalance).toFixed(4)} ${
                         selectedToken.symbol
                       }`

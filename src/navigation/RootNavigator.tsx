@@ -1,4 +1,5 @@
 import { useWallet } from "@/contexts/WalletContext";
+import { BiometricSetupScreen } from "@/screens/auth/BiometricSetupScreen";
 import { CreateWalletFlowScreen } from "@/screens/auth/CreateWalletFlowScreen";
 import { ImportWalletScreen } from "@/screens/auth/ImportWalletScreen";
 import { SplashScreen as IntroSplashScreen } from "@/screens/auth/SplashScreen";
@@ -109,6 +110,11 @@ export const RootNavigator: React.FC = () => (
     <RootStack.Screen name="Splash" component={SplashGate} />
     <RootStack.Screen name="Auth" component={AuthNavigator} />
     <RootStack.Screen name="App" component={AppNavigator} />
+    <RootStack.Screen
+      name="BiometricSetup"
+      component={BiometricSetupScreen}
+      options={{ title: "Setup Biometric Authentication" }}
+    />
   </RootStack.Navigator>
 );
 

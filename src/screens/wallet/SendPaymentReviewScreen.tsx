@@ -39,14 +39,14 @@ interface TransactionStatus {
 export const SendPaymentReviewScreen: React.FC = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProps>();
-  const { selectedNetwork, refreshBalance } = useWallet();
-  
+  const { selectedNetwork, refreshBalance, forceRefreshBalance } = useWallet();
+
   // Transaction states
   const [isProcessing, setIsProcessing] = useState(false);
   const [transactionHash, setTransactionHash] = useState<string>("");
   const [explorerUrl, setExplorerUrl] = useState<string>("");
   const [txStatus, setTxStatus] = useState<TransactionStatus | null>(null);
-  
+
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.8)).current;
@@ -89,7 +89,10 @@ export const SendPaymentReviewScreen: React.FC = () => {
             useNativeDriver: true,
           }),
         ]).start(() => {
-          if (txStatus?.status === "pending" || txStatus?.status === "confirming") {
+          if (
+            txStatus?.status === "pending" ||
+            txStatus?.status === "confirming"
+          ) {
             pulse();
           }
         });
@@ -103,11 +106,14 @@ export const SendPaymentReviewScreen: React.FC = () => {
     try {
       let attempts = 0;
       const maxAttempts = 60; // 5 minutes max polling
-      
+
       const poll = async () => {
         try {
-          const status = await transactionService.getTransactionStatus(hash, selectedNetwork);
-          
+          const status = await transactionService.getTransactionStatus(
+            hash,
+            selectedNetwork
+          );
+
           if (status.status === "pending") {
             setTxStatus({
               status: "pending",
@@ -120,7 +126,8 @@ export const SendPaymentReviewScreen: React.FC = () => {
                 status: "confirming",
                 confirmations: 0,
                 blockNumber: status.blockNumber,
-                message: "Transaction included in block, waiting for confirmations...",
+                message:
+                  "Transaction included in block, waiting for confirmations...",
               });
             } else {
               setTxStatus({
@@ -129,13 +136,13 @@ export const SendPaymentReviewScreen: React.FC = () => {
                 blockNumber: status.blockNumber,
                 message: `Transaction confirmed with ${status.confirmations} confirmations!`,
               });
-              
+
               // Success haptic feedback
               Vibration.vibrate([100, 200, 100]);
-              
-              // Refresh balance after confirmation
-              await refreshBalance();
-              
+
+              // Refresh balance after confirmation - force refresh to get updated balance immediately
+              await forceRefreshBalance();
+
               // Auto navigate back after 3 seconds
               setTimeout(() => {
                 navigation.reset({
@@ -163,7 +170,8 @@ export const SendPaymentReviewScreen: React.FC = () => {
             setTxStatus({
               status: "pending",
               confirmations: 0,
-              message: "Taking longer than expected. Check explorer for updates.",
+              message:
+                "Taking longer than expected. Check explorer for updates.",
             });
           }
         } catch (error) {
@@ -183,7 +191,24 @@ export const SendPaymentReviewScreen: React.FC = () => {
   };
 
   const handleConfirm = async () => {
+    // Prevent multiple simultaneous transactions
+    if (isProcessing) {
+      console.log('[SendPaymentReview] Transaction already in progress, ignoring duplicate call');
+      return;
+    }
+    
     setIsProcessing(true);
+    
+    // Add debug logging for transaction parameters
+    console.log('[SendPaymentReview] Transaction parameters:', {
+      recipientAddress: details.recipient,
+      amount: details.amount,
+      amountType: typeof details.amount,
+      tokenAddress: details.tokenAddress === "0x0000000000000000000000000000000000000000" ? undefined : details.tokenAddress,
+      tokenDecimals: details.tokenDecimals,
+      network: selectedNetwork.name,
+    });
+    
     try {
       const result = await transactionService.sendTransaction({
         recipientAddress: details.recipient,
@@ -202,21 +227,20 @@ export const SendPaymentReviewScreen: React.FC = () => {
       }
 
       setIsProcessing(false);
-      
+
       // Start polling transaction status
       pollTransactionStatus(result.hash);
-
     } catch (error: any) {
       console.error("Transaction error:", error);
       setIsProcessing(false);
       Vibration.vibrate([200, 100, 200]); // Error vibration
-      
+
       Alert.alert(
         "Transaction Failed",
         error.message || "Failed to send transaction. Please try again.",
         [
           { text: "Retry", onPress: handleConfirm },
-          { text: "Cancel", style: "cancel" }
+          { text: "Cancel", style: "cancel" },
         ]
       );
     }
@@ -238,8 +262,12 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
   const handleShare = async () => {
     try {
-      const message = `Transaction sent!\n\nAmount: ${details.amount} ${details.currency}\nNetwork: ${details.network}\nHash: ${transactionHash}\n\n${explorerUrl ? `View on Explorer: ${explorerUrl}` : ''}`;
-      
+      const message = `Transaction sent!\n\nAmount: ${details.amount} ${
+        details.currency
+      }\nNetwork: ${details.network}\nHash: ${transactionHash}\n\n${
+        explorerUrl ? `View on Explorer: ${explorerUrl}` : ""
+      }`;
+
       await Share.share({
         message,
         title: "Transaction Receipt",
@@ -251,7 +279,7 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
   const getStatusIcon = () => {
     if (!txStatus) return null;
-    
+
     switch (txStatus.status) {
       case "pending":
         return "clock-outline";
@@ -268,7 +296,7 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
   const getStatusColor = () => {
     if (!txStatus) return palette.neutralMid;
-    
+
     switch (txStatus.status) {
       case "pending":
         return palette.warningYellow;
@@ -288,19 +316,21 @@ export const SendPaymentReviewScreen: React.FC = () => {
     return (
       <Screen>
         <View style={styles.statusContainer}>
-          <Animated.View 
+          <Animated.View
             style={[
               styles.statusIconContainer,
               {
                 opacity: fadeAnim,
-                transform: [
-                  { scale: scaleAnim },
-                  { scale: pulseAnim },
-                ],
+                transform: [{ scale: scaleAnim }, { scale: pulseAnim }],
               },
             ]}
           >
-            <View style={[styles.statusIcon, { backgroundColor: getStatusColor() + "20" }]}>
+            <View
+              style={[
+                styles.statusIcon,
+                { backgroundColor: getStatusColor() + "20" },
+              ]}
+            >
               <MaterialCommunityIcons
                 name={getStatusIcon() as any}
                 size={60}
@@ -309,19 +339,22 @@ export const SendPaymentReviewScreen: React.FC = () => {
             </View>
           </Animated.View>
 
-          <Animated.View 
+          <Animated.View
             style={[
               styles.statusContent,
-              { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }
+              { opacity: fadeAnim, transform: [{ scale: scaleAnim }] },
             ]}
           >
             <Text variant="title" style={styles.statusTitle}>
-              {txStatus.status === "confirmed" ? "✅ Success!" :
-               txStatus.status === "failed" ? "❌ Failed" :
-               txStatus.status === "confirming" ? "🔄 Confirming" :
-               "⏳ Processing"}
+              {txStatus.status === "confirmed"
+                ? "✅ Success!"
+                : txStatus.status === "failed"
+                ? "❌ Failed"
+                : txStatus.status === "confirming"
+                ? "🔄 Confirming"
+                : "⏳ Processing"}
             </Text>
-            
+
             <Text style={styles.statusMessage}>{txStatus.message}</Text>
 
             {txStatus.confirmations > 0 && (
@@ -353,19 +386,19 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
           <View style={styles.transactionDetails}>
             <Text style={styles.detailsTitle}>Transaction Details</Text>
-            
+
             <View style={styles.detailRow}>
               <Text color={palette.neutralMid}>Amount</Text>
               <Text style={styles.detailValue}>
                 {details.amount} {details.currency}
               </Text>
             </View>
-            
+
             <View style={styles.detailRow}>
               <Text color={palette.neutralMid}>Network</Text>
               <Text style={styles.detailValue}>{details.network}</Text>
             </View>
-            
+
             <View style={styles.detailRow}>
               <Text color={palette.neutralMid}>Hash</Text>
               <TouchableOpacity onPress={handleCopyHash}>
@@ -391,10 +424,28 @@ export const SendPaymentReviewScreen: React.FC = () => {
             />
             <Button
               label={txStatus.status === "confirmed" ? "Done" : "Close"}
-              onPress={() => navigation.reset({
-                index: 0,
-                routes: [{ name: "WalletHome" }],
-              })}
+              onPress={() => {
+                if (
+                  details.returnTo === "MarketplaceFlow" &&
+                  txStatus.status === "confirmed"
+                ) {
+                  // Return to marketplace with transaction data
+                  navigation.navigate("MarketplaceFlow", {
+                    ...details.returnParams,
+                    stakeTransactionData: {
+                      hash: transactionHash,
+                      amount: details.amount,
+                      currency: details.currency,
+                      network: details.network,
+                    },
+                  });
+                } else {
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: "WalletHome" }],
+                  });
+                }
+              }}
             />
           </View>
         </View>
@@ -498,39 +549,40 @@ export const SendPaymentReviewScreen: React.FC = () => {
           <Text variant="subtitle" style={styles.cardTitle}>
             Fee Breakdown
           </Text>
-          
+
           <View style={styles.feeRow}>
             <Text color={palette.neutralMid}>Transaction Amount</Text>
             <Text style={styles.feeValue}>
               {details.amount} {details.currency}
             </Text>
           </View>
-          
+
           <View style={styles.feeRow}>
             <Text color={palette.neutralMid}>Network Fee (Est.)</Text>
             <Text style={styles.feeValue}>
               {details.fee.toFixed(6)} {selectedNetwork.primaryCurrency}
             </Text>
           </View>
-          
+
           <View style={styles.feeDivider} />
-          
+
           <View style={styles.feeRow}>
             <Text variant="subtitle">Total You'll Send</Text>
             <Text variant="subtitle" color={palette.primaryBlue}>
               {details.amount} {details.currency}
             </Text>
           </View>
-          
+
           <View style={styles.feeRow}>
             <Text variant="subtitle">Plus Network Fee</Text>
             <Text variant="subtitle" color={palette.neutralDark}>
               {details.fee.toFixed(6)} {selectedNetwork.primaryCurrency}
             </Text>
           </View>
-          
+
           <Text style={styles.feeNote}>
-            * Network fees are paid separately in {selectedNetwork.primaryCurrency}
+            * Network fees are paid separately in{" "}
+            {selectedNetwork.primaryCurrency}
           </Text>
         </View>
 
@@ -539,19 +591,14 @@ export const SendPaymentReviewScreen: React.FC = () => {
           {isProcessing ? (
             <View style={styles.processingContainer}>
               <ActivityIndicator size="large" color={palette.primaryBlue} />
-              <Text style={styles.processingText}>
-                Sending transaction...
-              </Text>
+              <Text style={styles.processingText}>Sending transaction...</Text>
               <Text color={palette.neutralMid} style={styles.processingSubtext}>
                 This may take a few moments
               </Text>
             </View>
           ) : (
             <>
-              <Button
-                label="Confirm & Send"
-                onPress={handleConfirm}
-              />
+              <Button label="Confirm & Send" onPress={handleConfirm} />
               <Button
                 label="Cancel"
                 variant="outline"

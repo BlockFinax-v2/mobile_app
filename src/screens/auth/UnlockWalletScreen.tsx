@@ -19,13 +19,17 @@ type UnlockForm = {
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 export const UnlockWalletScreen: React.FC = () => {
-  const { unlockWallet, unlockWithBiometrics, settings, isBiometricAvailable } =
-    useWallet();
+  const {
+    unlockWallet,
+    unlockWithBiometrics,
+    settings,
+    isBiometricAvailable,
+    isBiometricEnabled,
+  } = useWallet();
   const navigation = useNavigation<NavigationProp>();
   const [isLoading, setIsLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
   const shakeAnim = useRef(new Animated.Value(0)).current;
-  const autoAttemptedRef = useRef(false);
 
   const { control, handleSubmit, reset } = useForm<UnlockForm>({
     defaultValues: { password: "" },
@@ -70,37 +74,23 @@ export const UnlockWalletScreen: React.FC = () => {
     }
   };
 
-  const handleBiometricUnlock = useCallback(async () => {
+  const handleBiometricUnlock = async () => {
+    setIsLoading(true);
     try {
-      setIsLoading(true);
       await unlockWithBiometrics();
       navigation.reset({ index: 0, routes: [{ name: "App" }] });
+      reset();
     } catch (error) {
+      console.error("Biometric unlock failed:", error);
+      triggerShake();
       Alert.alert(
-        "Authentication Failed",
-        "Unable to authenticate with biometrics. Please try again or use your password."
+        "Biometric Authentication Failed",
+        "Please use your password to unlock the wallet."
       );
     } finally {
       setIsLoading(false);
     }
-  }, [navigation, unlockWithBiometrics]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (
-        isBiometricAvailable &&
-        settings.enableBiometrics &&
-        !autoAttemptedRef.current
-      ) {
-        autoAttemptedRef.current = true;
-        handleBiometricUnlock();
-      }
-
-      return () => {
-        autoAttemptedRef.current = false;
-      };
-    }, [handleBiometricUnlock, isBiometricAvailable, settings.enableBiometrics])
-  );
+  };
 
   return (
     <Screen>
@@ -112,9 +102,9 @@ export const UnlockWalletScreen: React.FC = () => {
           Enter your password to access the BlockFinaX dashboard.
         </Text>
 
-        {isBiometricAvailable && settings.enableBiometrics ? (
+        {isBiometricAvailable && isBiometricEnabled ? (
           <Button
-            label="Use Fingerprint / Face ID"
+            label="Use Biometric Authentication"
             variant="secondary"
             onPress={handleBiometricUnlock}
             loading={isLoading}

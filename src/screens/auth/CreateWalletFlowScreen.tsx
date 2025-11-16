@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { DebugTool } from "@/components/ui/DebugTool";
+import { BiometricSetupStep } from "./BiometricSetupStep";
 import { useWallet } from "@/contexts/WalletContext";
 import { RootStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
@@ -218,7 +219,12 @@ export const CreateWalletFlowScreen: React.FC = () => {
       console.log("Starting wallet import with generated mnemonic");
       await importWallet({ mnemonic, password: values.password });
       console.log("Wallet import successful");
-      goNext();
+
+      // Navigate to biometric setup before going to dashboard
+      navigation.navigate("BiometricSetup", {
+        walletPassword: values.password,
+        returnTo: "App",
+      });
     } catch (error) {
       console.error("Failed to finalize wallet", error);
       Alert.alert(
@@ -453,18 +459,9 @@ export const CreateWalletFlowScreen: React.FC = () => {
               Wallet Ready!
             </Text>
             <Text style={styles.bodyCopy}>
-              Your BlockFinaX wallet is created and secured. You can now explore
-              the dashboard and start managing your cross-border trades.
+              Your BlockFinaX wallet is created and secured. Setting up
+              biometric authentication...
             </Text>
-            <Button
-              label="Go to Dashboard"
-              onPress={() =>
-                navigation.reset({
-                  index: 0,
-                  routes: [{ name: "App" }],
-                })
-              }
-            />
           </View>
         )}
       </ScrollView>

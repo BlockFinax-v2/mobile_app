@@ -4,12 +4,15 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useMemo } from "react";
 
+// Optimized query client with better performance settings
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60 * 1000,
+      staleTime: 300 * 1000, // 5 minutes instead of 1 minute
       refetchOnMount: false,
       refetchOnWindowFocus: false,
+      retry: 1, // Reduce retries from 3 to 1
+      retryDelay: 1000, // Faster retry
     },
   },
 });

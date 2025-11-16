@@ -49,7 +49,12 @@ export const ImportWalletScreen: React.FC = () => {
         privateKey: values.privateKey || undefined,
         password: values.password,
       });
-      navigation.reset({ index: 0, routes: [{ name: "App" }] });
+
+      // Navigate to biometric setup with the password
+      navigation.navigate("BiometricSetup", {
+        walletPassword: values.password,
+        returnTo: "App",
+      });
     } catch (error) {
       console.error("Import wallet failed", error);
       Alert.alert(

@@ -1,10 +1,17 @@
 import { secureStorage } from "@/utils/secureStorage";
 import { getAllTokenBalances } from "@/utils/tokenUtils";
 import { priceService } from "@/services/priceService";
+import { biometricService } from "@/services/biometricService";
 import {
   realTransactionService,
   RealTransaction,
 } from "@/services/realTransactionService";
+import {
+  timeAsyncOperation,
+  startPerformanceTimer,
+  endPerformanceTimer,
+} from "@/utils/performance";
+import { performanceMonitor } from "@/utils/performanceMonitor";
 import { ethers } from "ethers";
 import { getRandomBytes } from "expo-crypto";
 import React, {
@@ -21,11 +28,7 @@ import { Alert, AppState, AppStateStatus } from "react-native";
 const MNEMONIC_KEY = "blockfinax.mnemonic";
 const PRIVATE_KEY = "blockfinax.privateKey";
 const PASSWORD_KEY = "blockfinax.password";
-const LAST_UNLOCK_KEY = "blockfinax.lastUnlock";
 const SETTINGS_KEY = "blockfinax.settings";
-const WALLET_PERSISTENT_KEY = "blockfinax.wallet_persistent";
-const BIOMETRIC_ENABLED_KEY = "blockfinax.biometric_enabled";
-const BIOMETRIC_HASH_KEY = "blockfinax.biometric_hash";
 
 const AUTO_LOCK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
@@ -48,6 +51,7 @@ export interface WalletNetwork {
   name: string;
   chainId: number;
   rpcUrl: string;
+  rpcFallbacks?: string[]; // Alternative RPC endpoints for reliability
   explorerUrl?: string;
   primaryCurrency: string;
   isTestnet: boolean;
@@ -66,6 +70,11 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     name: "Ethereum Mainnet",
     chainId: 1,
     rpcUrl: "https://eth.llamarpc.com", // Free public RPC
+    rpcFallbacks: [
+      "https://rpc.ankr.com/eth",
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth-mainnet.public.blastapi.io",
+    ],
     explorerUrl: "https://etherscan.io",
     primaryCurrency: "ETH",
     isTestnet: false,
@@ -201,6 +210,11 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     name: "Polygon Mumbai Testnet",
     chainId: 80001,
     rpcUrl: "https://polygon-mumbai-bor.publicnode.com",
+    rpcFallbacks: [
+      "https://rpc-mumbai.maticvigil.com",
+      "https://rpc.ankr.com/polygon_mumbai",
+      "https://polygon-mumbai.blockpi.network/v1/rpc/public",
+    ],
     explorerUrl: "https://mumbai.polygonscan.com",
     primaryCurrency: "MATIC",
     isTestnet: true,
@@ -314,11 +328,10 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
 };
 
 export interface WalletSettings {
-  enableBiometrics: boolean;
   notificationsEnabled: boolean;
   preferredCurrency: string;
-  persistWallet: boolean;
   displayName?: string; // User's chosen display name
+  enableBiometrics: boolean; // Biometric authentication setting
 }
 
 export interface WalletBalances {
@@ -335,19 +348,25 @@ export interface WalletBalances {
 
 interface WalletContextValue {
   isLoading: boolean;
+  isRefreshingBalance: boolean;
+  isRefreshingTransactions: boolean;
   isUnlocked: boolean;
   hasWallet: boolean;
   address?: string;
   balances: WalletBalances;
+  lastBalanceUpdate?: Date;
   transactions: RealTransaction[];
   isLoadingTransactions: boolean;
+  lastTransactionUpdate?: Date;
   selectedNetwork: WalletNetwork;
   mainnetNetworks: WalletNetwork[];
   testnetNetworks: WalletNetwork[];
   getNetworkById: (networkId: SupportedNetworkId) => WalletNetwork;
   lastUnlockTime?: Date;
   settings: WalletSettings;
+  // Biometric authentication properties
   isBiometricAvailable: boolean;
+  isBiometricEnabled: boolean;
   createWallet: () => Promise<void>;
   importWallet: (options: {
     mnemonic?: string;
@@ -357,29 +376,35 @@ interface WalletContextValue {
   unlockWallet: (password: string) => Promise<void>;
   unlockWithBiometrics: () => Promise<void>;
   lockWallet: () => Promise<void>;
-  refreshBalance: () => Promise<void>;
-  refreshTransactions: () => Promise<void>;
-  switchNetwork: (networkId: SupportedNetworkId) => Promise<void>;
-  updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
   enableBiometricAuth: (password: string) => Promise<void>;
   disableBiometricAuth: () => Promise<void>;
+  refreshBalance: () => Promise<void>;
+  forceRefreshBalance: () => Promise<void>;
+  refreshBalanceInstant: () => Promise<void>;
+  refreshTransactions: () => Promise<void>;
+  refreshTransactionsInstant: () => Promise<void>;
+  switchNetwork: (networkId: SupportedNetworkId) => Promise<void>;
+  switchToken: (tokenAddress?: string) => Promise<void>;
+  updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
   resetWalletData: () => Promise<void>;
 }
 
 const WalletContext = createContext<WalletContextValue | undefined>(undefined);
 
 const defaultSettings: WalletSettings = {
-  enableBiometrics: false,
   notificationsEnabled: true,
   preferredCurrency: "USD",
-  persistWallet: false,
   displayName: undefined, // No display name by default
+  enableBiometrics: false, // Biometrics disabled by default
 };
 
 export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   children,
 }) => {
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+  const [isRefreshingTransactions, setIsRefreshingTransactions] =
+    useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [hasWallet, setHasWallet] = useState(false);
   const [address, setAddress] = useState<string | undefined>();
@@ -389,14 +414,22 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     usd: 0,
     tokens: [],
   });
+  const [lastBalanceUpdate, setLastBalanceUpdate] = useState<
+    Date | undefined
+  >();
   const [selectedNetwork, setSelectedNetwork] = useState<WalletNetwork>(
     NETWORKS["polygon-mumbai"]
   );
   const [transactions, setTransactions] = useState<RealTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
-  const [lastUnlockTime, setLastUnlockTime] = useState<Date | undefined>();
+  const [lastTransactionUpdate, setLastTransactionUpdate] = useState<
+    Date | undefined
+  >();
   const [settings, setSettings] = useState<WalletSettings>(defaultSettings);
+
+  // Biometric authentication state
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
+  const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
 
   const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
   const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
@@ -405,29 +438,13 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     []
   );
 
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-
-  const clearAutoLockTimer = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-  }, []);
+  const balanceRefreshRef = useRef<boolean>(false);
 
   const lockWallet = useCallback(async () => {
     setIsUnlocked(false);
     setAddress(undefined);
     setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
-    clearAutoLockTimer();
-  }, [clearAutoLockTimer]);
-
-  const scheduleAutoLock = useCallback(() => {
-    clearAutoLockTimer();
-    timeoutRef.current = setTimeout(() => {
-      lockWallet();
-    }, AUTO_LOCK_INTERVAL);
-  }, [clearAutoLockTimer, lockWallet]);
+  }, []);
 
   const persistSettings = useCallback(
     async (nextSettings: WalletSettings) => {
@@ -445,82 +462,238 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     [persistSettings, settings]
   );
 
+  // Helper function to fetch balance with RPC fallbacks
+  const fetchBalanceWithFallbacks = useCallback(
+    async (forceRefresh = false) => {
+      if (!address) return null;
+
+      const rpcEndpoints = [
+        selectedNetwork.rpcUrl,
+        ...(selectedNetwork.rpcFallbacks || []),
+      ];
+      let lastError: any = null;
+
+      for (let i = 0; i < rpcEndpoints.length; i++) {
+        try {
+          const rpcUrl = rpcEndpoints[i];
+          console.log(
+            `💰 ${forceRefresh ? "Force" : ""} fetching balance via RPC ${
+              i + 1
+            }/${rpcEndpoints.length}: ${rpcUrl}`
+          );
+
+          const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+          const balance = await provider.getBalance(address);
+          const formatted = Number(ethers.utils.formatEther(balance));
+
+          // Get token balances
+          const tokens = await getAllTokenBalances(
+            address,
+            selectedNetwork,
+            provider
+          );
+
+          // Calculate real USD values using price service
+          const primaryUsdValue = await priceService.calculateUSDValue(
+            selectedNetwork.primaryCurrency,
+            formatted,
+            selectedNetwork
+          );
+
+          // Calculate USD values for tokens
+          const tokensWithUSD = await Promise.all(
+            tokens.map(async (token) => {
+              const usdValue = await priceService.calculateUSDValue(
+                token.symbol,
+                token.balance,
+                selectedNetwork
+              );
+              return {
+                ...token,
+                usdValue,
+              };
+            })
+          );
+
+          // Calculate total USD value
+          const totalTokenUsdValue = tokensWithUSD.reduce(
+            (sum, token) => sum + (token.usdValue || 0),
+            0
+          );
+          const totalUsdValue = primaryUsdValue + totalTokenUsdValue;
+
+          console.log(`✅ ${forceRefresh ? "Force" : ""} Balance Update:`, {
+            network: selectedNetwork.name,
+            rpcUsed: rpcUrl,
+            primary: `${formatted} ${selectedNetwork.primaryCurrency}`,
+            primaryUSD: `$${primaryUsdValue.toFixed(2)}`,
+            tokenCount: tokensWithUSD.length,
+            totalUSD: `$${totalUsdValue.toFixed(2)}`,
+          });
+
+          return {
+            primary: formatted,
+            primaryUsd: primaryUsdValue,
+            usd: totalUsdValue,
+            tokens: tokensWithUSD,
+          };
+        } catch (error) {
+          lastError = error;
+          console.warn(`RPC ${rpcEndpoints[i]} failed:`, error);
+
+          // If this was the last RPC to try, don't wait
+          if (i < rpcEndpoints.length - 1) {
+            // Wait 500ms before trying next RPC
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        }
+      }
+
+      // If all RPCs failed, throw the last error
+      throw new Error(
+        `All RPC endpoints failed. Last error: ${lastError?.message}`
+      );
+    },
+    [address, selectedNetwork]
+  );
+
   const refreshBalance = useCallback(async () => {
+    const opId = performanceMonitor.startOperation("refresh_balance");
+
+    try {
+      if (!address) {
+        // Only reset if no address - this is a legitimate state change
+        setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
+        performanceMonitor.endOperation(opId, true);
+        return;
+      }
+
+      // Check if we recently updated to avoid excessive polling
+      // But allow manual refreshes and important updates
+      const now = new Date();
+      const timeSinceLastUpdate = lastBalanceUpdate
+        ? now.getTime() - lastBalanceUpdate.getTime()
+        : Infinity;
+
+      // Adaptive throttling based on device performance
+      const avgRefreshTime =
+        performanceMonitor.getAverageOperationTime("refresh_balance");
+      const baseThrottle = 5000; // Base 5 seconds
+      const adaptiveThrottle = avgRefreshTime > 3000 ? 8000 : baseThrottle; // 8s if device is slow
+
+      if (lastBalanceUpdate && timeSinceLastUpdate < adaptiveThrottle) {
+        console.log(
+          `⏰ Balance updated recently (${timeSinceLastUpdate}ms < ${adaptiveThrottle}ms), skipping refresh`
+        );
+        performanceMonitor.endOperation(opId, true);
+        return;
+      }
+
+      // Prevent concurrent balance refresh calls
+      if (balanceRefreshRef.current) {
+        console.log("🔄 Balance refresh already in progress, skipping");
+        performanceMonitor.endOperation(opId, true);
+        return;
+      }
+
+      // Set refreshing state WITHOUT clearing existing data
+      setIsRefreshingBalance(true);
+      balanceRefreshRef.current = true;
+
+      const newBalances = await fetchBalanceWithFallbacks(false);
+      if (newBalances) {
+        setBalances(newBalances);
+        setLastBalanceUpdate(now);
+      }
+
+      performanceMonitor.endOperation(opId, true);
+    } catch (error) {
+      console.warn("Failed to refresh balance", error);
+      performanceMonitor.endOperation(
+        opId,
+        false,
+        error instanceof Error ? error.message : String(error)
+      );
+      // Don't reset balances to zero on error, keep existing data
+      // This prevents the flickering issue that creates bad UX
+    } finally {
+      setIsRefreshingBalance(false);
+      balanceRefreshRef.current = false;
+    }
+  }, [address, selectedNetwork, lastBalanceUpdate, fetchBalanceWithFallbacks]);
+
+  // Non-blocking refresh that provides instant UI feedback
+  const refreshBalanceInstant = useCallback(async () => {
+    console.log("⚡ Starting instant balance refresh...");
+
+    // Immediate UI feedback - show refreshing state instantly
+    setIsRefreshingBalance(true);
+
+    // Defer heavy refresh operation
+    setTimeout(async () => {
+      try {
+        await refreshBalance();
+      } catch (error) {
+        console.warn("Deferred balance refresh failed:", error);
+      }
+    }, 50); // Very short delay for instant UI feedback
+  }, [refreshBalance]);
+
+  // Force refresh that bypasses throttling for user actions or critical updates
+
+  // Force refresh that bypasses throttling for user actions or critical updates
+  const forceRefreshBalance = useCallback(async () => {
     if (!address) {
       setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
       return;
     }
 
-    try {
-      const provider = new ethers.providers.JsonRpcProvider(
-        selectedNetwork.rpcUrl
-      );
-      const balance = await provider.getBalance(address);
-      const formatted = Number(ethers.utils.formatEther(balance));
-
-      // Get token balances
-      const tokens = await getAllTokenBalances(
-        address,
-        selectedNetwork,
-        provider
-      );
-
-      // Calculate real USD values using price service
-      const primaryUsdValue = await priceService.calculateUSDValue(
-        selectedNetwork.primaryCurrency,
-        formatted,
-        selectedNetwork
-      );
-
-      // Calculate USD values for tokens
-      const tokensWithUSD = await Promise.all(
-        tokens.map(async (token) => {
-          const usdValue = await priceService.calculateUSDValue(
-            token.symbol,
-            token.balance,
-            selectedNetwork
-          );
-          return {
-            ...token,
-            usdValue,
-          };
-        })
-      );
-
-      // Calculate total USD value
-      const totalTokenUsdValue = tokensWithUSD.reduce(
-        (sum, token) => sum + (token.usdValue || 0),
-        0
-      );
-      const totalUsdValue = primaryUsdValue + totalTokenUsdValue;
-
-      console.log("🔄 Balance Update:", {
-        network: selectedNetwork.name,
-        primary: `${formatted} ${selectedNetwork.primaryCurrency}`,
-        primaryUSD: `$${primaryUsdValue.toFixed(2)}`,
-        tokenCount: tokensWithUSD.length,
-        totalUSD: `$${totalUsdValue.toFixed(2)}`,
-      });
-
-      setBalances({
-        primary: formatted,
-        primaryUsd: primaryUsdValue,
-        usd: totalUsdValue,
-        tokens: tokensWithUSD,
-      });
-    } catch (error) {
-      console.warn("Failed to refresh balance", error);
-      setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
+    // Prevent concurrent refresh calls
+    if (balanceRefreshRef.current) {
+      console.log("🔄 Balance refresh already in progress, skipping");
+      return;
     }
-  }, [address, selectedNetwork]);
+
+    console.log("🚀 Force refreshing balance (bypassing throttle)");
+    setIsRefreshingBalance(true);
+    balanceRefreshRef.current = true;
+
+    try {
+      const newBalances = await fetchBalanceWithFallbacks(true);
+      if (newBalances) {
+        setBalances(newBalances);
+        setLastBalanceUpdate(new Date());
+      }
+    } catch (error) {
+      console.warn("Failed to force refresh balance", error);
+      // Don't reset balances to zero on error - keep existing data
+    } finally {
+      setIsRefreshingBalance(false);
+      balanceRefreshRef.current = false;
+    }
+  }, [address, selectedNetwork, fetchBalanceWithFallbacks]);
 
   const refreshTransactions = useCallback(async () => {
     if (!address) {
+      // Only reset if no address - this is a legitimate state change
       setTransactions([]);
       return;
     }
 
-    setIsLoadingTransactions(true);
+    // Check if we recently updated to avoid excessive polling
+    const now = new Date();
+    // Increase transaction throttle for better performance
+    const throttleTime = 15000; // Increased from 10000ms to 15000ms
+    if (
+      lastTransactionUpdate &&
+      now.getTime() - lastTransactionUpdate.getTime() < throttleTime
+    ) {
+      console.log("⏰ Transactions updated recently, skipping refresh");
+      return;
+    }
+
+    // Don't use the heavy loading state - use separate refresh state
+    setIsRefreshingTransactions(true);
     try {
       console.log("🔄 Fetching REAL transaction history...");
 
@@ -533,13 +706,15 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
       console.log("✅ Real transactions loaded:", realTransactions.length);
       setTransactions(realTransactions);
+      setLastTransactionUpdate(now);
     } catch (error) {
       console.error("Failed to refresh transactions", error);
-      setTransactions([]);
+      // Don't clear existing transactions on error - keep what we have
+      // This provides a better UX as users can still see their last known transactions
     } finally {
-      setIsLoadingTransactions(false);
+      setIsRefreshingTransactions(false);
     }
-  }, [address, selectedNetwork]);
+  }, [address, selectedNetwork, lastTransactionUpdate]);
 
   // Ensure secure RNG is available before any operation that depends on it
   const ensureCryptoRNG = useCallback(() => {
@@ -558,175 +733,90 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     }
   }, []);
 
-  const loadPersistedWallet = useCallback(async () => {
-    try {
-      const mnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      const privKey = await secureStorage.getSecureItem(PRIVATE_KEY);
-      const savedPassword = await secureStorage.getSecureItem(PASSWORD_KEY);
-      const savedSettings = await secureStorage.getItem(SETTINGS_KEY);
-      const savedNetwork = await secureStorage.getItem("blockfinax.network");
-      const savedLastUnlock = await secureStorage.getItem(LAST_UNLOCK_KEY);
-      const walletPersistent = await secureStorage.getItem(
-        WALLET_PERSISTENT_KEY
-      );
-
-      if (savedSettings) {
-        setSettings({ ...defaultSettings, ...JSON.parse(savedSettings) });
-      }
-
-      if (savedNetwork && savedNetwork in NETWORKS) {
-        setSelectedNetwork(NETWORKS[savedNetwork as SupportedNetworkId]);
-      }
-
-      if (savedLastUnlock) {
-        setLastUnlockTime(new Date(savedLastUnlock));
-      }
-
-      if (mnemonic && privKey && savedPassword) {
-        setHasWallet(true);
-
-        // Auto-unlock if wallet persistence is enabled and biometrics are available
-        if (walletPersistent === "true") {
-          const biometricEnabled = await secureStorage.getItem(
-            BIOMETRIC_ENABLED_KEY
-          );
-          if (
-            biometricEnabled === "true" &&
-            (await secureStorage.isBiometricAvailable())
-          ) {
-            try {
-              // Auto-unlock logic will be handled in the effect
-              console.log("Wallet is configured for biometric auto-unlock");
-            } catch (error) {
-              console.warn("Auto-unlock with biometrics failed:", error);
-              // Fallback to password unlock screen
-            }
-          }
-        }
-      } else {
-        setHasWallet(false);
-      }
-    } catch (error) {
-      console.warn("Unable to load wallet state", error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   const hydrateWallet = useCallback(async () => {
     try {
       const mnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
       if (!mnemonic) {
+        console.log("No mnemonic found, wallet cannot be hydrated");
         setIsUnlocked(false);
-        return;
+        return false;
       }
+
       const wallet = ethers.Wallet.fromMnemonic(mnemonic);
       setAddress(wallet.address);
       setIsUnlocked(true);
+
+      console.log(`Wallet hydrated successfully: ${wallet.address}`);
+
+      // Refresh balance after hydrating
       await refreshBalance();
+      return true;
     } catch (error) {
       console.warn("Unable to hydrate wallet", error);
       setIsUnlocked(false);
+      return false;
     }
   }, [refreshBalance]);
 
-  // Biometric authentication functions
-  const enableBiometricAuth = useCallback(
-    async (password: string) => {
+  // Non-blocking transaction refresh
+  const refreshTransactionsInstant = useCallback(async () => {
+    console.log("⚡ Starting instant transaction refresh...");
+
+    // Immediate UI feedback
+    setIsRefreshingTransactions(true);
+
+    // Defer heavy refresh operation
+    setTimeout(async () => {
       try {
-        const isAvailable = await secureStorage.isBiometricAvailable();
-        if (!isAvailable) {
-          throw new Error(
-            "Biometric authentication is not available on this device"
-          );
-        }
-
-        // Verify the password first
-        const savedPassword = await secureStorage.getSecureItem(PASSWORD_KEY);
-        if (savedPassword && savedPassword !== password) {
-          throw new Error("Invalid password provided");
-        }
-
-        // Create a hash of the password for biometric verification
-        const biometricHash = btoa(password + Date.now().toString());
-        await secureStorage.setSecureItem(BIOMETRIC_HASH_KEY, biometricHash);
-        await secureStorage.setItem(BIOMETRIC_ENABLED_KEY, "true");
-
-        // Update settings
-        await updateSettings({ enableBiometrics: true, persistWallet: true });
-
-        Alert.alert(
-          "Biometric Authentication Enabled",
-          "You can now use your fingerprint or Face ID to unlock your wallet."
-        );
+        await refreshTransactions();
       } catch (error) {
-        console.error("Error enabling biometric auth:", error);
-        throw error;
+        console.warn("Deferred transaction refresh failed:", error);
       }
-    },
-    [updateSettings]
-  );
+    }, 50);
+  }, [refreshTransactions]);
 
-  const disableBiometricAuth = useCallback(async () => {
+  // Simple initialization function for app startup
+  const initializeWalletData = useCallback(async () => {
+    console.log("🚀 Initializing wallet data...");
+
     try {
-      await secureStorage.deleteSecureItem(BIOMETRIC_HASH_KEY);
-      await secureStorage.removeItem(BIOMETRIC_ENABLED_KEY);
-      await updateSettings({ enableBiometrics: false });
-
-      Alert.alert(
-        "Biometric Authentication Disabled",
-        "You will need to enter your password to unlock your wallet."
-      );
-    } catch (error) {
-      console.error("Error disabling biometric auth:", error);
-      throw error;
-    }
-  }, [updateSettings]);
-
-  const unlockWithBiometrics = useCallback(async () => {
-    try {
-      const biometricEnabled = await secureStorage.getItem(
-        BIOMETRIC_ENABLED_KEY
-      );
-      if (biometricEnabled !== "true") {
-        throw new Error("Biometric authentication is not enabled");
+      // Load saved network
+      const savedNetworkId = await secureStorage.getItem("blockfinax.network");
+      if (savedNetworkId && NETWORKS[savedNetworkId as SupportedNetworkId]) {
+        setSelectedNetwork(NETWORKS[savedNetworkId as SupportedNetworkId]);
       }
 
-      const biometricHash = await secureStorage.getSecureItem(
-        BIOMETRIC_HASH_KEY,
-        {
-          requireBiometric: true,
-          biometricOptions: {
-            promptMessage: "Unlock your BlockFinaX wallet",
-            fallbackLabel: "Use Password",
-          },
-        }
-      );
+      // Check if we have a wallet
+      const existingMnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
+      setHasWallet(Boolean(existingMnemonic));
 
-      if (!biometricHash) {
-        throw new Error("Biometric verification failed");
+      // Initialize biometric capability and settings
+      const biometricAvailable = await biometricService.isBiometricAvailable();
+      setIsBiometricAvailable(biometricAvailable);
+
+      const biometricEnabled = await biometricService.isBiometricEnabled();
+      setIsBiometricEnabled(biometricEnabled);
+
+      // Load settings and update biometric setting
+      const savedSettings = await secureStorage.getItem(SETTINGS_KEY);
+      if (savedSettings) {
+        const parsedSettings = JSON.parse(savedSettings) as WalletSettings;
+        // Sync biometric setting with actual biometric status
+        parsedSettings.enableBiometrics = biometricEnabled;
+        setSettings({ ...defaultSettings, ...parsedSettings });
+      } else {
+        // Set default settings with current biometric status
+        const newSettings = {
+          ...defaultSettings,
+          enableBiometrics: biometricEnabled,
+        };
+        setSettings(newSettings);
+        await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
       }
-
-      // If biometric verification succeeded, unlock the wallet
-      await hydrateWallet();
-      const now = new Date();
-      setLastUnlockTime(now);
-      await secureStorage.setItem(LAST_UNLOCK_KEY, now.toISOString());
-      scheduleAutoLock();
     } catch (error) {
-      console.error("Error unlocking with biometrics:", error);
-      throw error;
-    }
-  }, [hydrateWallet, scheduleAutoLock]);
-
-  // Check biometric availability on startup
-  const checkBiometricAvailability = useCallback(async () => {
-    try {
-      const isAvailable = await secureStorage.isBiometricAvailable();
-      setIsBiometricAvailable(isAvailable);
-    } catch (error) {
-      console.warn("Error checking biometric availability:", error);
-      setIsBiometricAvailable(false);
+      console.error("❌ Failed to initialize wallet:", error);
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 
@@ -742,22 +832,14 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       await secureStorage.setSecureItem(MNEMONIC_KEY, wallet.mnemonic.phrase);
       await secureStorage.setSecureItem(PRIVATE_KEY, wallet.privateKey);
 
-      // Enable wallet persistence by default
-      await secureStorage.setItem(WALLET_PERSISTENT_KEY, "true");
-      await updateSettings({ persistWallet: true });
-
       setHasWallet(true);
       setAddress(wallet.address);
       setIsUnlocked(true);
-      const now = new Date();
-      setLastUnlockTime(now);
-      await secureStorage.setItem(LAST_UNLOCK_KEY, now.toISOString());
       await refreshBalance();
-      scheduleAutoLock();
     } finally {
       setIsLoading(false);
     }
-  }, [refreshBalance, scheduleAutoLock, ensureCryptoRNG]);
+  }, [refreshBalance, ensureCryptoRNG]);
 
   const importWallet = useCallback(
     async ({
@@ -796,23 +878,15 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         await secureStorage.setSecureItem(PRIVATE_KEY, wallet.privateKey);
         await secureStorage.setSecureItem(PASSWORD_KEY, password);
 
-        // Enable wallet persistence by default
-        await secureStorage.setItem(WALLET_PERSISTENT_KEY, "true");
-        await updateSettings({ persistWallet: true });
-
         setHasWallet(true);
         setAddress(wallet.address);
         setIsUnlocked(true);
-        const now = new Date();
-        setLastUnlockTime(now);
-        await secureStorage.setItem(LAST_UNLOCK_KEY, now.toISOString());
         await refreshBalance();
-        scheduleAutoLock();
       } finally {
         setIsLoading(false);
       }
     },
-    [refreshBalance, scheduleAutoLock]
+    [refreshBalance]
   );
 
   const unlockWallet = useCallback(
@@ -823,142 +897,258 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       }
 
       await hydrateWallet();
-      const now = new Date();
-      setLastUnlockTime(now);
-      await secureStorage.setItem(LAST_UNLOCK_KEY, now.toISOString());
 
-      // Load real data after unlock
-      setTimeout(() => {
-        refreshBalance();
-        refreshTransactions();
-      }, 1000);
-
-      scheduleAutoLock();
+      // Load data after unlock
+      forceRefreshBalance();
+      refreshTransactions();
     },
-    [hydrateWallet, scheduleAutoLock, refreshBalance, refreshTransactions]
+    [hydrateWallet, forceRefreshBalance, refreshTransactions]
   );
+
+  const unlockWithBiometrics = useCallback(async () => {
+    try {
+      const password = await biometricService.unlockWithBiometrics();
+      await unlockWallet(password);
+    } catch (error) {
+      console.error("Biometric unlock failed:", error);
+      throw error;
+    }
+  }, [unlockWallet]);
+
+  const enableBiometricAuth = useCallback(
+    async (password: string) => {
+      try {
+        await biometricService.enableBiometricAuth(password);
+        setIsBiometricEnabled(true);
+
+        // Update settings
+        const newSettings = { ...settings, enableBiometrics: true };
+        setSettings(newSettings);
+        await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+      } catch (error) {
+        console.error("Failed to enable biometric authentication:", error);
+        throw error;
+      }
+    },
+    [settings]
+  );
+
+  const disableBiometricAuth = useCallback(async () => {
+    try {
+      await biometricService.disableBiometricAuth();
+      setIsBiometricEnabled(false);
+
+      // Update settings
+      const newSettings = { ...settings, enableBiometrics: false };
+      setSettings(newSettings);
+      await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+    } catch (error) {
+      console.error("Failed to disable biometric authentication:", error);
+      throw error;
+    }
+  }, [settings]);
 
   const switchNetwork = useCallback(
     async (networkId: SupportedNetworkId) => {
-      const next = NETWORKS[networkId];
-      setSelectedNetwork(next);
-      await secureStorage.setItem("blockfinax.network", networkId);
-      await refreshBalance();
+      return timeAsyncOperation(
+        "switchNetwork",
+        async () => {
+          console.log("🔄 Switching network to:", networkId);
+
+          const next = NETWORKS[networkId];
+
+          // INSTANT UI updates first - no async operations
+          setSelectedNetwork(next);
+          setIsRefreshingBalance(true);
+          setIsRefreshingTransactions(true);
+
+          console.log("✅ Network UI updated instantly:", next.name);
+
+          // Defer heavy operations for better responsiveness
+          setTimeout(async () => {
+            try {
+              // Save network preference in background
+              await secureStorage.setItem("blockfinax.network", networkId);
+
+              // If wallet is unlocked, refresh data in background
+              if (isUnlocked) {
+                await Promise.all([
+                  forceRefreshBalance(),
+                  refreshTransactions(),
+                ]);
+
+                console.log("✅ Network data refreshed:", next.name);
+              }
+            } catch (error) {
+              console.error("❌ Background network switch failed:", error);
+            } finally {
+              setIsRefreshingBalance(false);
+              setIsRefreshingTransactions(false);
+            }
+          }, 100); // Short delay for instant UI feedback
+        },
+        3000
+      );
     },
-    [refreshBalance]
+    [isUnlocked, forceRefreshBalance, refreshTransactions]
+  );
+
+  const switchToken = useCallback(
+    async (tokenAddress?: string) => {
+      console.log("🪙 Switching token to:", tokenAddress || "Native");
+
+      if (!isUnlocked) {
+        console.warn("Wallet not unlocked, cannot switch token");
+        return;
+      }
+
+      try {
+        setIsRefreshingBalance(true);
+
+        // TODO: Add selectedTokenAddress state if needed
+        // setSelectedTokenAddress(tokenAddress);
+
+        // Force immediate balance refresh for new token
+        await forceRefreshBalance();
+
+        console.log("✅ Token switched and balance refreshed");
+      } catch (error) {
+        console.error("❌ Failed to switch token:", error);
+        throw error;
+      } finally {
+        setIsRefreshingBalance(false);
+      }
+    },
+    [isUnlocked, forceRefreshBalance]
   );
 
   const resetWalletData = useCallback(async () => {
     setIsLoading(true);
     try {
-      clearAutoLockTimer();
       await secureStorage.clearWalletData();
+      // Clear biometric data
+      await biometricService.clearBiometricData();
+
       setIsUnlocked(false);
       setHasWallet(false);
       setAddress(undefined);
       setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
       setSelectedNetwork(NETWORKS["polygon-mumbai"]);
-      setLastUnlockTime(undefined);
       setSettings({ ...defaultSettings });
-      await checkBiometricAvailability();
+      setIsBiometricEnabled(false);
     } catch (error) {
       console.error("Failed to reset wallet data", error);
       throw error;
     } finally {
       setIsLoading(false);
     }
-  }, [checkBiometricAvailability, clearAutoLockTimer]);
+  }, []);
 
+  // Initialize wallet data on app start
   useEffect(() => {
-    loadPersistedWallet();
-    checkBiometricAvailability();
-  }, [loadPersistedWallet, checkBiometricAvailability]);
+    initializeWalletData();
+  }, [initializeWalletData]);
 
-  useEffect(() => {
-    if (isUnlocked) {
-      scheduleAutoLock();
-    } else {
-      clearAutoLockTimer();
-    }
-  }, [isUnlocked, scheduleAutoLock, clearAutoLockTimer]);
+  // Memoize stable network helpers separately for better performance
+  const networkHelpers = useMemo(
+    () => ({
+      mainnetNetworks,
+      testnetNetworks,
+      getNetworkById,
+    }),
+    [mainnetNetworks, testnetNetworks, getNetworkById]
+  );
 
-  useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      const prevState = appStateRef.current;
-      appStateRef.current = nextState;
-
-      if (prevState === "active" && nextState.match(/inactive|background/)) {
-        lockWallet();
-      }
-    };
-
-    const subscription = AppState.addEventListener(
-      "change",
-      handleAppStateChange
-    );
-    return () => {
-      subscription.remove();
-    };
-  }, [lockWallet]);
+  // Memoize functions separately to avoid unnecessary re-renders
+  const walletActions = useMemo(
+    () => ({
+      createWallet,
+      importWallet,
+      unlockWallet,
+      unlockWithBiometrics,
+      lockWallet,
+      enableBiometricAuth,
+      disableBiometricAuth,
+      refreshBalance,
+      forceRefreshBalance,
+      refreshBalanceInstant,
+      refreshTransactions,
+      refreshTransactionsInstant,
+      switchNetwork,
+      switchToken,
+      updateSettings,
+      resetWalletData,
+    }),
+    [
+      createWallet,
+      importWallet,
+      unlockWallet,
+      unlockWithBiometrics,
+      lockWallet,
+      enableBiometricAuth,
+      disableBiometricAuth,
+      refreshBalance,
+      forceRefreshBalance,
+      refreshBalanceInstant,
+      refreshTransactions,
+      refreshTransactionsInstant,
+      switchNetwork,
+      switchToken,
+      updateSettings,
+      resetWalletData,
+    ]
+  );
 
   const value = useMemo<WalletContextValue>(
     () => ({
       isLoading,
+      isRefreshingBalance,
+      isRefreshingTransactions,
       isUnlocked,
       hasWallet,
       address,
       balances,
+      lastBalanceUpdate,
       transactions,
       isLoadingTransactions,
+      lastTransactionUpdate,
       selectedNetwork,
-      mainnetNetworks,
-      testnetNetworks,
-      getNetworkById,
-      lastUnlockTime,
       settings,
       isBiometricAvailable,
-      createWallet,
-      importWallet,
-      unlockWallet,
-      unlockWithBiometrics,
-      lockWallet,
-      refreshBalance,
-      refreshTransactions,
-      switchNetwork,
-      updateSettings,
-      enableBiometricAuth,
-      disableBiometricAuth,
-      resetWalletData,
+      isBiometricEnabled,
+      // Spread optimized objects
+      ...networkHelpers,
+      ...walletActions,
     }),
     [
+      // Only frequently changing state
+      isLoading,
+      isRefreshingBalance,
+      isRefreshingTransactions,
+      isUnlocked,
+      hasWallet,
       address,
       balances,
+      lastBalanceUpdate,
       transactions,
       isLoadingTransactions,
-      createWallet,
-      hasWallet,
-      importWallet,
-      unlockWallet,
-      unlockWithBiometrics,
-      isLoading,
-      isUnlocked,
-      lastUnlockTime,
+      lastTransactionUpdate,
       selectedNetwork,
-      mainnetNetworks,
-      testnetNetworks,
-      getNetworkById,
       settings,
       isBiometricAvailable,
-      refreshBalance,
-      refreshTransactions,
-      switchNetwork,
-      updateSettings,
-      lockWallet,
-      enableBiometricAuth,
-      disableBiometricAuth,
-      resetWalletData,
+      isBiometricEnabled,
+      // Pre-memoized stable objects
+      networkHelpers,
+      walletActions,
     ]
   );
+
+  // Log performance summary on unmount for debugging
+  useEffect(() => {
+    return () => {
+      performanceMonitor.logPerformanceSummary();
+    };
+  }, []);
 
   return (
     <WalletContext.Provider value={value}>{children}</WalletContext.Provider>

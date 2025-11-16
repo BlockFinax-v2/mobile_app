@@ -4,6 +4,10 @@ export type RootStackParamList = {
   Splash: undefined;
   Auth: undefined;
   App: undefined;
+  BiometricSetup: {
+    walletPassword: string;
+    returnTo: keyof RootStackParamList;
+  };
 };
 
 export type AppTabParamList = {
@@ -33,7 +37,15 @@ export type ContractsStackParamList = {
 
 export type WalletStackParamList = {
   WalletHome: undefined;
-  SendPayment: undefined;
+  SendPayment: {
+    prefilledRecipient?: string;
+    prefilledAmount?: string;
+    prefilledMessage?: string;
+    prefilledNetwork?: string;
+    prefilledToken?: string;
+    returnTo?: "MarketplaceFlow";
+    returnParams?: any;
+  } | undefined;
   SendPaymentReview: {
     recipient: string;
     amount: string;
@@ -43,6 +55,8 @@ export type WalletStackParamList = {
     message?: string;
     tokenAddress: string;
     tokenDecimals: number;
+    returnTo?: "MarketplaceFlow";
+    returnParams?: any;
   };
   ReceivePayment: undefined;
   TransactionDetails: { id: string } | undefined;
@@ -54,6 +68,17 @@ export type WalletStackParamList = {
   Settings: undefined;
   NetworkConfig: undefined;
   Debug: undefined;
+  BuySellSelection: undefined;
+  MarketplaceFlow: {
+    action: "buy" | "sell";
+    step: number;
+    stakeTransactionData?: {
+      hash: string;
+      amount: string;
+      currency: string;
+      network: string;
+    };
+  };
 };
 
 export type MessagesStackParamList = {
