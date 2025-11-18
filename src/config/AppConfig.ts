@@ -42,16 +42,6 @@ export const AppConfig = {
   environment: getCurrentEnvironment(),
   isProduction: !__DEV__,
   
-  // Performance Settings - Set ENABLE_PERSISTENCE to false for maximum speed
-  ENABLE_PERSISTENCE: false, // Disable to make app super fast (no data saved)
-  ENABLE_WALLET_PERSISTENCE: false, // Disable wallet state persistence  
-  ENABLE_COMMUNICATION_PERSISTENCE: false, // Disable messages/contacts persistence
-  
-  // Performance optimizations
-  AUTO_LOCK_INTERVAL: 15 * 60 * 1000, // 15 minutes
-  THROTTLE_NETWORK_CALLS: 1000, // 1 second
-  DEBOUNCE_STATE_UPDATES: 500,  // 500ms
-  
   // Debug info
   debug: {
     expoSocketUrl: Constants.expoConfig?.extra?.socketUrl,

@@ -68,17 +68,7 @@ export type WalletStackParamList = {
   Settings: undefined;
   NetworkConfig: undefined;
   Debug: undefined;
-  BuySellSelection: undefined;
-  MarketplaceFlow: {
-    action: "buy" | "sell";
-    step: number;
-    stakeTransactionData?: {
-      hash: string;
-      amount: string;
-      currency: string;
-      network: string;
-    };
-  };
+
 };
 
 export type MessagesStackParamList = {

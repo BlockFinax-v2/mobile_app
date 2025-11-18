@@ -1,18 +1,16 @@
 import { CommunicationProvider } from "@/contexts/CommunicationContext";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { TradeFinanceProvider } from "@/contexts/TradeFinanceContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useMemo } from "react";
 
-// Optimized query client with better performance settings
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 300 * 1000, // 5 minutes instead of 1 minute
+      staleTime: 60 * 1000,
       refetchOnMount: false,
       refetchOnWindowFocus: false,
-      retry: 1, // Reduce retries from 3 to 1
-      retryDelay: 1000, // Faster retry
     },
   },
 });
@@ -24,7 +22,9 @@ const AppProviders: React.FC<React.PropsWithChildren> = ({ children }) => {
     <QueryClientProvider client={client}>
       <NetworkProvider>
         <WalletProvider>
-          <CommunicationProvider>{children}</CommunicationProvider>
+          <TradeFinanceProvider>
+            <CommunicationProvider>{children}</CommunicationProvider>
+          </TradeFinanceProvider>
         </WalletProvider>
       </NetworkProvider>
     </QueryClientProvider>

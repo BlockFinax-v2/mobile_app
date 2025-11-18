@@ -349,7 +349,7 @@ export default function DashboardHomeScreen() {
         navigateInstant("WalletTab", { screen: "ReceivePayment" });
         break;
       case "buysell":
-        navigateInstant("WalletTab", { screen: "BuySellSelection" });
+        navigateInstant("TradeTab", { screen: "TradeHome" });
         break;
       case "document":
         navigateInstant("WalletTab", { screen: "DocumentCenter" });
@@ -549,12 +549,12 @@ export default function DashboardHomeScreen() {
             >
               <View style={styles.quickActionIcon}>
                 <MaterialCommunityIcons
-                  name="shopping-outline"
+                  name="bank-transfer"
                   size={24}
                   color={palette.accentGreen}
                 />
               </View>
-              <Text style={styles.quickActionLabel}>Buy & Sell</Text>
+              <Text style={styles.quickActionLabel}>Trade Finance</Text>
             </Pressable>
           </View>
 

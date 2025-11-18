@@ -1,35 +1,46 @@
 import { Button } from "@/components/ui/Button";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
-import { WalletStackParamList } from "@/navigation/types";
+import { AppTabParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useNavigation } from "@react-navigation/native";
-import { StackNavigationProp } from "@react-navigation/stack";
+import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import React from "react";
-import { StyleSheet, View, Pressable, ScrollView } from "react-native";
+import { StyleSheet, View, Pressable, ScrollView, Alert } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
-type NavigationProp = StackNavigationProp<
-  WalletStackParamList,
-  "BuySellSelection"
->;
+type NavigationProp = BottomTabNavigationProp<AppTabParamList>;
 
 export const BuySellSelectionScreen: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
 
   const handleBuyAction = () => {
-    navigation.navigate("MarketplaceFlow", {
-      action: "buy",
-      step: 1,
-    });
+    Alert.alert(
+      "Redirected",
+      "This functionality is now in Trade Finance Portal",
+      [
+        {
+          text: "Go to Trade Finance",
+          onPress: () =>
+            navigation.navigate("TradeTab", { screen: "TradeFinance" }),
+        },
+      ]
+    );
   };
 
   const handleSellAction = () => {
-    navigation.navigate("MarketplaceFlow", {
-      action: "sell",
-      step: 1,
-    });
+    Alert.alert(
+      "Redirected",
+      "This functionality is now in Trade Finance Portal",
+      [
+        {
+          text: "Go to Trade Finance",
+          onPress: () =>
+            navigation.navigate("TradeTab", { screen: "TradeFinance" }),
+        },
+      ]
+    );
   };
 
   return (

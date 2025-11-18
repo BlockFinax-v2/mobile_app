@@ -2,10 +2,6 @@ import { DocumentCenterScreen } from "@/screens/contracts/DocumentCenterScreen";
 import DashboardHomeScreen from "@/screens/dashboard/DashboardHomeScreen";
 import { TransactionDetailsScreen } from "@/screens/dashboard/TransactionDetailsScreen";
 import { CreateInvoiceScreen } from "@/screens/invoices";
-import {
-  BuySellSelectionScreen,
-  MarketplaceFlowScreen,
-} from "@/screens/marketplace";
 import { ChatScreen } from "@/screens/messages/ChatScreen";
 import { MessagesHomeScreen } from "@/screens/messages/MessagesHomeScreen";
 import { DialerScreen } from "@/screens/messages/DialerScreen";
@@ -111,24 +107,7 @@ const WalletNavigator = () => (
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
       }}
     />
-    <WalletStack.Screen
-      name="BuySellSelection"
-      component={BuySellSelectionScreen}
-      options={{
-        headerShown: true,
-        title: "Buy & Sell",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
-      name="MarketplaceFlow"
-      component={MarketplaceFlowScreen}
-      options={{
-        headerShown: false,
-      }}
-    />
+
     <WalletStack.Screen
       name="DocumentCenter"
       component={DocumentCenterScreen}

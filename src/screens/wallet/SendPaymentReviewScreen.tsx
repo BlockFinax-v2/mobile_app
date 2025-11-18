@@ -193,22 +193,27 @@ export const SendPaymentReviewScreen: React.FC = () => {
   const handleConfirm = async () => {
     // Prevent multiple simultaneous transactions
     if (isProcessing) {
-      console.log('[SendPaymentReview] Transaction already in progress, ignoring duplicate call');
+      console.log(
+        "[SendPaymentReview] Transaction already in progress, ignoring duplicate call"
+      );
       return;
     }
-    
+
     setIsProcessing(true);
-    
+
     // Add debug logging for transaction parameters
-    console.log('[SendPaymentReview] Transaction parameters:', {
+    console.log("[SendPaymentReview] Transaction parameters:", {
       recipientAddress: details.recipient,
       amount: details.amount,
       amountType: typeof details.amount,
-      tokenAddress: details.tokenAddress === "0x0000000000000000000000000000000000000000" ? undefined : details.tokenAddress,
+      tokenAddress:
+        details.tokenAddress === "0x0000000000000000000000000000000000000000"
+          ? undefined
+          : details.tokenAddress,
       tokenDecimals: details.tokenDecimals,
       network: selectedNetwork.name,
     });
-    
+
     try {
       const result = await transactionService.sendTransaction({
         recipientAddress: details.recipient,
@@ -429,16 +434,8 @@ export const SendPaymentReviewScreen: React.FC = () => {
                   details.returnTo === "MarketplaceFlow" &&
                   txStatus.status === "confirmed"
                 ) {
-                  // Return to marketplace with transaction data
-                  navigation.navigate("MarketplaceFlow", {
-                    ...details.returnParams,
-                    stakeTransactionData: {
-                      hash: transactionHash,
-                      amount: details.amount,
-                      currency: details.currency,
-                      network: details.network,
-                    },
-                  });
+                  // Return to WalletHome instead of old marketplace
+                  navigation.navigate("WalletHome");
                 } else {
                   navigation.reset({
                     index: 0,

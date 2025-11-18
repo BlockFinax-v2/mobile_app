@@ -85,14 +85,14 @@ class TransactionService {
    */
   private formatAmountForParsing(amount: string, decimals: number): string {
     const maxDecimals = Math.min(decimals, 18);
-    
+
     // Use regex to truncate decimal places instead of toFixed to avoid adding zeros
     const regex = new RegExp(`^\\d+(\\.\\d{0,${maxDecimals}})?`);
     const match = amount.match(regex);
     const formattedAmount = match ? match[0] : amount;
-    
+
     console.log(`[TransactionService] Formatting amount: "${amount}" -> "${formattedAmount}" (decimals: ${decimals})`);
-    
+
     return formattedAmount;
   }
 
@@ -185,14 +185,14 @@ class TransactionService {
       if (!params.tokenAddress) {
         // Native token transfer - use parseEther directly
         let value: ethers.BigNumber;
-        
+
         try {
           const cleanAmount = params.amount.toString().trim();
           value = ethers.utils.parseEther(cleanAmount);
         } catch (error) {
           throw new Error(`Invalid amount format for gas estimation: ${params.amount}`);
         }
-        
+
         const tx = {
           to: params.recipientAddress,
           value: value,
@@ -206,16 +206,16 @@ class TransactionService {
           signer
         );
         const decimals = params.tokenDecimals || 18;
-        
+
         let parsedAmount: ethers.BigNumber;
-        
+
         try {
           const cleanAmount = params.amount.toString().trim();
           parsedAmount = ethers.utils.parseUnits(cleanAmount, decimals);
         } catch (error) {
           throw new Error(`Invalid amount format for ERC-20 gas estimation: ${params.amount}`);
         }
-        
+
         gasLimit = await contract.estimateGas.transfer(
           params.recipientAddress,
           parsedAmount
@@ -268,7 +268,7 @@ class TransactionService {
     // Use parseEther directly on the original amount string to avoid precision issues
     // parseEther already handles the conversion to wei (18 decimals) properly
     let value: ethers.BigNumber;
-    
+
     try {
       // Clean the amount string and use parseEther directly
       const cleanAmount = params.amount.toString().trim();
@@ -278,12 +278,12 @@ class TransactionService {
       console.error(`[TransactionService] Failed to parse amount: "${params.amount}"`, error);
       throw new Error(`Invalid amount format: ${params.amount}`);
     }
-    
+
     const txRequest: ethers.providers.TransactionRequest = {
       to: params.recipientAddress,
       value: value,
-      gasLimit: params.gasLimit 
-        ? ethers.BigNumber.from(params.gasLimit) 
+      gasLimit: params.gasLimit
+        ? ethers.BigNumber.from(params.gasLimit)
         : gasEstimate.gasLimit,
     };
 
@@ -296,7 +296,7 @@ class TransactionService {
         'params.maxPriorityFeePerGas': params.maxPriorityFeePerGas,
         'gasEstimate.maxPriorityFeePerGas': gasEstimate.maxPriorityFeePerGas?.toString(),
       });
-      
+
       // Use the gas estimate values directly (they're already BigNumbers)
       txRequest.maxFeePerGas = params.maxFeePerGas
         ? (typeof params.maxFeePerGas === 'string' ? ethers.utils.parseUnits(params.maxFeePerGas, 'wei') : ethers.BigNumber.from(params.maxFeePerGas))
@@ -331,10 +331,10 @@ class TransactionService {
     );
 
     const decimals = params.tokenDecimals || 18;
-    
+
     // Use parseUnits directly on the original amount string to avoid precision issues
     let parsedAmount: ethers.BigNumber;
-    
+
     try {
       const cleanAmount = params.amount.toString().trim();
       parsedAmount = ethers.utils.parseUnits(cleanAmount, decimals);
@@ -376,7 +376,7 @@ class TransactionService {
 
     try {
       const signer = await this.getSigner(params.network);
-      
+
       // Estimate gas first
       const gasEstimate = await this.estimateGas(params);
 
@@ -385,7 +385,7 @@ class TransactionService {
 
       // Send transaction
       let txResponse: ethers.providers.TransactionResponse;
-      
+
       if (!params.tokenAddress) {
         txResponse = await this.sendNativeToken(params, signer, gasEstimate);
       } else {
@@ -408,7 +408,7 @@ class TransactionService {
       };
     } catch (error: any) {
       console.error("Error sending transaction:", error);
-      
+
       // Parse common errors
       if (error.code === "INSUFFICIENT_FUNDS") {
         throw new Error("Insufficient funds to complete this transaction");
@@ -419,7 +419,7 @@ class TransactionService {
       } else if (error.message?.includes("user rejected")) {
         throw new Error("Transaction was rejected");
       }
-      
+
       throw new Error(error.message || "Failed to send transaction");
     }
   }
@@ -437,11 +437,11 @@ class TransactionService {
 
     // Check native token balance for gas
     const nativeBalance = await provider.getBalance(address);
-    
+
     // Convert estimatedCost from ETH string to BigNumber (wei)
     // estimatedCost is in ETH format (e.g., "0.000038"), so use parseEther
     console.log(`[TransactionService] Gas estimate - estimatedCost: "${gasEstimate.estimatedCost}"`);
-    
+
     let gasCost: ethers.BigNumber;
     try {
       gasCost = ethers.utils.parseEther(gasEstimate.estimatedCost);
@@ -455,14 +455,14 @@ class TransactionService {
       // Native token transfer - need amount + gas
       // Use parseEther directly to avoid precision issues
       let amountInWei: ethers.BigNumber;
-      
+
       try {
         const cleanAmount = params.amount.toString().trim();
         amountInWei = ethers.utils.parseEther(cleanAmount);
       } catch (error) {
         throw new Error(`Invalid amount format for balance check: ${params.amount}`);
       }
-      
+
       const totalRequired = amountInWei.add(gasCost);
       if (nativeBalance.lt(totalRequired)) {
         throw new Error(
@@ -529,7 +529,7 @@ class TransactionService {
     try {
       const provider = this.getProvider(network);
       const tx = await provider.getTransaction(transactionHash);
-      
+
       if (!tx) {
         throw new Error("Transaction not found");
       }
@@ -573,7 +573,7 @@ class TransactionService {
     try {
       const provider = this.getProvider(network);
       const signer = await this.getSigner(network);
-      
+
       const originalTx = await provider.getTransaction(originalTxHash);
       if (!originalTx) {
         throw new Error("Original transaction not found");

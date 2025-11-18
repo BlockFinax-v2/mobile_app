@@ -7,6 +7,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  TextInput,
 } from "react-native";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
@@ -287,32 +288,231 @@ export function TreasuryPortalScreen() {
           ))}
         </View>
 
-        {/* Pool Guarantee Application */}
+        {/* Pool Guarantee Applications for Review */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pool Guarantee</Text>
-          <View style={styles.guaranteeCard}>
-            <View style={styles.guaranteeHeader}>
-              <MaterialCommunityIcons
-                name="shield-check"
-                size={24}
-                color={colors.success}
-              />
-              <Text style={styles.guaranteeTitle}>
-                Apply for Pool Guarantee
+          <Text style={styles.sectionTitle}>Pool Guarantee Applications</Text>
+
+          {/* Search Bar */}
+          <View style={styles.searchContainer}>
+            <MaterialCommunityIcons
+              name="magnify"
+              size={20}
+              color={colors.textSecondary}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by ID, buyer, seller, or description..."
+              placeholderTextColor={colors.textSecondary}
+            />
+          </View>
+
+          {/* Filter Tabs */}
+          <View style={styles.filterTabs}>
+            <TouchableOpacity
+              style={[styles.filterTab, styles.filterTabActive]}
+            >
+              <Text style={[styles.filterTabText, styles.filterTabTextActive]}>
+                Pending (5)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterTab}>
+              <Text style={styles.filterTabText}>Approved (0)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterTab}>
+              <Text style={styles.filterTabText}>Certificate Issuance (1)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterTab}>
+              <Text style={styles.filterTabText}>Issued (5)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.filterTab}>
+              <Text style={styles.filterTabText}>Rejected (0)</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Application Card */}
+          <View style={styles.applicationReviewCard}>
+            <View style={styles.applicationReviewHeader}>
+              <View style={styles.applicationTitleRow}>
+                <MaterialCommunityIcons
+                  name="file-document"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={styles.applicationId}>
+                  PG-1763321117688-OWSX869
+                </Text>
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>PENDING VOTE</Text>
+                </View>
+              </View>
+              <Text style={styles.applicationDate}>
+                Applied on Nov 16, 2025
               </Text>
             </View>
-            <Text style={styles.guaranteeDescription}>
-              Secure your investment with our pool guarantee program.
-              Applications are reviewed by the treasury committee.
-            </Text>
-            <TouchableOpacity style={styles.applyButton}>
-              <Text style={styles.applyButtonText}>Submit Application</Text>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={20}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
+
+            <View style={styles.applicationInfo}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
+                <Text style={styles.infoValue}>0x759ed3d2...fe5e5582a</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Seller (Beneficiary)</Text>
+                <Text style={styles.infoValue}>0x324ffda4...b9f141</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Goods Description</Text>
+                <Text style={styles.infoValue}>Import of Cloth from Ghana</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Guarantee Amount</Text>
+                <Text style={styles.infoValue}>$4.00</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Collateral Posted</Text>
+                <Text style={styles.infoValue}>$0.40</Text>
+              </View>
+            </View>
+
+            <View style={styles.votingSection}>
+              <View style={styles.votingHeader}>
+                <Text style={styles.votingTitle}>Current Votes</Text>
+                <Text style={styles.approvalThreshold}>
+                  60% approval threshold required
+                </Text>
+              </View>
+
+              <View style={styles.voteProgressBar}>
+                <View style={styles.voteProgress}>
+                  <View style={[styles.voteProgressFill, { width: "0%" }]} />
+                </View>
+                <Text style={styles.voteProgressText}>For: 0 Against: 0</Text>
+              </View>
+
+              <View style={styles.voteActions}>
+                <TouchableOpacity style={styles.approveVoteButton}>
+                  <MaterialCommunityIcons
+                    name="thumb-up"
+                    size={16}
+                    color="white"
+                  />
+                  <Text style={styles.voteButtonText}>Approve</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.rejectVoteButton}>
+                  <MaterialCommunityIcons
+                    name="thumb-down"
+                    size={16}
+                    color="white"
+                  />
+                  <Text style={styles.voteButtonText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.applicationActions}>
+              <TouchableOpacity style={styles.viewDocumentsButton}>
+                <MaterialCommunityIcons
+                  name="file-multiple"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={styles.viewDocumentsText}>View Documents</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.viewDraftButton}>
+                <MaterialCommunityIcons
+                  name="eye"
+                  size={16}
+                  color={colors.primary}
+                />
+                <Text style={styles.viewDraftText}>View Draft</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Certificate Issuance Card */}
+          <View style={styles.certificateIssuanceCard}>
+            <View style={styles.applicationReviewHeader}>
+              <View style={styles.applicationTitleRow}>
+                <MaterialCommunityIcons
+                  name="certificate"
+                  size={20}
+                  color={colors.success}
+                />
+                <Text style={styles.applicationId}>
+                  PG-1763321117688-OWSX869
+                </Text>
+                <View style={styles.issuanceBadge}>
+                  <Text style={styles.issuanceBadgeText}>
+                    READY FOR ISSUANCE
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.applicationDate}>
+                Invoice Settled on Nov 16, 2025
+              </Text>
+            </View>
+
+            <View style={styles.applicationInfo}>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
+                <Text style={styles.infoValue}>BILAL LTD</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Trade Description</Text>
+                <Text style={styles.infoValue}>Import of Cloth from Ghana</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Guarantee Amount</Text>
+                <Text style={styles.infoValue}>4.00 USDC</Text>
+              </View>
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Invoice Settlement</Text>
+                <Text style={[styles.infoValue, { color: colors.success }]}>
+                  ✓ Paid in Full
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.issuanceSection}>
+              <View style={styles.issuanceHeader}>
+                <MaterialCommunityIcons
+                  name="information"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={styles.issuanceTitle}>
+                  Ready for Certificate Issuance
+                </Text>
+              </View>
+
+              <Text style={styles.issuanceDescription}>
+                All requirements met. Invoice has been settled. Treasury
+                delegates can now issue the pool guarantee certificate.
+              </Text>
+
+              <View style={styles.certificateActions}>
+                <TouchableOpacity style={styles.issueCertificateButton}>
+                  <MaterialCommunityIcons
+                    name="certificate"
+                    size={16}
+                    color="white"
+                  />
+                  <Text style={styles.issueCertificateButtonText}>
+                    Issue Certificate
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.viewDetailsButton}>
+                  <MaterialCommunityIcons
+                    name="eye"
+                    size={16}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.viewDetailsButtonText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </View>
       </ScrollView>
@@ -652,5 +852,288 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "500",
     marginRight: spacing.sm,
+  },
+  // Pool Guarantee Review Styles
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: colors.text,
+    marginLeft: spacing.sm,
+  },
+  filterTabs: {
+    flexDirection: "row",
+    marginBottom: spacing.lg,
+  },
+  filterTab: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  filterTabActive: {
+    borderBottomColor: colors.primary,
+  },
+  filterTabText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: "500",
+  },
+  filterTabTextActive: {
+    color: colors.primary,
+  },
+  applicationReviewCard: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  applicationReviewHeader: {
+    marginBottom: spacing.lg,
+  },
+  applicationTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  applicationId: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+  pendingBadge: {
+    backgroundColor: "#FF9800",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  pendingBadgeText: {
+    fontSize: 10,
+    color: "white",
+    fontWeight: "600",
+  },
+  applicationDate: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  applicationInfo: {
+    marginBottom: spacing.lg,
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: "500",
+    flex: 1,
+    textAlign: "right",
+  },
+  votingSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  votingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  votingTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  approvalThreshold: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  voteProgressBar: {
+    marginBottom: spacing.lg,
+  },
+  voteProgress: {
+    height: 6,
+    backgroundColor: colors.surface,
+    borderRadius: 3,
+    marginBottom: spacing.sm,
+  },
+  voteProgressFill: {
+    height: "100%",
+    backgroundColor: colors.success,
+    borderRadius: 3,
+  },
+  voteProgressText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  applicationActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.lg,
+  },
+  viewDocumentsButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  viewDocumentsText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  viewDraftButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  viewDraftText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  approveVoteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    backgroundColor: colors.success,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  rejectVoteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    backgroundColor: colors.error,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  // Certificate Issuance Styles
+  certificateIssuanceCard: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.lg,
+    marginTop: spacing.lg,
+    borderWidth: 2,
+    borderColor: colors.success + "30",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  issuanceBadge: {
+    backgroundColor: colors.success,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  issuanceBadgeText: {
+    color: "white",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  issuanceSection: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  issuanceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  issuanceTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginLeft: spacing.sm,
+  },
+  issuanceDescription: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  certificateActions: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  issueCertificateButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.success,
+    borderRadius: 8,
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
+  },
+  issueCertificateButtonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  viewDetailsButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
+  },
+  viewDetailsButtonText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "500",
   },
 });
