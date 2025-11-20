@@ -6,6 +6,7 @@ import {
   useWallet,
   WalletNetwork,
 } from "@/contexts/WalletContext";
+import { formatBalanceForUI } from "@/utils/tokenUtils";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import React from "react";
@@ -83,7 +84,7 @@ export const NetworkSelector: React.FC<NetworkSelectorProps> = ({
     const color = getNetworkColor(network.id);
 
     // Get balance for this network (simplified for display)
-    const balance = isActive ? balances.primary.toFixed(4) : "--";
+    const balance = isActive ? formatBalanceForUI(balances.primary) : "--";
 
     return (
       <Pressable

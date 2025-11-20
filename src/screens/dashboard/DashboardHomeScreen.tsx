@@ -10,6 +10,7 @@ import {
   useInstantNavigation,
   useDeferredUpdates,
 } from "@/hooks/usePerformantNavigation";
+import { formatBalanceForUI } from "@/utils/tokenUtils";
 import { realTransactionService } from "@/services/realTransactionService";
 import { AppTabParamList, DashboardStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
@@ -301,8 +302,8 @@ export default function DashboardHomeScreen() {
               let tokenUsdValue = "0.00";
 
               if (token.isNative) {
-                // Native token
-                tokenBalance = balances.primary.toFixed(2);
+                // Native token - use proper formatting for small amounts
+                tokenBalance = formatBalanceForUI(balances.primary);
                 tokenUsdValue = balances.primaryUsd.toFixed(2);
               } else {
                 // Find stablecoin balance
@@ -310,7 +311,9 @@ export default function DashboardHomeScreen() {
                   (t) => t.symbol === token.symbol
                 );
                 if (stablecoin) {
-                  tokenBalance = parseFloat(stablecoin.balance).toFixed(2);
+                  tokenBalance = formatBalanceForUI(
+                    parseFloat(stablecoin.balance)
+                  );
                   tokenUsdValue = (stablecoin.usdValue || 0).toFixed(2);
                 }
               }

@@ -17,7 +17,10 @@ import { TradeFinanceScreen } from "@/screens/trade/TradeFinanceScreen";
 import { TreasuryPortalScreen } from "@/screens/treasury/TreasuryPortalScreen";
 import { ReceivePaymentScreen } from "@/screens/wallet/ReceivePaymentScreen";
 import { SendPaymentReviewScreen } from "@/screens/wallet/SendPaymentReviewScreen";
-import { SendPaymentScreen } from "@/screens/wallet/SendPaymentScreen";
+import { SendPaymentScreen } from "@/screens/wallet/SendPaymentScreenNew";
+// Trade Finance Payment Components
+import { TradeFinancePayment } from "@/screens/trade/TradeFinancePayment";
+import { TreasuryPayment } from "@/screens/treasury/TreasuryPayment";
 import { palette } from "@/theme/colors";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import {
@@ -185,6 +188,17 @@ const WalletNavigator = () => (
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
       }}
     />
+    <WalletStack.Screen
+      name="TreasuryPayment"
+      component={TreasuryPayment}
+      options={{
+        headerShown: true,
+        title: "Treasury Payment",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
   </WalletStack.Navigator>
 );
 
@@ -249,6 +263,28 @@ const TradeNavigator = () => (
       name="TradeHome"
       component={TradeFinanceScreen}
       options={{ title: "Trade Finance Portal" }}
+    />
+    <TradeStack.Screen
+      name="TradeFinance"
+      component={TradeFinanceScreen}
+      options={{
+        headerShown: true,
+        title: "Trade Finance",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <TradeStack.Screen
+      name="TradeFinancePayment"
+      component={TradeFinancePayment}
+      options={{
+        headerShown: true,
+        title: "Trade Finance Payment",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
     />
   </TradeStack.Navigator>
 );

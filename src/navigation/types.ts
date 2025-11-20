@@ -62,7 +62,28 @@ export type WalletStackParamList = {
   TransactionDetails: { id: string } | undefined;
   CreateInvoice: undefined;
   DocumentCenter: undefined;
-  TreasuryPortal: undefined;
+  TreasuryPortal: {
+    paymentResult?: {
+      success: boolean;
+      transactionHash: string;
+      paymentType: string;
+      stakeAmount?: number;
+    };
+  } | undefined;
+  TreasuryPayment: {
+    paymentType: "stake" | "deposit" | "governance";
+    stakeAmount?: number;
+    stakingContract?: string;
+    stakingPeriod?: string;
+    depositAmount?: number;
+    depositContract?: string;
+    governanceAmount?: number;
+    proposalId?: string;
+    preferredToken?: string;
+    preferredNetwork?: string;
+    apy?: number;
+    lockPeriod?: number;
+  };
   Rewards: undefined;
   ProfileHome: undefined;
   Settings: undefined;
@@ -112,7 +133,28 @@ export type MessagesStackParamList = {
 
 export type TradeStackParamList = {
   TradeHome: undefined;
-  TradeFinance: undefined;
+  TradeFinance: {
+    paymentResult?: {
+      success: boolean;
+      transactionHash: string;
+      paymentType: string;
+      applicationId?: string;
+      invoiceId?: string;
+    };
+  } | undefined;
+  TradeFinancePayment: {
+    paymentType: "invoice" | "fee" | "settlement";
+    invoiceAmount?: number;
+    supplierAddress?: string;
+    invoiceId?: string;
+    feeAmount?: number;
+    feeRecipient?: string;
+    applicationId?: string;
+    settlementAmount?: number;
+    settlementAddress?: string;
+    preferredToken?: string;
+    preferredNetwork?: string;
+  };
 };
 
 export type ProfileStackParamList = {

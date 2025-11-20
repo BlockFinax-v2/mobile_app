@@ -18,7 +18,8 @@ interface Application {
     | "Transaction Complete"
     | "Pending Draft"
     | "Approved"
-    | "Awaiting Fee Payment";
+    | "Awaiting Fee Payment"
+    | "Processing";
   submittedDate: string;
   contractNumber: string;
   tradeDescription: string;

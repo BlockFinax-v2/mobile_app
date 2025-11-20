@@ -7,9 +7,12 @@ import {
   Application,
   DraftCertificate,
 } from "@/contexts/TradeFinanceContext";
+import { TradeStackParamList } from "@/navigation/types";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   Modal,
@@ -48,7 +51,13 @@ interface PoolGuaranteeForm {
 
 // Application and DraftCertificate interfaces now come from context
 
+type NavigationProp = StackNavigationProp<TradeStackParamList, "TradeFinance">;
+type RouteProps = RouteProp<TradeStackParamList, "TradeFinance">;
+
 export const TradeFinanceScreen = () => {
+  const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProps>();
+
   // Use the shared context for real-time data
   const {
     applications,
@@ -72,9 +81,9 @@ export const TradeFinanceScreen = () => {
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [selectedCertificate, setSelectedCertificate] =
     useState<DraftCertificate | null>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedApplication, setSelectedApplication] =
     useState<Application | null>(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [settlementAmount, setSettlementAmount] = useState("");
 
@@ -121,6 +130,59 @@ export const TradeFinanceScreen = () => {
       Alert.alert("Notification", message);
     }
   };
+
+  // Handle payment results when returning from payment screens
+  useEffect(() => {
+    if (route.params?.paymentResult) {
+      const { success, paymentType, transactionHash, applicationId } =
+        route.params.paymentResult;
+
+      if (success && applicationId) {
+        switch (paymentType) {
+          case "fee":
+            // Update application status after fee payment
+            setApplications((prev) =>
+              prev.map((app) =>
+                app.id === applicationId
+                  ? { ...app, status: "Awaiting Certificate" }
+                  : app
+              )
+            );
+            showToast("Fee payment successful! Certificate issuance pending.");
+            break;
+
+          case "invoice":
+            // Update application status after invoice payment
+            setApplications((prev) =>
+              prev.map((app) =>
+                app.id === applicationId ? { ...app, status: "Fee Paid" } : app
+              )
+            );
+            showToast(
+              "Invoice payment successful! Transaction is being processed."
+            );
+            break;
+
+          case "settlement":
+            // Update application status after settlement payment
+            setApplications((prev) =>
+              prev.map((app) =>
+                app.id === applicationId
+                  ? { ...app, status: "Invoice Settled" }
+                  : app
+              )
+            );
+            showToast(
+              "Settlement payment successful! Certificate will be issued."
+            );
+            break;
+        }
+      }
+
+      // Clear the payment result params
+      navigation.setParams({ paymentResult: undefined } as any);
+    }
+  }, [route.params?.paymentResult, navigation, setApplications]);
 
   // Progress Indicator Component
   const renderProgressIndicator = (application: Application) => {
@@ -510,37 +572,45 @@ Status: AWAITING SELLER APPROVAL`,
   };
 
   const handlePayFee = (application: Application) => {
-    setSelectedApplication(application);
-    setShowPaymentModal(true);
+    // Navigate to payment screen with fee payment parameters
+    navigation.navigate("TradeFinancePayment", {
+      paymentType: "fee",
+      feeAmount: 50, // Standard application fee
+      feeRecipient: "0x1234567890123456789012345678901234567890", // Platform fee address
+      applicationId: application.id,
+      preferredToken: "USDC",
+      preferredNetwork: "polygon",
+    });
   };
 
   const processPayment = () => {
     if (!selectedApplication) return;
 
-    // Update application status to awaiting certificate
-    setApplications((prev) =>
-      prev.map((app) =>
-        app.id === selectedApplication.id
-          ? { ...app, status: "Awaiting Certificate" }
-          : app
-      )
-    );
-
-    setShowPaymentModal(false);
-    setSelectedApplication(null);
-    showToast(
-      "Fee payment successful! Certificate issuance pending. You can now settle the invoice."
-    );
+    // Navigate to payment screen for invoice payment
+    navigation.navigate("TradeFinancePayment", {
+      paymentType: "invoice",
+      invoiceAmount: parseFloat(selectedApplication.tradeValue),
+      supplierAddress: selectedApplication.seller.walletAddress,
+      invoiceId: selectedApplication.id,
+      preferredToken: "USDC",
+      preferredNetwork: "polygon",
+    });
   };
 
   const openSettlementModal = (application: Application) => {
-    setSelectedApplication(application);
     // Calculate remaining amount (total - guarantee amount)
     const totalValue = parseFloat(application.tradeValue);
     const guaranteeAmount = parseFloat(application.guaranteeAmount);
-    const remainingAmount = (totalValue - guaranteeAmount).toFixed(2);
-    setSettlementAmount(remainingAmount);
-    setShowSettlementModal(true);
+    const remainingAmount = totalValue - guaranteeAmount;
+
+    // Navigate to payment screen for settlement
+    navigation.navigate("TradeFinancePayment", {
+      paymentType: "settlement",
+      settlementAmount: remainingAmount,
+      settlementAddress: application.seller.walletAddress,
+      preferredToken: "USDC",
+      preferredNetwork: "polygon",
+    });
   };
 
   const processSettlement = () => {
@@ -555,8 +625,6 @@ Status: AWAITING SELLER APPROVAL`,
       )
     );
 
-    setShowSettlementModal(false);
-    setSelectedApplication(null);
     showToast(
       "Invoice settlement successful! Certificate will be issued by treasury delegators."
     );

@@ -484,7 +484,8 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
           const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
           const balance = await provider.getBalance(address);
-          const formatted = Number(ethers.utils.formatEther(balance));
+          const formattedString = ethers.utils.formatEther(balance);
+          const formatted = parseFloat(formattedString);
 
           // Get token balances
           const tokens = await getAllTokenBalances(

@@ -5,6 +5,7 @@ import {
   useWallet,
   WalletNetwork,
 } from "@/contexts/WalletContext";
+import { formatBalanceForUI } from "@/utils/tokenUtils";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import React from "react";
@@ -50,8 +51,8 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
 
       if (showBalances && selectedNetwork.id === networkId) {
         if (token.address === "0x0000000000000000000000000000000000000000") {
-          // Native token
-          balance = balances.primary.toFixed(6);
+          // Native token - use proper formatting for small amounts
+          balance = formatBalanceForUI(balances.primary);
           usdValue = balances.primaryUsd;
         } else {
           // ERC-20 token
@@ -158,7 +159,7 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
               <Text
                 style={[styles.tokenBalance, !hasBalance && styles.zeroBalance]}
               >
-                {parseFloat(token.balance || "0").toFixed(4)}
+                {formatBalanceForUI(parseFloat(token.balance || "0"))}
               </Text>
               {token.usdValue && token.usdValue > 0 && (
                 <Text style={styles.tokenUsdValue}>

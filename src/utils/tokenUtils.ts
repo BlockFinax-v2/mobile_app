@@ -132,6 +132,23 @@ export function formatTokenAmount(
       : ethers.utils.formatUnits(amount, decimals);
     
     const num = parseFloat(formatted);
+    
+    // For very small amounts, ensure we show at least 4 decimal places for native tokens
+    if (num > 0 && num < 0.01) {
+      const minPrecision = Math.max(4, precision);
+      const rounded = num.toFixed(minPrecision);
+      // Only remove trailing zeros but keep at least 4 decimal places for small amounts
+      const trimmed = rounded.replace(/0+$/, '').replace(/\.$/, '');
+      const decimalPlaces = trimmed.split('.')[1]?.length || 0;
+      
+      if (decimalPlaces < 4 && num > 0) {
+        return symbol ? `${num.toFixed(4)} ${symbol}` : num.toFixed(4);
+      }
+      
+      return symbol ? `${trimmed} ${symbol}` : trimmed;
+    }
+    
+    // For larger amounts, use normal precision with trailing zero removal
     const rounded = num.toFixed(precision).replace(/\.?0+$/, "");
     
     return symbol ? `${rounded} ${symbol}` : rounded;
@@ -150,6 +167,42 @@ export function isValidAddress(address: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Format balance for UI display with consistent 4 decimal places for small amounts
+ */
+export function formatBalanceForUI(
+  balance: number | string,
+  symbol: string = "",
+  forceDecimals: number = 4
+): string {
+  // Handle string inputs to preserve precision
+  let numericValue: number;
+  if (typeof balance === "string") {
+    numericValue = parseFloat(balance);
+    if (isNaN(numericValue)) {
+      return symbol ? `0.0000 ${symbol}` : "0.0000";
+    }
+  } else {
+    numericValue = balance;
+    if (isNaN(numericValue) || numericValue === 0) {
+      return symbol ? `0.0000 ${symbol}` : "0.0000";
+    }
+  }
+  
+  // For amounts >= 1, show up to 2 decimal places but remove trailing zeros
+  if (numericValue >= 1) {
+    const formatted = numericValue.toFixed(2).replace(/\.?0+$/, "");
+    return symbol ? `${formatted} ${symbol}` : formatted;
+  }
+  
+  // For amounts < 1, always show at least 4 decimal places
+  const minDecimals = Math.max(forceDecimals, 4);
+  let formatted = numericValue.toFixed(minDecimals);
+  
+  // For very small amounts, don't strip trailing zeros to maintain visibility
+  return symbol ? `${formatted} ${symbol}` : formatted;
 }
 
 /**

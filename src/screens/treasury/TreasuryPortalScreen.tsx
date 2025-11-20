@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   ScrollView,
@@ -9,27 +9,86 @@ import {
   View,
   TextInput,
 } from "react-native";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import { StackNavigationProp } from "@react-navigation/stack";
+import { WalletStackParamList } from "@/navigation/types";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 
+type NavigationProp = StackNavigationProp<
+  WalletStackParamList,
+  "TreasuryPortal"
+>;
+type RouteProps = RouteProp<WalletStackParamList, "TreasuryPortal">;
+
 export function TreasuryPortalScreen() {
+  const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProps>();
+
   const [userStake, setUserStake] = useState(0); // User's staked USDC
   const [votingPower, setVotingPower] = useState(0); // User's voting power
   const [pendingEarnings, setPendingEarnings] = useState(0); // Pending earnings
   const [claimedEarnings, setClaimedEarnings] = useState(0); // Claimed earnings
   const [totalPool, setTotalPool] = useState(100000); // Total treasury pool
 
+  // Handle payment results when returning from payment screens
+  useEffect(() => {
+    if (route.params?.paymentResult) {
+      const { success, paymentType, transactionHash, stakeAmount } =
+        route.params.paymentResult;
+
+      if (success) {
+        switch (paymentType) {
+          case "stake":
+            if (stakeAmount) {
+              // Update user's stake after successful staking
+              setUserStake((prev) => prev + stakeAmount);
+              setVotingPower((prev) => prev + stakeAmount); // 1:1 ratio for voting power
+              Alert.alert(
+                "Staking Successful! 🎉",
+                `You have successfully staked ${stakeAmount} USDC!\n\nTransaction Hash: ${transactionHash}\n\nYour voting power has increased and you'll start earning rewards immediately.`,
+                [{ text: "OK" }]
+              );
+            }
+            break;
+
+          case "deposit":
+            Alert.alert(
+              "Deposit Successful! 🎉",
+              `Your treasury deposit has been processed successfully!\n\nTransaction Hash: ${transactionHash}`,
+              [{ text: "OK" }]
+            );
+            break;
+
+          case "governance":
+            Alert.alert(
+              "Governance Payment Successful! 🎉",
+              `Your governance payment has been recorded!\n\nTransaction Hash: ${transactionHash}`,
+              [{ text: "OK" }]
+            );
+            break;
+        }
+      }
+
+      // Clear the payment result params
+      navigation.setParams({ paymentResult: undefined } as any);
+    }
+  }, [route.params?.paymentResult, navigation]);
+
   const handleStakeUSDC = () => {
-    Alert.alert(
-      "Stake USDC",
-      "Connect your wallet to stake USDC and gain voting power in treasury decisions.",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Connect Wallet", onPress: () => {} },
-      ]
-    );
+    // Navigate to payment screen for staking
+    navigation.navigate("TreasuryPayment", {
+      paymentType: "stake",
+      stakeAmount: 100, // Default amount, user can change
+      stakingContract: "0x1234567890123456789012345678901234567890", // Staking contract address
+      stakingPeriod: "30 days",
+      apy: 12, // 12% APY
+      lockPeriod: 30,
+      preferredToken: "USDC",
+      preferredNetwork: "polygon",
+    });
   };
 
   const handleClaimEarnings = () => {
