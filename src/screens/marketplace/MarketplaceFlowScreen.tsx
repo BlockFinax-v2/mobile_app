@@ -22,7 +22,7 @@ export const MarketplaceFlowScreen: React.FC = () => {
         {
           text: "Go to Trade Finance",
           onPress: () =>
-            navigation.navigate("TradeTab", { screen: "TradeFinance" }),
+            navigation.navigate("WalletTab", { screen: "TradeFinance" }),
         },
       ]
     );

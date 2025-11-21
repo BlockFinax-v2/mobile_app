@@ -13,7 +13,7 @@ export type RootStackParamList = {
 export type AppTabParamList = {
   WalletTab: NavigatorScreenParams<WalletStackParamList>;
   ChatTab: NavigatorScreenParams<MessagesStackParamList>;
-  TradeTab: NavigatorScreenParams<TradeStackParamList>;
+  SettingsTab: NavigatorScreenParams<ProfileStackParamList>;
 };
 
 export type AuthStackParamList = {
@@ -84,11 +84,29 @@ export type WalletStackParamList = {
     apy?: number;
     lockPeriod?: number;
   };
+  TradeFinance: {
+    paymentResult?: {
+      success: boolean;
+      transactionHash: string;
+      paymentType: string;
+      applicationId?: string;
+      invoiceId?: string;
+    };
+  } | undefined;
+  TradeFinancePayment: {
+    paymentType: "invoice" | "fee" | "settlement";
+    invoiceAmount?: number;
+    supplierAddress?: string;
+    invoiceId?: string;
+    feeAmount?: number;
+    feeRecipient?: string;
+    applicationId?: string;
+    settlementAmount?: number;
+    settlementAddress?: string;
+    preferredToken?: string;
+    preferredNetwork?: string;
+  };
   Rewards: undefined;
-  ProfileHome: undefined;
-  Settings: undefined;
-  NetworkConfig: undefined;
-  Debug: undefined;
 
 };
 

@@ -23,7 +23,7 @@ export const BuySellSelectionScreen: React.FC = () => {
         {
           text: "Go to Trade Finance",
           onPress: () =>
-            navigation.navigate("TradeTab", { screen: "TradeFinance" }),
+            navigation.navigate("WalletTab", { screen: "TradeFinance" }),
         },
       ]
     );
@@ -37,7 +37,7 @@ export const BuySellSelectionScreen: React.FC = () => {
         {
           text: "Go to Trade Finance",
           onPress: () =>
-            navigation.navigate("TradeTab", { screen: "TradeFinance" }),
+            navigation.navigate("WalletTab", { screen: "TradeFinance" }),
         },
       ]
     );

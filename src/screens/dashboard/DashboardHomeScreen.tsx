@@ -352,7 +352,7 @@ export default function DashboardHomeScreen() {
         navigateInstant("WalletTab", { screen: "ReceivePayment" });
         break;
       case "buysell":
-        navigateInstant("TradeTab", { screen: "TradeHome" });
+        navigateInstant("WalletTab", { screen: "TradeFinance" });
         break;
       case "document":
         navigateInstant("WalletTab", { screen: "DocumentCenter" });
@@ -379,18 +379,6 @@ export default function DashboardHomeScreen() {
             </Text>
           </View>
           <View style={styles.headerIcons}>
-            <Pressable
-              style={styles.iconButton}
-              onPress={() =>
-                navigation.navigate("WalletTab", { screen: "ProfileHome" })
-              }
-            >
-              <MaterialCommunityIcons
-                name="cog-outline"
-                size={24}
-                color={palette.neutralDark}
-              />
-            </Pressable>
             <Pressable style={styles.iconButton}>
               <MaterialCommunityIcons
                 name="qrcode-scan"

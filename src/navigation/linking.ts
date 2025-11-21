@@ -32,19 +32,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
           },
           WalletTab: {
             screens: {
-              WalletOverview: 'wallet',
+              WalletHome: 'wallet',
               SendPayment: 'wallet/send',
               SendPaymentReview: 'wallet/send/review',
               ReceivePayment: 'wallet/receive',
+              TradeFinance: 'wallet/trade-finance',
+              TreasuryPortal: 'wallet/treasury',
             },
           },
-          MessagesTab: {
+          ChatTab: {
             screens: {
               MessagesHome: 'messages',
               Chat: 'messages/:id',
             },
           },
-          ProfileTab: {
+          SettingsTab: {
             screens: {
               ProfileHome: 'profile',
               Settings: 'settings',

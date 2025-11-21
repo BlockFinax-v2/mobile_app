@@ -33,7 +33,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 import {
   AppTabParamList,
   MessagesStackParamList,
-  TradeStackParamList,
+  ProfileStackParamList,
   WalletStackParamList,
 } from "./types";
 
@@ -44,7 +44,7 @@ const stackScreenOptions: StackNavigationOptions = {
 
 const WalletStack = createStackNavigator<WalletStackParamList>();
 const MessagesStack = createStackNavigator<MessagesStackParamList>();
-const TradeStack = createStackNavigator<TradeStackParamList>();
+const ProfileStack = createStackNavigator<ProfileStackParamList>();
 const Tab = createBottomTabNavigator<AppTabParamList>();
 
 // Merged Wallet (Dashboard + Wallet combined)
@@ -145,55 +145,33 @@ const WalletNavigator = () => (
       }}
     />
     <WalletStack.Screen
-      name="ProfileHome"
-      component={ProfileHomeScreen}
-      options={{
-        headerShown: true,
-        title: "Profile",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
-      name="Settings"
-      component={SettingsScreen}
-      options={{
-        headerShown: true,
-        title: "Settings",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
-      name="NetworkConfig"
-      component={NetworkConfigScreen}
-      options={{
-        headerShown: true,
-        title: "Network Configuration",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
-      name="Debug"
-      component={DebugScreen}
-      options={{
-        headerShown: true,
-        title: "Debug Tools",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
       name="TreasuryPayment"
       component={TreasuryPayment}
       options={{
         headerShown: true,
         title: "Treasury Payment",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="TradeFinance"
+      component={TradeFinanceScreen}
+      options={{
+        headerShown: true,
+        title: "Trade Finance",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <WalletStack.Screen
+      name="TradeFinancePayment"
+      component={TradeFinancePayment}
+      options={{
+        headerShown: true,
+        title: "Trade Finance Payment",
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
@@ -257,36 +235,53 @@ const MessagesNavigator = () => (
   </MessagesStack.Navigator>
 );
 
-const TradeNavigator = () => (
-  <TradeStack.Navigator screenOptions={stackScreenOptions}>
-    <TradeStack.Screen
-      name="TradeHome"
-      component={TradeFinanceScreen}
-      options={{ title: "Trade Finance Portal" }}
-    />
-    <TradeStack.Screen
-      name="TradeFinance"
-      component={TradeFinanceScreen}
+const ProfileNavigator = () => (
+  <ProfileStack.Navigator screenOptions={stackScreenOptions}>
+    <ProfileStack.Screen
+      name="ProfileHome"
+      component={ProfileHomeScreen}
       options={{
         headerShown: true,
-        title: "Trade Finance",
+        title: "Profile",
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
       }}
     />
-    <TradeStack.Screen
-      name="TradeFinancePayment"
-      component={TradeFinancePayment}
+    <ProfileStack.Screen
+      name="Settings"
+      component={SettingsScreen}
       options={{
         headerShown: true,
-        title: "Trade Finance Payment",
+        title: "Settings",
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
       }}
     />
-  </TradeStack.Navigator>
+    <ProfileStack.Screen
+      name="NetworkConfig"
+      component={NetworkConfigScreen}
+      options={{
+        headerShown: true,
+        title: "Network Configuration",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+    <ProfileStack.Screen
+      name="Debug"
+      component={DebugScreen}
+      options={{
+        headerShown: true,
+        title: "Debug Tools",
+        headerStyle: { backgroundColor: palette.primaryBlue },
+        headerTintColor: palette.white,
+        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
+      }}
+    />
+  </ProfileStack.Navigator>
 );
 
 const TabBarIcon: React.FC<{
@@ -312,7 +307,7 @@ export const AppNavigator = () => (
         const iconMap: Record<keyof AppTabParamList, string> = {
           WalletTab: "wallet",
           ChatTab: "chat",
-          TradeTab: "trending-up",
+          SettingsTab: "cog",
         };
         return (
           <TabBarIcon
@@ -335,9 +330,9 @@ export const AppNavigator = () => (
       options={{ title: "Chat" }}
     />
     <Tab.Screen
-      name="TradeTab"
-      component={TradeNavigator}
-      options={{ title: "Trade Finance" }}
+      name="SettingsTab"
+      component={ProfileNavigator}
+      options={{ title: "Settings" }}
     />
   </Tab.Navigator>
 );

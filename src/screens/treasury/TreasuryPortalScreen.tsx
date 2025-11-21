@@ -37,7 +37,9 @@ export function TreasuryPortalScreen() {
   const route = useRoute<RouteProps>();
 
   // Navigation and wallet state
-  const [activeTab, setActiveTab] = useState<'stake' | 'create' | 'vote' | 'pool'>('stake');
+  const [activeTab, setActiveTab] = useState<
+    "stake" | "create" | "vote" | "pool"
+  >("stake");
   const { selectedNetwork, isUnlocked, address } = useWallet();
 
   // Real staking state
@@ -45,19 +47,23 @@ export function TreasuryPortalScreen() {
   const [isTransacting, setIsTransacting] = useState(false);
   const [stakeInfo, setStakeInfo] = useState<StakeInfo | null>(null);
   const [poolStats, setPoolStats] = useState<PoolStats | null>(null);
-  const [stakingConfig, setStakingConfig] = useState<StakingConfig | null>(null);
+  const [stakingConfig, setStakingConfig] = useState<StakingConfig | null>(
+    null
+  );
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [currentAPR, setCurrentAPR] = useState(0);
-  
+
   // Transaction state
   const [pendingTx, setPendingTx] = useState<StakingTransaction | null>(null);
   const [stakeAmount, setStakeAmount] = useState("");
   const [unstakeAmount, setUnstakeAmount] = useState("");
 
   // Create Proposal state
-  const [proposalTitle, setProposalTitle] = useState('');
-  const [proposalDescription, setProposalDescription] = useState('');
-  const [proposalCategory, setProposalCategory] = useState<'Treasury' | 'Investment' | 'Guarantee'>('Treasury');
+  const [proposalTitle, setProposalTitle] = useState("");
+  const [proposalDescription, setProposalDescription] = useState("");
+  const [proposalCategory, setProposalCategory] = useState<
+    "Treasury" | "Investment" | "Guarantee"
+  >("Treasury");
 
   // Load staking data on component mount and when wallet changes
   const loadStakingData = async () => {
@@ -68,7 +74,7 @@ export function TreasuryPortalScreen() {
 
     try {
       setIsLoading(true);
-      
+
       // Check if we're on the correct network (Base Sepolia)
       if (selectedNetwork.chainId !== 84532) {
         Alert.alert(
@@ -174,9 +180,12 @@ export function TreasuryPortalScreen() {
 
     const monitorTransaction = async () => {
       try {
-        console.log(`Monitoring ${pendingTx.type} transaction:`, pendingTx.hash);
+        console.log(
+          `Monitoring ${pendingTx.type} transaction:`,
+          pendingTx.hash
+        );
         const receipt = await stakingService.waitForTransaction(pendingTx.hash);
-        
+
         if (receipt.status === 1) {
           console.log(`Transaction ${pendingTx.type} confirmed successfully`);
           // Events will handle UI updates, but we can show immediate feedback
@@ -185,9 +194,13 @@ export function TreasuryPortalScreen() {
           }, 2000);
         } else {
           // Get detailed failure reason
-          const failureReason = await stakingService.getTransactionFailureReason(pendingTx.hash);
-          console.log(`Transaction ${pendingTx.type} failed. Reason:`, failureReason);
-          
+          const failureReason =
+            await stakingService.getTransactionFailureReason(pendingTx.hash);
+          console.log(
+            `Transaction ${pendingTx.type} failed. Reason:`,
+            failureReason
+          );
+
           Alert.alert(
             "Transaction Failed",
             `Your ${pendingTx.type} transaction failed.\n\nReason: ${failureReason}\n\nTransaction: ${pendingTx.hash}`,
@@ -220,8 +233,10 @@ export function TreasuryPortalScreen() {
       }
 
       // Use the actual user's wallet credentials from secure storage
-      console.log("Initializing staking service with user's wallet credentials...");
-      
+      console.log(
+        "Initializing staking service with user's wallet credentials..."
+      );
+
       // The stakingService.getSigner() will automatically use the user's credentials
       // from secure storage (mnemonic or private key) - no need to pass hardcoded key
       const signer = await stakingService.getSigner();
@@ -244,10 +259,10 @@ export function TreasuryPortalScreen() {
       setIsTransacting(true);
       // Initialize connection if not done already
       await initializeStakingService();
-      
+
       const tx = await stakingService.approveUSDC(stakeAmount);
       setPendingTx(tx);
-      
+
       Alert.alert(
         "Approval Submitted",
         "USDC approval transaction has been submitted. Please wait for confirmation before staking.",
@@ -282,7 +297,10 @@ export function TreasuryPortalScreen() {
 
     // Check USDC balance
     if (parseFloat(usdcBalance) < parseFloat(stakeAmount)) {
-      Alert.alert("Insufficient Balance", "You don't have enough USDC to stake this amount");
+      Alert.alert(
+        "Insufficient Balance",
+        "You don't have enough USDC to stake this amount"
+      );
       return;
     }
 
@@ -290,7 +308,7 @@ export function TreasuryPortalScreen() {
       setIsTransacting(true);
       // Initialize connection if not done already
       await initializeStakingService();
-      
+
       // Check allowance first
       const hasAllowance = await stakingService.checkAllowance(stakeAmount);
       if (!hasAllowance) {
@@ -306,7 +324,7 @@ export function TreasuryPortalScreen() {
       const tx = await stakingService.stake(stakeAmount);
       setPendingTx(tx);
       setStakeAmount(""); // Clear input
-      
+
       Alert.alert(
         "Stake Submitted",
         "Your stake transaction has been submitted. Please wait for confirmation.",
@@ -334,21 +352,21 @@ export function TreasuryPortalScreen() {
     try {
       setIsTransacting(true);
       await initializeStakingService();
-      
-      console.log('Attempting to unstake:', unstakeAmount, 'USDC');
-      console.log('Current stake info:', stakeInfo);
-      
+
+      console.log("Attempting to unstake:", unstakeAmount, "USDC");
+      console.log("Current stake info:", stakeInfo);
+
       const tx = await stakingService.unstake(unstakeAmount);
       setPendingTx(tx);
       setUnstakeAmount(""); // Clear input
-      
+
       Alert.alert(
         "Unstake Submitted",
         `Unstaking ${unstakeAmount} USDC. Transaction hash: ${tx.hash}`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
-      console.error('Unstake error:', error);
+      console.error("Unstake error:", error);
       Alert.alert("Unstaking Failed", error.message);
     } finally {
       setIsTransacting(false);
@@ -359,20 +377,20 @@ export function TreasuryPortalScreen() {
     try {
       setIsTransacting(true);
       await initializeStakingService();
-      
-      console.log('Attempting to claim rewards...');
-      console.log('Current stake info:', stakeInfo);
-      
+
+      console.log("Attempting to claim rewards...");
+      console.log("Current stake info:", stakeInfo);
+
       const tx = await stakingService.claimRewards();
       setPendingTx(tx);
-      
+
       Alert.alert(
         "Claim Submitted",
         `Reward claim transaction submitted. Hash: ${tx.hash}`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
-      console.error('Claim rewards error:', error);
+      console.error("Claim rewards error:", error);
       Alert.alert("Claim Failed", error.message);
     } finally {
       setIsTransacting(false);
@@ -383,10 +401,10 @@ export function TreasuryPortalScreen() {
     // Check if user has an active stake
     const stakedAmount = parseFloat(stakeInfo?.amount || "0");
     const hasActiveStake = stakeInfo?.active && stakedAmount > 0;
-    
+
     if (!hasActiveStake) {
       Alert.alert(
-        "No Active Stake", 
+        "No Active Stake",
         "You don't have any active stake to withdraw. Please stake some USDC first.",
         [{ text: "OK" }]
       );
@@ -399,7 +417,13 @@ export function TreasuryPortalScreen() {
 
     Alert.alert(
       "Emergency Withdrawal Warning",
-      `This will withdraw your stake with a ${penaltyPercent}% penalty.\n\nStaked Amount: ${stakedAmount.toFixed(6)} USDC\nEstimated Penalty: ${penalty.toFixed(6)} USDC\nYou'll receive: ~${(stakedAmount - penalty).toFixed(6)} USDC\n\nThis action cannot be undone and will be processed immediately.`,
+      `This will withdraw your stake with a ${penaltyPercent}% penalty.\n\nStaked Amount: ${stakedAmount.toFixed(
+        6
+      )} USDC\nEstimated Penalty: ${penalty.toFixed(
+        6
+      )} USDC\nYou'll receive: ~${(stakedAmount - penalty).toFixed(
+        6
+      )} USDC\n\nThis action cannot be undone and will be processed immediately.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -409,20 +433,20 @@ export function TreasuryPortalScreen() {
             try {
               setIsTransacting(true);
               await initializeStakingService();
-              
-              console.log('Attempting emergency withdrawal...');
-              console.log('Current stake info:', stakeInfo);
-              
+
+              console.log("Attempting emergency withdrawal...");
+              console.log("Current stake info:", stakeInfo);
+
               const tx = await stakingService.emergencyWithdraw();
               setPendingTx(tx);
-              
+
               Alert.alert(
                 "Emergency Withdrawal Submitted",
                 `Emergency withdrawal transaction submitted. Hash: ${tx.hash}`,
                 [{ text: "OK" }]
               );
             } catch (error: any) {
-              console.error('Emergency withdrawal error:', error);
+              console.error("Emergency withdrawal error:", error);
               Alert.alert("Emergency Withdrawal Failed", error.message);
             } finally {
               setIsTransacting(false);
@@ -439,7 +463,10 @@ export function TreasuryPortalScreen() {
 
   const handleCreateProposal = () => {
     if (!proposalTitle.trim() || !proposalDescription.trim()) {
-      Alert.alert("Missing Information", "Please fill in both title and description for your proposal.");
+      Alert.alert(
+        "Missing Information",
+        "Please fill in both title and description for your proposal."
+      );
       return;
     }
 
@@ -452,10 +479,13 @@ export function TreasuryPortalScreen() {
           text: "Submit",
           onPress: () => {
             // Reset form
-            setProposalTitle('');
-            setProposalDescription('');
-            setProposalCategory('Treasury');
-            Alert.alert("Proposal Submitted!", "Your proposal has been submitted and will appear in the voting section once approved.");
+            setProposalTitle("");
+            setProposalDescription("");
+            setProposalCategory("Treasury");
+            Alert.alert(
+              "Proposal Submitted!",
+              "Your proposal has been submitted and will appear in the voting section once approved."
+            );
           },
         },
       ]
@@ -512,64 +542,96 @@ export function TreasuryPortalScreen() {
         {/* Navigation Tabs */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'stake' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('stake')}
+            style={[
+              styles.tabButton,
+              activeTab === "stake" && styles.tabButtonActive,
+            ]}
+            onPress={() => setActiveTab("stake")}
           >
             <MaterialCommunityIcons
               name="bank"
               size={20}
-              color={activeTab === 'stake' ? 'white' : colors.textSecondary}
+              color={activeTab === "stake" ? "white" : colors.textSecondary}
             />
-            <Text style={[styles.tabText, activeTab === 'stake' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "stake" && styles.tabTextActive,
+              ]}
+            >
               Stake
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'create' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('create')}
+            style={[
+              styles.tabButton,
+              activeTab === "create" && styles.tabButtonActive,
+            ]}
+            onPress={() => setActiveTab("create")}
           >
             <MaterialCommunityIcons
               name="plus-circle"
               size={20}
-              color={activeTab === 'create' ? 'white' : colors.textSecondary}
+              color={activeTab === "create" ? "white" : colors.textSecondary}
             />
-            <Text style={[styles.tabText, activeTab === 'create' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "create" && styles.tabTextActive,
+              ]}
+            >
               Create
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'vote' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('vote')}
+            style={[
+              styles.tabButton,
+              activeTab === "vote" && styles.tabButtonActive,
+            ]}
+            onPress={() => setActiveTab("vote")}
           >
             <MaterialCommunityIcons
               name="vote"
               size={20}
-              color={activeTab === 'vote' ? 'white' : colors.textSecondary}
+              color={activeTab === "vote" ? "white" : colors.textSecondary}
             />
-            <Text style={[styles.tabText, activeTab === 'vote' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "vote" && styles.tabTextActive,
+              ]}
+            >
               Vote
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, activeTab === 'pool' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('pool')}
+            style={[
+              styles.tabButton,
+              activeTab === "pool" && styles.tabButtonActive,
+            ]}
+            onPress={() => setActiveTab("pool")}
           >
             <MaterialCommunityIcons
               name="shield-check"
               size={20}
-              color={activeTab === 'pool' ? 'white' : colors.textSecondary}
+              color={activeTab === "pool" ? "white" : colors.textSecondary}
             />
-            <Text style={[styles.tabText, activeTab === 'pool' && styles.tabTextActive]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "pool" && styles.tabTextActive,
+              ]}
+            >
               Pool
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Content based on active tab */}
-        {activeTab === 'stake' && (
+        {activeTab === "stake" && (
           <>
             {/* Staking Overview */}
             <View style={styles.stakingCard}>
@@ -581,9 +643,9 @@ export function TreasuryPortalScreen() {
                 />
                 <Text style={styles.cardTitle}>Your Treasury Position</Text>
                 {(isLoading || isTransacting) && (
-                  <ActivityIndicator 
-                    size="small" 
-                    color={colors.primary} 
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.primary}
                     style={{ marginLeft: spacing.sm }}
                   />
                 )}
@@ -617,7 +679,10 @@ export function TreasuryPortalScreen() {
                     <View style={styles.statBox}>
                       <Text style={styles.statLabel}>Your Stake</Text>
                       <Text style={styles.statValue}>
-                        {stakeInfo?.amount ? parseFloat(stakeInfo.amount).toFixed(2) : "0.00"} USDC
+                        {stakeInfo?.amount
+                          ? parseFloat(stakeInfo.amount).toFixed(2)
+                          : "0.00"}{" "}
+                        USDC
                       </Text>
                       <Text style={styles.statSubtext}>
                         Balance: {parseFloat(usdcBalance).toFixed(2)} USDC
@@ -626,7 +691,9 @@ export function TreasuryPortalScreen() {
                     <View style={styles.statBox}>
                       <Text style={styles.statLabel}>Voting Power</Text>
                       <Text style={styles.statValue}>
-                        {stakeInfo?.votingPower ? parseFloat(stakeInfo.votingPower).toFixed(0) : "0"}
+                        {stakeInfo?.votingPower
+                          ? parseFloat(stakeInfo.votingPower).toFixed(0)
+                          : "0"}
                       </Text>
                       <Text style={styles.statSubtext}>
                         {stakeInfo?.active ? "Active" : "Inactive"}
@@ -638,12 +705,18 @@ export function TreasuryPortalScreen() {
                     <View style={styles.poolStat}>
                       <Text style={styles.poolLabel}>Total Pool</Text>
                       <Text style={styles.poolValue}>
-                        {poolStats ? `${parseFloat(poolStats.totalStaked).toLocaleString()} USDC` : "Loading..."}
+                        {poolStats
+                          ? `${parseFloat(
+                              poolStats.totalStaked
+                            ).toLocaleString()} USDC`
+                          : "Loading..."}
                       </Text>
                     </View>
                     <View style={styles.poolStat}>
                       <Text style={styles.poolLabel}>Current APR</Text>
-                      <Text style={styles.poolValuePositive}>{currentAPR.toFixed(2)}%</Text>
+                      <Text style={styles.poolValuePositive}>
+                        {currentAPR.toFixed(2)}%
+                      </Text>
                     </View>
                   </View>
 
@@ -652,7 +725,10 @@ export function TreasuryPortalScreen() {
                     <Text style={styles.inputLabel}>Stake Amount (USDC)</Text>
                     <View style={styles.inputContainer}>
                       <TextInput
-                        style={[styles.amountInput, isTransacting && styles.inputDisabled]}
+                        style={[
+                          styles.amountInput,
+                          isTransacting && styles.inputDisabled,
+                        ]}
                         value={stakeAmount}
                         onChangeText={setStakeAmount}
                         placeholder="Enter amount to stake"
@@ -661,9 +737,15 @@ export function TreasuryPortalScreen() {
                         editable={!isTransacting}
                       />
                       <TouchableOpacity
-                        style={[styles.maxButton, isTransacting && styles.maxButtonDisabled]}
+                        style={[
+                          styles.maxButton,
+                          isTransacting && styles.maxButtonDisabled,
+                        ]}
                         onPress={() => {
-                          const maxStake = Math.max(0, parseFloat(usdcBalance) - 0.01);
+                          const maxStake = Math.max(
+                            0,
+                            parseFloat(usdcBalance) - 0.01
+                          );
                           setStakeAmount(maxStake.toFixed(6));
                         }}
                         disabled={isTransacting}
@@ -671,43 +753,79 @@ export function TreasuryPortalScreen() {
                         <Text style={styles.maxButtonText}>MAX</Text>
                       </TouchableOpacity>
                     </View>
-                    {stakingConfig && stakeAmount && parseFloat(stakeAmount) > 0 && (
-                      <Text style={styles.stakingInfo}>
-                        Min stake: {stakingConfig.minimumStake} USDC • 
-                        Lock period: {Math.floor(stakingConfig.minLockDuration / 86400)} days
-                      </Text>
-                    )}
+                    {stakingConfig &&
+                      stakeAmount &&
+                      parseFloat(stakeAmount) > 0 && (
+                        <Text style={styles.stakingInfo}>
+                          Min stake: {stakingConfig.minimumStake} USDC • Lock
+                          period:{" "}
+                          {Math.floor(stakingConfig.minLockDuration / 86400)}{" "}
+                          days
+                        </Text>
+                      )}
                   </View>
 
                   {/* Action Buttons */}
                   <View style={styles.actionButtons}>
                     <TouchableOpacity
-                      style={[styles.approveButton, (isTransacting || !stakeAmount || parseFloat(stakeAmount) <= 0) && styles.buttonDisabled]}
+                      style={[
+                        styles.approveButton,
+                        (isTransacting ||
+                          !stakeAmount ||
+                          parseFloat(stakeAmount) <= 0) &&
+                          styles.buttonDisabled,
+                      ]}
                       onPress={handleApproveUSDC}
-                      disabled={isTransacting || !stakeAmount || parseFloat(stakeAmount) <= 0}
+                      disabled={
+                        isTransacting ||
+                        !stakeAmount ||
+                        parseFloat(stakeAmount) <= 0
+                      }
                     >
-                      {isTransacting && pendingTx?.type === 'approve' ? (
+                      {isTransacting && pendingTx?.type === "approve" ? (
                         <ActivityIndicator size="small" color="white" />
                       ) : (
-                        <MaterialCommunityIcons name="check-circle" size={20} color="white" />
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={20}
+                          color="white"
+                        />
                       )}
                       <Text style={styles.approveButtonText}>
-                        {isTransacting && pendingTx?.type === 'approve' ? 'Approving...' : 'Approve USDC'}
+                        {isTransacting && pendingTx?.type === "approve"
+                          ? "Approving..."
+                          : "Approve USDC"}
                       </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[styles.stakeButton, (isTransacting || !stakeAmount || parseFloat(stakeAmount) <= 0) && styles.buttonDisabled]}
+                      style={[
+                        styles.stakeButton,
+                        (isTransacting ||
+                          !stakeAmount ||
+                          parseFloat(stakeAmount) <= 0) &&
+                          styles.buttonDisabled,
+                      ]}
                       onPress={handleStakeUSDC}
-                      disabled={isTransacting || !stakeAmount || parseFloat(stakeAmount) <= 0}
+                      disabled={
+                        isTransacting ||
+                        !stakeAmount ||
+                        parseFloat(stakeAmount) <= 0
+                      }
                     >
-                      {isTransacting && pendingTx?.type === 'stake' ? (
+                      {isTransacting && pendingTx?.type === "stake" ? (
                         <ActivityIndicator size="small" color="white" />
                       ) : (
-                        <MaterialCommunityIcons name="plus-circle" size={20} color="white" />
+                        <MaterialCommunityIcons
+                          name="plus-circle"
+                          size={20}
+                          color="white"
+                        />
                       )}
                       <Text style={styles.stakeButtonText}>
-                        {isTransacting && pendingTx?.type === 'stake' ? 'Staking...' : 'Stake USDC'}
+                        {isTransacting && pendingTx?.type === "stake"
+                          ? "Staking..."
+                          : "Stake USDC"}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -715,10 +833,15 @@ export function TreasuryPortalScreen() {
                   {/* Unstake Section */}
                   {stakeInfo?.active && (
                     <View style={styles.unstakeSection}>
-                      <Text style={styles.inputLabel}>Unstake Amount (USDC)</Text>
+                      <Text style={styles.inputLabel}>
+                        Unstake Amount (USDC)
+                      </Text>
                       <View style={styles.inputContainer}>
                         <TextInput
-                          style={[styles.amountInput, isTransacting && styles.inputDisabled]}
+                          style={[
+                            styles.amountInput,
+                            isTransacting && styles.inputDisabled,
+                          ]}
                           value={unstakeAmount}
                           onChangeText={setUnstakeAmount}
                           placeholder="Enter amount to unstake"
@@ -727,78 +850,131 @@ export function TreasuryPortalScreen() {
                           editable={!isTransacting}
                         />
                         <TouchableOpacity
-                          style={[styles.maxButton, isTransacting && styles.maxButtonDisabled]}
+                          style={[
+                            styles.maxButton,
+                            isTransacting && styles.maxButtonDisabled,
+                          ]}
                           onPress={() => setUnstakeAmount(stakeInfo.amount)}
                           disabled={isTransacting}
                         >
                           <Text style={styles.maxButtonText}>MAX</Text>
                         </TouchableOpacity>
                       </View>
-                      
-                      {stakeInfo.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0 && (
-                        <Text style={styles.lockWarning}>
-                          ⚠️ Locked for {Math.ceil(stakeInfo.timeUntilUnlock / 86400)} more days
-                        </Text>
-                      )}
 
-                  <View style={styles.unstakeButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.unstakeButton, 
-                        (isTransacting || 
-                         !unstakeAmount || 
-                         parseFloat(unstakeAmount) <= 0 ||
-                         Boolean(stakeInfo?.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0)
-                        ) ? styles.buttonDisabled : null
-                      ]}
-                      onPress={handleUnstake}
-                      disabled={
-                        isTransacting || 
-                        !unstakeAmount || 
-                        parseFloat(unstakeAmount) <= 0 ||
-                        Boolean(stakeInfo?.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0)
-                      }
-                    >
-                      {isTransacting && pendingTx?.type === 'unstake' ? (
-                        <ActivityIndicator size="small" color={colors.warning} />
-                      ) : (
-                        <MaterialCommunityIcons 
-                          name="minus-circle" 
-                          size={20} 
-                          color={(stakeInfo?.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0) ? colors.textSecondary : colors.warning} 
-                        />
-                      )}
-                      <Text style={[
-                        styles.unstakeButtonText,
-                        Boolean(stakeInfo?.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0) ? styles.buttonTextDisabled : null
-                      ]}>
-                        {isTransacting && pendingTx?.type === 'unstake' ? 'Unstaking...' : 
-                         (stakeInfo?.timeUntilUnlock && stakeInfo.timeUntilUnlock > 0) ? 'Locked' : 'Unstake'}
-                      </Text>
-                    </TouchableOpacity>
+                      {stakeInfo.timeUntilUnlock &&
+                        stakeInfo.timeUntilUnlock > 0 && (
+                          <Text style={styles.lockWarning}>
+                            ⚠️ Locked for{" "}
+                            {Math.ceil(stakeInfo.timeUntilUnlock / 86400)} more
+                            days
+                          </Text>
+                        )}
 
-                    <TouchableOpacity
+                      <View style={styles.unstakeButtons}>
+                        <TouchableOpacity
                           style={[
-                            styles.emergencyButton, 
-                            (isTransacting || !stakeInfo?.active || parseFloat(stakeInfo?.amount || "0") <= 0) && styles.buttonDisabled
+                            styles.unstakeButton,
+                            isTransacting ||
+                            !unstakeAmount ||
+                            parseFloat(unstakeAmount) <= 0 ||
+                            Boolean(
+                              stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0
+                            )
+                              ? styles.buttonDisabled
+                              : null,
                           ]}
-                          onPress={handleEmergencyWithdraw}
-                          disabled={isTransacting || !stakeInfo?.active || parseFloat(stakeInfo?.amount || "0") <= 0}
+                          onPress={handleUnstake}
+                          disabled={
+                            isTransacting ||
+                            !unstakeAmount ||
+                            parseFloat(unstakeAmount) <= 0 ||
+                            Boolean(
+                              stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0
+                            )
+                          }
                         >
-                          {isTransacting && pendingTx?.type === 'emergency' ? (
-                            <ActivityIndicator size="small" color={colors.error} />
+                          {isTransacting && pendingTx?.type === "unstake" ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.warning}
+                            />
                           ) : (
-                            <MaterialCommunityIcons 
-                              name="alert-circle" 
-                              size={20} 
-                              color={(!stakeInfo?.active || parseFloat(stakeInfo?.amount || "0") <= 0) ? colors.textSecondary : colors.error} 
+                            <MaterialCommunityIcons
+                              name="minus-circle"
+                              size={20}
+                              color={
+                                stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0
+                                  ? colors.textSecondary
+                                  : colors.warning
+                              }
                             />
                           )}
-                          <Text style={[
-                            styles.emergencyButtonText,
-                            (!stakeInfo?.active || parseFloat(stakeInfo?.amount || "0") <= 0) && styles.buttonTextDisabled
-                          ]}>
-                            {isTransacting && pendingTx?.type === 'emergency' ? 'Processing...' : 'Emergency'}
+                          <Text
+                            style={[
+                              styles.unstakeButtonText,
+                              Boolean(
+                                stakeInfo?.timeUntilUnlock &&
+                                  stakeInfo.timeUntilUnlock > 0
+                              )
+                                ? styles.buttonTextDisabled
+                                : null,
+                            ]}
+                          >
+                            {isTransacting && pendingTx?.type === "unstake"
+                              ? "Unstaking..."
+                              : stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0
+                              ? "Locked"
+                              : "Unstake"}
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.emergencyButton,
+                            (isTransacting ||
+                              !stakeInfo?.active ||
+                              parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                              styles.buttonDisabled,
+                          ]}
+                          onPress={handleEmergencyWithdraw}
+                          disabled={
+                            isTransacting ||
+                            !stakeInfo?.active ||
+                            parseFloat(stakeInfo?.amount || "0") <= 0
+                          }
+                        >
+                          {isTransacting && pendingTx?.type === "emergency" ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={colors.error}
+                            />
+                          ) : (
+                            <MaterialCommunityIcons
+                              name="alert-circle"
+                              size={20}
+                              color={
+                                !stakeInfo?.active ||
+                                parseFloat(stakeInfo?.amount || "0") <= 0
+                                  ? colors.textSecondary
+                                  : colors.error
+                              }
+                            />
+                          )}
+                          <Text
+                            style={[
+                              styles.emergencyButtonText,
+                              (!stakeInfo?.active ||
+                                parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                                styles.buttonTextDisabled,
+                            ]}
+                          >
+                            {isTransacting && pendingTx?.type === "emergency"
+                              ? "Processing..."
+                              : "Emergency"}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -813,11 +989,14 @@ export function TreasuryPortalScreen() {
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Treasury Earnings</Text>
-                  <TouchableOpacity onPress={loadStakingData} disabled={isLoading}>
-                    <MaterialCommunityIcons 
-                      name="refresh" 
-                      size={20} 
-                      color={colors.primary} 
+                  <TouchableOpacity
+                    onPress={loadStakingData}
+                    disabled={isLoading}
+                  >
+                    <MaterialCommunityIcons
+                      name="refresh"
+                      size={20}
+                      color={colors.primary}
                     />
                   </TouchableOpacity>
                 </View>
@@ -826,29 +1005,39 @@ export function TreasuryPortalScreen() {
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsLabel}>Pending Rewards</Text>
                       <Text style={styles.earningsValue}>
-                        {stakeInfo?.pendingRewards ? parseFloat(stakeInfo.pendingRewards).toFixed(4) : "0.0000"} USDC
+                        {stakeInfo?.pendingRewards
+                          ? parseFloat(stakeInfo.pendingRewards).toFixed(4)
+                          : "0.0000"}{" "}
+                        USDC
                       </Text>
                     </View>
                     <View style={styles.earningsItem}>
                       <Text style={styles.earningsLabel}>Stake Duration</Text>
                       <Text style={styles.earningsValue}>
-                        {stakeInfo?.timestamp ? 
-                          Math.floor((Date.now() / 1000 - stakeInfo.timestamp) / 86400) : "0"} days
+                        {stakeInfo?.timestamp
+                          ? Math.floor(
+                              (Date.now() / 1000 - stakeInfo.timestamp) / 86400
+                            )
+                          : "0"}{" "}
+                        days
                       </Text>
                     </View>
                   </View>
-                  
+
                   {/* Pool Statistics */}
                   {poolStats && (
                     <View style={styles.poolStatsRow}>
                       <View style={styles.poolStatItem}>
                         <Text style={styles.poolStatLabel}>Total Stakers</Text>
-                        <Text style={styles.statValue}>{poolStats.totalLiquidityProviders}</Text>
+                        <Text style={styles.statValue}>
+                          {poolStats.totalLiquidityProviders}
+                        </Text>
                       </View>
                       <View style={styles.poolStatItem}>
                         <Text style={styles.poolStatLabel}>Pool Balance</Text>
                         <Text style={styles.statValue}>
-                          {parseFloat(poolStats.contractBalance).toFixed(0)} USDC
+                          {parseFloat(poolStats.contractBalance).toFixed(0)}{" "}
+                          USDC
                         </Text>
                       </View>
                     </View>
@@ -857,24 +1046,42 @@ export function TreasuryPortalScreen() {
                   <TouchableOpacity
                     style={[
                       styles.claimButton,
-                      (!stakeInfo?.pendingRewards || parseFloat(stakeInfo.pendingRewards) <= 0 || isTransacting) && styles.claimButtonDisabled,
+                      (!stakeInfo?.pendingRewards ||
+                        parseFloat(stakeInfo.pendingRewards) <= 0 ||
+                        isTransacting) &&
+                        styles.claimButtonDisabled,
                     ]}
                     onPress={handleClaimRewards}
-                    disabled={!stakeInfo?.pendingRewards || parseFloat(stakeInfo.pendingRewards) <= 0 || isTransacting}
+                    disabled={
+                      !stakeInfo?.pendingRewards ||
+                      parseFloat(stakeInfo.pendingRewards) <= 0 ||
+                      isTransacting
+                    }
                   >
                     {isTransacting ? (
-                      <ActivityIndicator size="small" color={colors.textSecondary} />
+                      <ActivityIndicator
+                        size="small"
+                        color={colors.textSecondary}
+                      />
                     ) : (
                       <MaterialCommunityIcons
                         name="cash"
                         size={20}
-                        color={stakeInfo?.pendingRewards && parseFloat(stakeInfo.pendingRewards) > 0 ? "white" : colors.textSecondary}
+                        color={
+                          stakeInfo?.pendingRewards &&
+                          parseFloat(stakeInfo.pendingRewards) > 0
+                            ? "white"
+                            : colors.textSecondary
+                        }
                       />
                     )}
                     <Text
                       style={[
                         styles.claimButtonText,
-                        (!stakeInfo?.pendingRewards || parseFloat(stakeInfo.pendingRewards) <= 0 || isTransacting) && styles.claimButtonTextDisabled,
+                        (!stakeInfo?.pendingRewards ||
+                          parseFloat(stakeInfo.pendingRewards) <= 0 ||
+                          isTransacting) &&
+                          styles.claimButtonTextDisabled,
                       ]}
                     >
                       {isTransacting ? "Processing..." : "Claim Rewards"}
@@ -886,7 +1093,7 @@ export function TreasuryPortalScreen() {
           </>
         )}
 
-        {activeTab === 'create' && (
+        {activeTab === "create" && (
           <>
             {/* Create Proposal Section */}
             <View style={styles.createProposalCard}>
@@ -900,33 +1107,64 @@ export function TreasuryPortalScreen() {
               </View>
 
               <Text style={styles.createDescription}>
-                Submit a proposal for the treasury community to vote on. Your proposal will be reviewed and then opened for voting.
+                Submit a proposal for the treasury community to vote on. Your
+                proposal will be reviewed and then opened for voting.
               </Text>
 
               <View style={styles.formSection}>
                 <Text style={styles.inputLabel}>Proposal Category</Text>
                 <View style={styles.categoryContainer}>
                   <TouchableOpacity
-                    style={[styles.categoryButton, proposalCategory === 'Treasury' && styles.categoryButtonActive]}
-                    onPress={() => setProposalCategory('Treasury')}
+                    style={[
+                      styles.categoryButton,
+                      proposalCategory === "Treasury" &&
+                        styles.categoryButtonActive,
+                    ]}
+                    onPress={() => setProposalCategory("Treasury")}
                   >
-                    <Text style={[styles.categoryText, proposalCategory === 'Treasury' && styles.categoryTextActive]}>
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        proposalCategory === "Treasury" &&
+                          styles.categoryTextActive,
+                      ]}
+                    >
                       Treasury
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.categoryButton, proposalCategory === 'Investment' && styles.categoryButtonActive]}
-                    onPress={() => setProposalCategory('Investment')}
+                    style={[
+                      styles.categoryButton,
+                      proposalCategory === "Investment" &&
+                        styles.categoryButtonActive,
+                    ]}
+                    onPress={() => setProposalCategory("Investment")}
                   >
-                    <Text style={[styles.categoryText, proposalCategory === 'Investment' && styles.categoryTextActive]}>
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        proposalCategory === "Investment" &&
+                          styles.categoryTextActive,
+                      ]}
+                    >
                       Investment
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.categoryButton, proposalCategory === 'Guarantee' && styles.categoryButtonActive]}
-                    onPress={() => setProposalCategory('Guarantee')}
+                    style={[
+                      styles.categoryButton,
+                      proposalCategory === "Guarantee" &&
+                        styles.categoryButtonActive,
+                    ]}
+                    onPress={() => setProposalCategory("Guarantee")}
                   >
-                    <Text style={[styles.categoryText, proposalCategory === 'Guarantee' && styles.categoryTextActive]}>
+                    <Text
+                      style={[
+                        styles.categoryText,
+                        proposalCategory === "Guarantee" &&
+                          styles.categoryTextActive,
+                      ]}
+                    >
                       Guarantee
                     </Text>
                   </TouchableOpacity>
@@ -967,34 +1205,62 @@ export function TreasuryPortalScreen() {
                 />
                 <View style={styles.requirementsText}>
                   <Text style={styles.requirementsTitle}>Requirements:</Text>
-                  <Text style={styles.requirementsItem}>• Must have at least 100 USDC staked to propose</Text>
-                  <Text style={styles.requirementsItem}>• Current stake: {stakeInfo?.amount ? parseFloat(stakeInfo.amount).toFixed(2) : '0.00'} USDC</Text>
-                  <Text style={styles.requirementsItem}>• Proposal will be reviewed within 24 hours</Text>
-                  <Text style={styles.requirementsItem}>• Voting period lasts 7 days once approved</Text>
+                  <Text style={styles.requirementsItem}>
+                    • Must have at least 100 USDC staked to propose
+                  </Text>
+                  <Text style={styles.requirementsItem}>
+                    • Current stake:{" "}
+                    {stakeInfo?.amount
+                      ? parseFloat(stakeInfo.amount).toFixed(2)
+                      : "0.00"}{" "}
+                    USDC
+                  </Text>
+                  <Text style={styles.requirementsItem}>
+                    • Proposal will be reviewed within 24 hours
+                  </Text>
+                  <Text style={styles.requirementsItem}>
+                    • Voting period lasts 7 days once approved
+                  </Text>
                 </View>
               </View>
 
               <TouchableOpacity
                 style={[
                   styles.submitProposalButton,
-                  (!proposalTitle.trim() || !proposalDescription.trim() || !stakeInfo?.active || parseFloat(stakeInfo?.amount || '0') < 100) && styles.buttonDisabled
+                  (!proposalTitle.trim() ||
+                    !proposalDescription.trim() ||
+                    !stakeInfo?.active ||
+                    parseFloat(stakeInfo?.amount || "0") < 100) &&
+                    styles.buttonDisabled,
                 ]}
                 onPress={handleCreateProposal}
-                disabled={!proposalTitle.trim() || !proposalDescription.trim() || !stakeInfo?.active || parseFloat(stakeInfo?.amount || '0') < 100}
+                disabled={
+                  !proposalTitle.trim() ||
+                  !proposalDescription.trim() ||
+                  !stakeInfo?.active ||
+                  parseFloat(stakeInfo?.amount || "0") < 100
+                }
               >
                 <MaterialCommunityIcons
                   name="send"
                   size={20}
                   color={
-                    (!proposalTitle.trim() || !proposalDescription.trim() || !stakeInfo?.active || parseFloat(stakeInfo?.amount || '0') < 100) 
-                      ? colors.textSecondary 
+                    !proposalTitle.trim() ||
+                    !proposalDescription.trim() ||
+                    !stakeInfo?.active ||
+                    parseFloat(stakeInfo?.amount || "0") < 100
+                      ? colors.textSecondary
                       : "white"
                   }
                 />
                 <Text
                   style={[
                     styles.submitProposalButtonText,
-                    (!proposalTitle.trim() || !proposalDescription.trim() || !stakeInfo?.active || parseFloat(stakeInfo?.amount || '0') < 100) && styles.buttonTextDisabled
+                    (!proposalTitle.trim() ||
+                      !proposalDescription.trim() ||
+                      !stakeInfo?.active ||
+                      parseFloat(stakeInfo?.amount || "0") < 100) &&
+                      styles.buttonTextDisabled,
                   ]}
                 >
                   Submit Proposal
@@ -1004,7 +1270,7 @@ export function TreasuryPortalScreen() {
           </>
         )}
 
-        {activeTab === 'vote' && (
+        {activeTab === "vote" && (
           <>
             {/* Treasury Voting */}
             <View style={styles.section}>
@@ -1026,15 +1292,19 @@ export function TreasuryPortalScreen() {
                     <View
                       style={[
                         styles.statusBadge,
-                        proposal.status === "Active" && styles.statusBadgeActive,
-                        proposal.status === "Passed" && styles.statusBadgePassed,
+                        proposal.status === "Active" &&
+                          styles.statusBadgeActive,
+                        proposal.status === "Passed" &&
+                          styles.statusBadgePassed,
                       ]}
                     >
                       <Text
                         style={[
                           styles.statusText,
-                          proposal.status === "Active" && styles.statusTextActive,
-                          proposal.status === "Passed" && styles.statusTextPassed,
+                          proposal.status === "Active" &&
+                            styles.statusTextActive,
+                          proposal.status === "Passed" &&
+                            styles.statusTextPassed,
                         ]}
                       >
                         {proposal.status}
@@ -1103,11 +1373,13 @@ export function TreasuryPortalScreen() {
           </>
         )}
 
-        {activeTab === 'pool' && (
+        {activeTab === "pool" && (
           <>
             {/* Pool Guarantee Applications for Review */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Pool Guarantee Applications</Text>
+              <Text style={styles.sectionTitle}>
+                Pool Guarantee Applications
+              </Text>
 
               {/* Search Bar */}
               <View style={styles.searchContainer}>
@@ -1124,12 +1396,18 @@ export function TreasuryPortalScreen() {
               </View>
 
               {/* Filter Tabs - Mobile Optimized */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterTabsContainer}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterTabsContainer}
+              >
                 <View style={styles.filterTabs}>
                   <TouchableOpacity
                     style={[styles.filterTab, styles.filterTabActive]}
                   >
-                    <Text style={[styles.filterTabText, styles.filterTabTextActive]}>
+                    <Text
+                      style={[styles.filterTabText, styles.filterTabTextActive]}
+                    >
                       Pending (5)
                     </Text>
                   </TouchableOpacity>
@@ -1162,7 +1440,9 @@ export function TreasuryPortalScreen() {
                         PG-1763321117688-OWSX869
                       </Text>
                       <View style={styles.pendingBadge}>
-                        <Text style={styles.pendingBadgeText}>PENDING VOTE</Text>
+                        <Text style={styles.pendingBadgeText}>
+                          PENDING VOTE
+                        </Text>
                       </View>
                     </View>
                   </View>
@@ -1174,15 +1454,21 @@ export function TreasuryPortalScreen() {
                 <View style={styles.applicationInfo}>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>0x759ed3d2...fe5e5582a</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      0x759ed3d2...fe5e5582a
+                    </Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Seller (Beneficiary)</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>0x324ffda4...b9f141</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      0x324ffda4...b9f141
+                    </Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Goods Description</Text>
-                    <Text style={styles.infoValue}>Import of Cloth from Ghana</Text>
+                    <Text style={styles.infoValue}>
+                      Import of Cloth from Ghana
+                    </Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Guarantee Amount</Text>
@@ -1204,9 +1490,13 @@ export function TreasuryPortalScreen() {
 
                   <View style={styles.voteProgressBar}>
                     <View style={styles.voteProgress}>
-                      <View style={[styles.voteProgressFill, { width: "0%" }]} />
+                      <View
+                        style={[styles.voteProgressFill, { width: "0%" }]}
+                      />
                     </View>
-                    <Text style={styles.voteProgressText}>For: 0 Against: 0</Text>
+                    <Text style={styles.voteProgressText}>
+                      For: 0 Against: 0
+                    </Text>
                   </View>
 
                   <View style={styles.voteActions}>
@@ -1283,7 +1573,9 @@ export function TreasuryPortalScreen() {
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Trade Description</Text>
-                    <Text style={styles.infoValue}>Import of Cloth from Ghana</Text>
+                    <Text style={styles.infoValue}>
+                      Import of Cloth from Ghana
+                    </Text>
                   </View>
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Guarantee Amount</Text>
@@ -1332,7 +1624,9 @@ export function TreasuryPortalScreen() {
                         size={16}
                         color={colors.primary}
                       />
-                      <Text style={styles.viewDetailsButtonText}>View Details</Text>
+                      <Text style={styles.viewDetailsButtonText}>
+                        View Details
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
