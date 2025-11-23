@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useForm, FieldValues, UseFormProps } from 'react-hook-form';
+import { useForm, FieldValues, UseFormProps, Path } from 'react-hook-form';
 
 /**
  * Enhanced form hook with common validation and state management
@@ -42,7 +42,7 @@ export function useAppForm<T extends FieldValues>(
 
   const setFieldErrors = useCallback((errors: Partial<Record<keyof T, string>>) => {
     Object.entries(errors).forEach(([field, message]) => {
-      form.setError(field as keyof T, {
+      form.setError(field as unknown as Path<T>, {
         type: 'manual',
         message: message as string,
       });

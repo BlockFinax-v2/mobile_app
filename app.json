@@ -2,12 +2,12 @@
   "expo": {
     "name": "BlockFinaX",
     "slug": "blockfinax-mobile",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "blockfinax",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -54,9 +54,7 @@
         }
       ]
     ],
-    "experiments": {
-      "reactCompiler": true
-    },
+
     "extra": {
       "eas": {
         "projectId": "ae4573b5-e8f2-4e9c-875f-07a6b886a57d"
