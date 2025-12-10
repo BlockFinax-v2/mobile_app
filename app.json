@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "blockfinax",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": false,
+    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -54,13 +54,12 @@
         }
       ]
     ],
-
     "extra": {
+      "socketUrl": "https://server-production-2529.up.railway.app",
       "eas": {
-        "projectId": "ae4573b5-e8f2-4e9c-875f-07a6b886a57d"
-      },
-      "socketUrl": "https://server-production-2529.up.railway.app"
+        "projectId": "60b13dc5-0cbd-4ce7-ae96-df50363d3d05"
+      }
     },
-    "owner": "sobil"
+    "owner": "blockfinax"
   }
 }

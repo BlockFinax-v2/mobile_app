@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
-import { WalletStackParamList } from "@/navigation/types";
+import { ProfileStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { useNavigation } from "@react-navigation/native";
@@ -12,7 +12,7 @@ import { StyleSheet, Switch, TouchableOpacity, View } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 type ProfileHomeScreenNavigationProp = StackNavigationProp<
-  WalletStackParamList,
+  ProfileStackParamList,
   "ProfileHome"
 >;
 
