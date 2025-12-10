@@ -20,12 +20,7 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
 import { useNavigation } from "@react-navigation/native";
 import type { StackNavigationProp } from "@react-navigation/stack";
 import type { MessagesStackParamList } from "@/navigation/types";
-import {
-  CameraView,
-  Camera,
-  useCameraPermissions,
-  BarcodeScanningResult,
-} from "expo-camera";
+import { CameraView, Camera, useCameraPermissions } from "expo-camera";
 import * as Clipboard from "expo-clipboard";
 import {
   isValidWalletAddress,
@@ -293,7 +288,7 @@ export const DialerScreen: React.FC = () => {
     setIsScanning(true);
   };
 
-  const handleBarCodeScanned = ({ data }: BarcodeScanningResult) => {
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (hasScanned) return; // Prevent multiple scans
 
     setHasScanned(true);
