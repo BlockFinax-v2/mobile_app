@@ -10,22 +10,22 @@ import { secureStorage } from "@/utils/secureStorage";
 import { ethers } from "ethers";
 
 // Contract Configuration
-export const DIAMOND_CONTRACT_ADDRESS = "0x65C4ce15C9DFA916db081A41340C3c862F0a3343";
+export const DIAMOND_CONTRACT_ADDRESS = "0xe1A27Ee53D0E90F024965E6826e0BCA28946747A";
 
-// Base Sepolia Network Configuration
-export const BASE_SEPOLIA_NETWORK: WalletNetwork = {
-  id: "base-sepolia",
-  name: "Base Sepolia",
-  chainId: 84532,
-  rpcUrl: "https://base-sepolia.publicnode.com",
-  explorerUrl: "https://sepolia.basescan.org",
+// Lisk Sepolia Network Configuration
+export const LISK_SEPOLIA_NETWORK: WalletNetwork = {
+  id: "lisk-sepolia",
+  name: "Lisk Sepolia",
+  chainId: 4202,
+  rpcUrl: "https://rpc.sepolia-api.lisk.com",
+  explorerUrl: "https://sepolia-blockscout.lisk.com",
   primaryCurrency: "ETH",
   isTestnet: true,
   stablecoins: [
     {
       symbol: "USDC",
-      name: "USD Coin",
-      address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+      name: "USD Coin (Bridged)",
+      address: "0x0E82fDDAd51cc3ac12b69761C45bBCB9A2Bf3C83",
       decimals: 6,
     },
   ],
@@ -158,12 +158,12 @@ class StakingService {
   }
 
   /**
-   * Get provider for Base Sepolia network
+   * Get provider for Lisk Sepolia network
    */
   private getProvider(): ethers.providers.JsonRpcProvider {
-    return new ethers.providers.JsonRpcProvider(BASE_SEPOLIA_NETWORK.rpcUrl, {
-      name: BASE_SEPOLIA_NETWORK.name,
-      chainId: BASE_SEPOLIA_NETWORK.chainId,
+    return new ethers.providers.JsonRpcProvider(LISK_SEPOLIA_NETWORK.rpcUrl, {
+      name: LISK_SEPOLIA_NETWORK.name,
+      chainId: LISK_SEPOLIA_NETWORK.chainId,
     });
   }
 
@@ -226,9 +226,9 @@ class StakingService {
    */
   private async getUSDCContract(): Promise<ethers.Contract> {
     const signer = await this.getSigner();
-    const usdcAddress = BASE_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
     if (!usdcAddress) {
-      throw new Error("USDC address not found for Base Sepolia network");
+      throw new Error("USDC address not found for Lisk Sepolia network");
     }
     
     return new ethers.Contract(usdcAddress, ERC20_ABI, signer);
@@ -399,7 +399,7 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${BASE_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw approve error:", error);
@@ -452,7 +452,7 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${BASE_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw stake error:", error);
@@ -500,7 +500,7 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${BASE_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw unstake error:", error);
@@ -556,7 +556,7 @@ class StakingService {
         type: 'claim',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${BASE_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw claim rewards error:", error);
@@ -598,7 +598,7 @@ class StakingService {
         type: 'emergency',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${BASE_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw emergency withdraw error:", error);

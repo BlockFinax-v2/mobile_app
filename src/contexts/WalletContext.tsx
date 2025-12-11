@@ -313,8 +313,8 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     stablecoins: [
       {
         symbol: "USDC",
-        name: "USD Coin",
-        address: "0x9fBE3EB2fE0E2E4DBa88de87Ebc7F1A0E75B8b33",
+        name: "USD Coin (Bridged)",
+        address: "0x0E82fDDAd51cc3ac12b69761C45bBCB9A2Bf3C83",
         decimals: 6,
       },
       {

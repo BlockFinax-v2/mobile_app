@@ -75,11 +75,11 @@ export function TreasuryPortalScreen() {
     try {
       setIsLoading(true);
 
-      // Check if we're on the correct network (Base Sepolia)
-      if (selectedNetwork.chainId !== 84532) {
+      // Check if we're on the correct network (Lisk Sepolia)
+      if (selectedNetwork.chainId !== 4202) {
         Alert.alert(
           "Wrong Network",
-          "Please switch to Base Sepolia network to use staking features.",
+          "Please switch to Lisk Sepolia network to use staking features.",
           [{ text: "OK" }]
         );
         setIsLoading(false);
@@ -117,7 +117,7 @@ export function TreasuryPortalScreen() {
 
   // Refresh data periodically to stay up to date
   useEffect(() => {
-    if (!isUnlocked || !address || selectedNetwork.chainId !== 84532) {
+    if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
       return;
     }
 
@@ -662,7 +662,7 @@ export function TreasuryPortalScreen() {
                     Connect your wallet to view staking information
                   </Text>
                 </View>
-              ) : selectedNetwork.chainId !== 84532 ? (
+              ) : selectedNetwork.chainId !== 4202 ? (
                 <View style={styles.networkPrompt}>
                   <MaterialCommunityIcons
                     name="network"
@@ -670,7 +670,7 @@ export function TreasuryPortalScreen() {
                     color={colors.warning}
                   />
                   <Text style={styles.networkPromptText}>
-                    Please switch to Base Sepolia network
+                    Please switch to Lisk Sepolia network
                   </Text>
                 </View>
               ) : (
@@ -985,7 +985,7 @@ export function TreasuryPortalScreen() {
             </View>
 
             {/* Earnings Section */}
-            {isUnlocked && selectedNetwork.chainId === 84532 && (
+            {isUnlocked && selectedNetwork.chainId === 4202 && (
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
                   <Text style={styles.sectionTitle}>Treasury Earnings</Text>
