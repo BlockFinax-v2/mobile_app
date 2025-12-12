@@ -31,15 +31,20 @@ export const LISK_SEPOLIA_NETWORK: WalletNetwork = {
   ],
 };
 
-// LiquidityPoolFacet ABI
+// LiquidityPoolFacet ABI (Updated with Financier features)
 const LIQUIDITY_POOL_FACET_ABI = [
   {"inputs":[],"name":"BelowMinimumStake","type":"error"},
   {"inputs":[],"name":"ContractPaused","type":"error"},
+  {"inputs":[],"name":"ExcessiveAmount","type":"error"},
+  {"inputs":[],"name":"FinanciersCannotEmergencyWithdraw","type":"error"},
+  {"inputs":[],"name":"InsufficientAllowance","type":"error"},
   {"inputs":[],"name":"InsufficientBalance","type":"error"},
   {"inputs":[],"name":"InsufficientStakedAmount","type":"error"},
   {"inputs":[],"name":"InvalidAPR","type":"error"},
+  {"inputs":[],"name":"InvalidDeadline","type":"error"},
   {"inputs":[],"name":"InvalidLockDuration","type":"error"},
   {"inputs":[],"name":"InvalidPenalty","type":"error"},
+  {"inputs":[],"name":"InvalidVotingPower","type":"error"},
   {"inputs":[],"name":"LockDurationNotMet","type":"error"},
   {"inputs":[],"name":"NoActiveStake","type":"error"},
   {"inputs":[],"name":"NoRewardsToCllaim","type":"error"},
@@ -48,34 +53,65 @@ const LIQUIDITY_POOL_FACET_ABI = [
   {"inputs":[],"name":"ReentrancyGuardReentrantCall","type":"error"},
   {"inputs":[{"internalType":"address","name":"token","type":"address"}],"name":"SafeERC20FailedOperation","type":"error"},
   {"inputs":[],"name":"StakerNotActive","type":"error"},
+  {"inputs":[],"name":"TransferFailed","type":"error"},
   {"inputs":[],"name":"ZeroAmount","type":"error"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"deadline","type":"uint256"}],"name":"CustomDeadlineSet","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"penalty","type":"uint256"}],"name":"EmergencyWithdrawn","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"bool","name":"isFinancier","type":"bool"}],"name":"FinancierStatusChanged","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Paused","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"uint256","name":"oldRate","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"newRate","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"totalStaked","type":"uint256"}],"name":"RewardRateUpdated","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"RewardsClaimed","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"}],"name":"RewardsDistributed","type":"event"},
-  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"votingPower","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"currentApr","type":"uint256"}],"name":"Staked","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"votingPower","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"currentApr","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"deadline","type":"uint256"},{"indexed":false,"internalType":"bool","name":"isFinancier","type":"bool"}],"name":"Staked","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"parameter","type":"string"},{"indexed":false,"internalType":"uint256","name":"oldValue","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"newValue","type":"uint256"}],"name":"StakingConfigUpdated","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Unpaused","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"rewards","type":"uint256"}],"name":"Unstaked","type":"event"},
+  {"inputs":[],"name":"applyAsFinancier","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"claimRewards","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"distributeRewards","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[],"name":"emergencyWithdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"getFinanciers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getPendingRewards","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getPoolStats","outputs":[{"internalType":"uint256","name":"totalStaked","type":"uint256"},{"internalType":"uint256","name":"totalLiquidityProviders","type":"uint256"},{"internalType":"uint256","name":"contractBalance","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getStake","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"uint256","name":"votingPower","type":"uint256"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"uint256","name":"pendingRewards","type":"uint256"},{"internalType":"uint256","name":"timeUntilUnlock","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getStake","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"uint256","name":"votingPower","type":"uint256"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"uint256","name":"pendingRewards","type":"uint256"},{"internalType":"uint256","name":"timeUntilUnlock","type":"uint256"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"isFinancier","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getStakers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"getStakingConfig","outputs":[{"internalType":"uint256","name":"initialApr","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"},{"internalType":"uint256","name":"minLockDuration","type":"uint256"},{"internalType":"uint256","name":"aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"emergencyWithdrawPenalty","type":"uint256"},{"internalType":"uint256","name":"minimumStake","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"_usdcToken","type":"address"},{"internalType":"uint256","name":"_minimumStake","type":"uint256"},{"internalType":"uint256","name":"_initialApr","type":"uint256"},{"internalType":"uint256","name":"_minLockDuration","type":"uint256"},{"internalType":"uint256","name":"_aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"_emergencyWithdrawPenalty","type":"uint256"}],"name":"initializeComplete","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"_initialApr","type":"uint256"},{"internalType":"uint256","name":"_minLockDuration","type":"uint256"},{"internalType":"uint256","name":"_aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"_emergencyWithdrawPenalty","type":"uint256"}],"name":"initializeStaking","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"pause","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"paused","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"_minimumStake","type":"uint256"}],"name":"setMinimumStake","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"address","name":"_usdcToken","type":"address"}],"name":"setUsdcToken","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"stake","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"unpause","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"unstake","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"_initialApr","type":"uint256"},{"internalType":"uint256","name":"_minLockDuration","type":"uint256"},{"internalType":"uint256","name":"_aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"_emergencyWithdrawPenalty","type":"uint256"}],"name":"updateStakingConfig","outputs":[],"stateMutability":"nonpayable","type":"function"}
+  {"inputs":[],"name":"getStakingConfig","outputs":[{"internalType":"uint256","name":"initialApr","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"},{"internalType":"uint256","name":"minLockDuration","type":"uint256"},{"internalType":"uint256","name":"aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"emergencyWithdrawPenalty","type":"uint256"},{"internalType":"uint256","name":"minimumStake","type":"uint256"},{"internalType":"uint256","name":"minimumFinancierStake","type":"uint256"},{"internalType":"uint256","name":"minFinancierLockDuration","type":"uint256"},{"internalType":"uint256","name":"minNormalStakerLockDuration","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"isEligibleFinancier","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"revokeFinancierStatus","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"newDeadline","type":"uint256"}],"name":"setCustomDeadline","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"}],"name":"stake","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"}],"name":"stakeAsFinancier","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"unstake","outputs":[],"stateMutability":"nonpayable","type":"function"}
+];
+
+// GovernanceFacet ABI
+const GOVERNANCE_FACET_ABI = [
+  {"inputs":[],"name":"AlreadyVoted","type":"error"},
+  {"inputs":[],"name":"ContractPaused","type":"error"},
+  {"inputs":[],"name":"InsufficientStake","type":"error"},
+  {"inputs":[],"name":"InvalidCategory","type":"error"},
+  {"inputs":[],"name":"InvalidDescription","type":"error"},
+  {"inputs":[],"name":"InvalidProposalId","type":"error"},
+  {"inputs":[],"name":"InvalidTitle","type":"error"},
+  {"inputs":[],"name":"ProposalAlreadyExecuted","type":"error"},
+  {"inputs":[],"name":"ProposalNotActive","type":"error"},
+  {"inputs":[],"name":"ProposalNotFound","type":"error"},
+  {"inputs":[],"name":"VotingPeriodEnded","type":"error"},
+  {"inputs":[],"name":"VotingPeriodNotEnded","type":"error"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":true,"internalType":"string","name":"category","type":"string"},{"indexed":true,"internalType":"string","name":"title","type":"string"},{"indexed":false,"internalType":"address","name":"proposer","type":"address"},{"indexed":false,"internalType":"uint256","name":"votingDeadline","type":"uint256"}],"name":"ProposalCreated","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":false,"internalType":"address","name":"executor","type":"address"}],"name":"ProposalExecuted","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":true,"internalType":"address","name":"voter","type":"address"},{"indexed":false,"internalType":"bool","name":"support","type":"bool"},{"indexed":false,"internalType":"uint256","name":"votingPower","type":"uint256"}],"name":"ProposalVoteCast","type":"event"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"string","name":"category","type":"string"},{"internalType":"string","name":"title","type":"string"},{"internalType":"string","name":"description","type":"string"}],"name":"createProposal","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"}],"name":"executeProposal","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"}],"name":"finalizeVote","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"getActiveProposals","outputs":[{"internalType":"string[]","name":"","type":"string[]"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"getAllProposals","outputs":[{"internalType":"string[]","name":"","type":"string[]"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"getDAOConfig","outputs":[{"internalType":"uint256","name":"minimumFinancierStake","type":"uint256"},{"internalType":"uint256","name":"votingDuration","type":"uint256"},{"internalType":"uint256","name":"approvalThreshold","type":"uint256"},{"internalType":"uint256","name":"revocationPeriod","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"getDAOStats","outputs":[{"internalType":"uint256","name":"totalProposals","type":"uint256"},{"internalType":"uint256","name":"activeProposals","type":"uint256"},{"internalType":"uint256","name":"passedProposals","type":"uint256"},{"internalType":"uint256","name":"executedProposals","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"}],"name":"getProposal","outputs":[{"internalType":"address","name":"proposer","type":"address"},{"internalType":"string","name":"category","type":"string"},{"internalType":"string","name":"title","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"votesFor","type":"uint256"},{"internalType":"uint256","name":"votesAgainst","type":"uint256"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"votingDeadline","type":"uint256"},{"internalType":"enum LibAppStorage.ProposalStatus","name":"status","type":"uint8"},{"internalType":"bool","name":"executed","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"address","name":"voter","type":"address"}],"name":"getVoteStatus","outputs":[{"internalType":"bool","name":"hasVoted","type":"bool"},{"internalType":"bool","name":"support","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"isFinancier","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"bool","name":"support","type":"bool"}],"name":"voteOnProposal","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
 
 // ERC-20 ABI for USDC approval
@@ -120,6 +156,8 @@ export interface StakeInfo {
   active: boolean;
   pendingRewards: string;
   timeUntilUnlock: number;
+  deadline: number;
+  isFinancier: boolean;
 }
 
 export interface PoolStats {
@@ -136,15 +174,51 @@ export interface StakingConfig {
   aprReductionPerThousand: number;
   emergencyWithdrawPenalty: number;
   minimumStake: string;
+  minimumFinancierStake: string;
+  minFinancierLockDuration: number;
+  minNormalStakerLockDuration: number;
 }
 
 export interface StakingTransaction {
   hash: string;
-  type: 'approve' | 'stake' | 'unstake' | 'claim' | 'emergency';
+  type: 'approve' | 'stake' | 'unstake' | 'claim' | 'emergency' | 'proposal' | 'vote';
   amount?: string;
   timestamp: number;
   status: 'pending' | 'confirmed' | 'failed';
   explorerUrl?: string;
+}
+
+export interface Proposal {
+  id: string;
+  proposer: string;
+  category: string;
+  title: string;
+  description: string;
+  votesFor: string;
+  votesAgainst: string;
+  createdAt: number;
+  votingDeadline: number;
+  status: 'Active' | 'Passed' | 'Rejected' | 'Executed';
+  executed: boolean;
+}
+
+export interface DAOConfig {
+  minimumFinancierStake: string;
+  votingDuration: number;
+  approvalThreshold: number;
+  revocationPeriod: number;
+}
+
+export interface DAOStats {
+  totalProposals: number;
+  activeProposals: number;
+  passedProposals: number;
+  executedProposals: number;
+}
+
+export interface VoteStatus {
+  hasVoted: boolean;
+  support: boolean;
 }
 
 class StakingService {
@@ -222,6 +296,18 @@ class StakingService {
   }
 
   /**
+   * Get the governance contract instance
+   */
+  private async getGovernanceContract(): Promise<ethers.Contract> {
+    const signer = await this.getSigner();
+    return new ethers.Contract(
+      DIAMOND_CONTRACT_ADDRESS,
+      GOVERNANCE_FACET_ABI,
+      signer
+    );
+  }
+
+  /**
    * Get USDC token contract instance
    */
   private async getUSDCContract(): Promise<ethers.Contract> {
@@ -262,7 +348,9 @@ class StakingService {
         active: stakeData.active,
         pendingRewardsFromStake: stakeData.pendingRewards.toString(),
         pendingRewardsFromFunction: pendingRewards.toString(),
-        timeUntilUnlock: stakeData.timeUntilUnlock.toString()
+        timeUntilUnlock: stakeData.timeUntilUnlock.toString(),
+        deadline: stakeData.deadline.toString(),
+        isFinancier: stakeData.isFinancier
       });
       
       // Use the more accurate getPendingRewards function result
@@ -273,6 +361,8 @@ class StakingService {
         active: stakeData.active,
         pendingRewards: ethers.utils.formatUnits(pendingRewards, 6), // Use separate call for accuracy
         timeUntilUnlock: stakeData.timeUntilUnlock.toNumber(),
+        deadline: stakeData.deadline.toNumber(),
+        isFinancier: stakeData.isFinancier,
       };
       
       console.log('Formatted stake info:', stakeInfo);
@@ -287,6 +377,8 @@ class StakingService {
         active: false,
         pendingRewards: "0",
         timeUntilUnlock: 0,
+        deadline: 0,
+        isFinancier: false,
       };
     }
   }
@@ -326,6 +418,9 @@ class StakingService {
         aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
         emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
         minimumStake: ethers.utils.formatUnits(config.minimumStake, 6),
+        minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
+        minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
+        minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
       };
     } catch (error) {
       console.error("Error getting staking config:", error);
@@ -378,7 +473,8 @@ class StakingService {
   }
 
   /**
-   * Approve USDC spending for staking contract
+   * Approve USDC spending for staking contract (standalone - use stake() instead for combined flow)
+   * @deprecated Use stake() method instead which handles approval automatically
    */
   public async approveUSDC(amount: string): Promise<StakingTransaction> {
     try {
@@ -408,15 +504,21 @@ class StakingService {
   }
 
   /**
-   * Stake USDC tokens
+   * Stake USDC tokens (includes approval if needed)
+   * Returns transaction with progress stages
    */
-  public async stake(amount: string): Promise<StakingTransaction> {
+  public async stake(
+    amount: string, 
+    onProgress?: (stage: 'checking' | 'approving' | 'staking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
       // Validate amount
       const amountFloat = parseFloat(amount);
       if (isNaN(amountFloat) || amountFloat <= 0) {
         throw new Error("Invalid stake amount");
       }
+
+      onProgress?.('checking', 'Checking staking requirements...');
 
       // Check minimum stake requirement
       const config = await this.getStakingConfig();
@@ -430,21 +532,45 @@ class StakingService {
         throw new Error("Insufficient USDC balance");
       }
 
-      // Check and handle approval
+      const amountInWei = ethers.utils.parseUnits(amount, 6);
+
+      // Check and handle approval if needed
       const hasAllowance = await this.checkAllowance(amount);
       if (!hasAllowance) {
-        throw new Error("Please approve USDC spending first");
+        onProgress?.('approving', 'Approving USDC spend...');
+        
+        const usdcContract = await this.getUSDCContract();
+        console.log("Approving USDC spend:", {
+          amount,
+          amountInWei: amountInWei.toString(),
+          spender: DIAMOND_CONTRACT_ADDRESS,
+        });
+
+        const approveTx = await usdcContract.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+        console.log("Approval transaction:", approveTx.hash);
+        
+        onProgress?.('approving', `Waiting for approval confirmation...`);
+        await approveTx.wait();
+        console.log("Approval confirmed");
       }
 
+      onProgress?.('staking', 'Staking USDC...');
+
       const contract = await this.getStakingContract();
-      const amountInWei = ethers.utils.parseUnits(amount, 6);
       
       console.log("Staking USDC:", {
         amount,
         amountInWei: amountInWei.toString(),
+        contractAddress: DIAMOND_CONTRACT_ADDRESS,
+        customDeadline: 0 // 0 means auto-calculate based on lock duration
       });
 
-      const tx = await contract.stake(amountInWei);
+      // Add manual gas limit to avoid estimation errors
+      const gasLimit = ethers.utils.hexlify(400000); // 400k gas limit
+      // New signature: stake(uint256 amount, uint256 customDeadline)
+      const tx = await contract.stake(amountInWei, 0, { gasLimit });
+      
+      console.log("Stake transaction submitted:", tx.hash);
       
       return {
         hash: tx.hash,
@@ -602,6 +728,184 @@ class StakingService {
       };
     } catch (error: any) {
       console.error("Raw emergency withdraw error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply as financier (required to create proposals)
+   */
+  public async applyAsFinancier(): Promise<StakingTransaction> {
+    try {
+      const contract = await this.getStakingContract();
+      const signer = await this.getSigner();
+      const address = await signer.getAddress();
+      
+      console.log("Applying as financier...");
+      
+      // Check current stake first
+      const stakeData = await contract.getStake(address);
+      console.log('Current stake before applying as financier:', {
+        amount: stakeData.amount.toString(),
+        active: stakeData.active,
+        isFinancier: stakeData.isFinancier
+      });
+      
+      if (stakeData.isFinancier) {
+        throw new Error("You are already a financier");
+      }
+      
+      // Check if eligible
+      const isEligible = await contract.isEligibleFinancier(address);
+      console.log('🔍 Contract isEligibleFinancier check:', isEligible);
+      
+      if (!isEligible) {
+        const stakingConfig = await this.getStakingConfig();
+        const currentStake = ethers.utils.formatUnits(stakeData.amount, 6);
+        const lockRemaining = stakeData.deadline - Math.floor(Date.now() / 1000);
+        const lockRemainingDays = Math.floor(lockRemaining / 86400);
+        const minLockDays = Math.floor(stakingConfig.minFinancierLockDuration / 86400);
+        
+        console.log('❌ Not eligible. Current stake:', currentStake, 'USDC');
+        console.log('❌ Minimum required stake:', stakingConfig.minimumFinancierStake, 'USDC');
+        console.log('❌ Lock duration remaining:', lockRemaining, 'seconds (', lockRemainingDays, 'days)');
+        console.log('❌ Minimum lock duration required:', stakingConfig.minFinancierLockDuration, 'seconds (', minLockDays, 'days)');
+        
+        throw new Error(
+          `Cannot apply as financier. Requirements:\n\n` +
+          `• Stake Amount: ${currentStake} USDC ` + (parseFloat(currentStake) >= parseFloat(stakingConfig.minimumFinancierStake) ? '✓' : `✗ (need ${stakingConfig.minimumFinancierStake})`) + `\n` +
+          `• Lock Duration: ${lockRemainingDays} days remaining ` + (lockRemaining >= stakingConfig.minFinancierLockDuration ? '✓' : `✗ (need ${minLockDays} days)`) + `\n\n` +
+          `Tip: You staked with a regular lock period. To become a financier, you need to stake with the "Stake as Financier" option which uses a longer lock period.`
+        );
+      }
+      
+      // Try with manual gas limit to avoid estimation issues
+      const gasLimit = ethers.utils.hexlify(200000); // 200k gas limit
+      const tx = await contract.applyAsFinancier({ gasLimit });
+      
+      console.log("Apply as financier transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'proposal', // Using proposal type for financier actions
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw apply as financier error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if user is eligible to be a financier
+   */
+  public async isEligibleFinancier(userAddress?: string): Promise<boolean> {
+    try {
+      const contract = await this.getStakingContract();
+      let address = userAddress;
+      
+      if (!address) {
+        const signer = await this.getSigner();
+        address = await signer.getAddress();
+      }
+
+      const isEligible = await contract.isEligibleFinancier(address);
+      console.log('🔍 ========== FINANCIER ELIGIBILITY CHECK ==========');
+      console.log('🔍 Address:', address);
+      console.log('🔍 Contract returned:', isEligible);
+      console.log('🔍 Type:', typeof isEligible);
+      console.log('🔍 Final boolean result:', Boolean(isEligible));
+      console.log('🔍 ==================================================');
+      
+      return isEligible;
+    } catch (error) {
+      console.error("❌ Error checking financier eligibility:", error);
+      console.log('🔍 Returning FALSE due to error');
+      return false;
+    }
+  }
+
+  /**
+   * Stake USDC tokens as financier (includes approval if needed and automatically grants financier status)
+   * Returns transaction with progress stages
+   */
+  public async stakeAsFinancier(
+    amount: string, 
+    onProgress?: (stage: 'checking' | 'approving' | 'staking', message: string) => void
+  ): Promise<StakingTransaction> {
+    try {
+      // Validate amount
+      const amountFloat = parseFloat(amount);
+      if (isNaN(amountFloat) || amountFloat <= 0) {
+        throw new Error("Invalid stake amount");
+      }
+
+      onProgress?.('checking', 'Checking financier staking requirements...');
+
+      // Check minimum financier stake requirement
+      const config = await this.getStakingConfig();
+      if (amountFloat < parseFloat(config.minimumFinancierStake)) {
+        throw new Error(`Minimum financier stake amount is ${config.minimumFinancierStake} USDC`);
+      }
+
+      // Check USDC balance
+      const balance = await this.getUSDCBalance();
+      if (parseFloat(balance) < amountFloat) {
+        throw new Error("Insufficient USDC balance");
+      }
+
+      const amountInWei = ethers.utils.parseUnits(amount, 6);
+
+      // Check and handle approval if needed
+      const hasAllowance = await this.checkAllowance(amount);
+      if (!hasAllowance) {
+        onProgress?.('approving', 'Approving USDC spend...');
+        
+        const usdcContract = await this.getUSDCContract();
+        console.log("Approving USDC spend for financier stake:", {
+          amount,
+          amountInWei: amountInWei.toString(),
+          spender: DIAMOND_CONTRACT_ADDRESS,
+        });
+
+        const approveTx = await usdcContract.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+        console.log("Approval transaction:", approveTx.hash);
+        
+        onProgress?.('approving', `Waiting for approval confirmation...`);
+        await approveTx.wait();
+        console.log("Approval confirmed");
+      }
+
+      onProgress?.('staking', 'Staking USDC as financier...');
+
+      const contract = await this.getStakingContract();
+      
+      console.log("Staking USDC as financier:", {
+        amount,
+        amountInWei: amountInWei.toString(),
+        contractAddress: DIAMOND_CONTRACT_ADDRESS,
+        customDeadline: 0 // 0 means auto-calculate based on lock duration
+      });
+
+      // Add manual gas limit to avoid estimation errors
+      const gasLimit = ethers.utils.hexlify(400000); // 400k gas limit
+      // Signature: stakeAsFinancier(uint256 amount, uint256 customDeadline)
+      const tx = await contract.stakeAsFinancier(amountInWei, 0, { gasLimit });
+      
+      console.log("Stake as financier transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'stake',
+        amount,
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw stake as financier error:", error);
       throw error;
     }
   }
@@ -796,6 +1100,340 @@ class StakingService {
     } catch (error) {
       console.error("Error estimating gas cost:", error);
       return "0.001"; // Default estimate
+    }
+  }
+
+  /**
+   * GOVERNANCE METHODS
+   */
+
+  /**
+   * Create a new proposal
+   */
+  public async createProposal(
+    proposalId: string,
+    category: string,
+    title: string,
+    description: string
+  ): Promise<StakingTransaction> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const signer = await this.getSigner();
+      const address = await signer.getAddress();
+      
+      console.log("Creating proposal:", { proposalId, category, title, description });
+
+      // Check stake before attempting to create proposal
+      const stakeInfo = await this.getStakeInfo(address);
+      console.log("Current stake before creating proposal:", {
+        amount: stakeInfo.amount,
+        active: stakeInfo.active,
+        isFinancier: stakeInfo.isFinancier
+      });
+
+      // Check if user is a financier (REQUIRED to create proposals)
+      if (!stakeInfo.isFinancier) {
+        throw new Error("You must be a financier to create proposals. Please apply as financier first by calling applyAsFinancier().");
+      }
+
+      // Get DAO config to check minimum stake requirement
+      try {
+        const daoConfig = await this.getDAOConfig();
+        console.log("DAO Config:", {
+          minimumFinancierStake: daoConfig.minimumFinancierStake,
+          votingDuration: daoConfig.votingDuration,
+          approvalThreshold: daoConfig.approvalThreshold
+        });
+        
+        const stakeAmount = parseFloat(stakeInfo.amount);
+        const minRequired = parseFloat(daoConfig.minimumFinancierStake);
+        
+        if (stakeAmount < minRequired) {
+          throw new Error(`You need at least ${minRequired} USDC staked to create proposals. Current stake: ${stakeAmount} USDC`);
+        }
+      } catch (configError) {
+        console.warn("Could not fetch DAO config:", configError);
+      }
+
+      // Add manual gas limit to avoid estimation errors
+      const gasLimit = ethers.utils.hexlify(300000); // 300k gas limit
+      const tx = await contract.createProposal(proposalId, category, title, description, { gasLimit });
+      
+      return {
+        hash: tx.hash,
+        type: 'proposal',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw create proposal error:", error);
+      
+      // Try to decode the error
+      if (error.data || error.error?.data) {
+        const errorData = error.data || error.error?.data;
+        console.log("Error data hex:", errorData);
+        
+        // Known error selectors from GovernanceFacet
+        const errorMap: { [key: string]: string } = {
+          '0xfa05b05d': 'InsufficientStake - You need more USDC staked to create proposals',
+          '0xab35696f': 'AlreadyVoted - You have already voted on this proposal',
+          '0x89aad5c8': 'InvalidCategory - Invalid proposal category',
+          '0x2f1cf87c': 'InvalidDescription - Proposal description is invalid',
+          '0xb8c953b7': 'InvalidProposalId - Proposal ID is invalid or already exists',
+          '0x643feb6c': 'InvalidTitle - Proposal title is invalid',
+          '0xd93c0665': 'ContractPaused - Contract is currently paused'
+        };
+        
+        const errorSelector = errorData?.toString().slice(0, 10);
+        if (errorSelector && errorMap[errorSelector]) {
+          throw new Error(errorMap[errorSelector]);
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Vote on a proposal
+   */
+  public async voteOnProposal(proposalId: string, support: boolean): Promise<StakingTransaction> {
+    try {
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Voting on proposal:", { proposalId, support });
+
+      // Add manual gas limit to avoid estimation errors
+      const gasLimit = ethers.utils.hexlify(250000); // 250k gas limit
+      const tx = await contract.voteOnProposal(proposalId, support, { gasLimit });
+      
+      return {
+        hash: tx.hash,
+        type: 'vote',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw vote error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all proposals
+   */
+  public async getAllProposals(): Promise<Proposal[]> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const proposalIds = await contract.getAllProposals();
+      
+      const proposals: Proposal[] = [];
+      for (const id of proposalIds) {
+        const proposalData = await contract.getProposal(id);
+        const statusMap = ['Active', 'Passed', 'Rejected', 'Executed'];
+        
+        proposals.push({
+          id,
+          proposer: proposalData.proposer,
+          category: proposalData.category,
+          title: proposalData.title,
+          description: proposalData.description,
+          votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
+          votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
+          createdAt: proposalData.createdAt.toNumber(),
+          votingDeadline: proposalData.votingDeadline.toNumber(),
+          status: statusMap[proposalData.status] as any,
+          executed: proposalData.executed,
+        });
+      }
+      
+      return proposals;
+    } catch (error) {
+      console.error("Error getting proposals:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get active proposals
+   */
+  public async getActiveProposals(): Promise<Proposal[]> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const proposalIds = await contract.getActiveProposals();
+      
+      const proposals: Proposal[] = [];
+      for (const id of proposalIds) {
+        const proposalData = await contract.getProposal(id);
+        const statusMap = ['Active', 'Passed', 'Rejected', 'Executed'];
+        
+        proposals.push({
+          id,
+          proposer: proposalData.proposer,
+          category: proposalData.category,
+          title: proposalData.title,
+          description: proposalData.description,
+          votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
+          votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
+          createdAt: proposalData.createdAt.toNumber(),
+          votingDeadline: proposalData.votingDeadline.toNumber(),
+          status: statusMap[proposalData.status] as any,
+          executed: proposalData.executed,
+        });
+      }
+      
+      return proposals;
+    } catch (error) {
+      console.error("Error getting active proposals:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Get a specific proposal
+   */
+  public async getProposal(proposalId: string): Promise<Proposal | null> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const proposalData = await contract.getProposal(proposalId);
+      const statusMap = ['Active', 'Passed', 'Rejected', 'Executed'];
+      
+      return {
+        id: proposalId,
+        proposer: proposalData.proposer,
+        category: proposalData.category,
+        title: proposalData.title,
+        description: proposalData.description,
+        votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
+        votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
+        createdAt: proposalData.createdAt.toNumber(),
+        votingDeadline: proposalData.votingDeadline.toNumber(),
+        status: statusMap[proposalData.status] as any,
+        executed: proposalData.executed,
+      };
+    } catch (error) {
+      console.error("Error getting proposal:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get vote status for a user on a proposal
+   */
+  public async getVoteStatus(proposalId: string, voterAddress?: string): Promise<VoteStatus> {
+    try {
+      const contract = await this.getGovernanceContract();
+      let address = voterAddress;
+      
+      if (!address) {
+        const signer = await this.getSigner();
+        address = await signer.getAddress();
+      }
+
+      const voteStatus = await contract.getVoteStatus(proposalId, address);
+      
+      return {
+        hasVoted: voteStatus.hasVoted,
+        support: voteStatus.support,
+      };
+    } catch (error) {
+      console.error("Error getting vote status:", error);
+      return { hasVoted: false, support: false };
+    }
+  }
+
+  /**
+   * Get DAO configuration
+   */
+  public async getDAOConfig(): Promise<DAOConfig> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const config = await contract.getDAOConfig();
+      
+      return {
+        minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
+        votingDuration: config.votingDuration.toNumber(),
+        approvalThreshold: config.approvalThreshold.toNumber(),
+        revocationPeriod: config.revocationPeriod.toNumber(),
+      };
+    } catch (error) {
+      console.error("Error getting DAO config:", error);
+      throw new Error("Failed to fetch DAO configuration");
+    }
+  }
+
+  /**
+   * Get DAO statistics
+   */
+  public async getDAOStats(): Promise<DAOStats> {
+    try {
+      const contract = await this.getGovernanceContract();
+      const stats = await contract.getDAOStats();
+      
+      return {
+        totalProposals: stats.totalProposals.toNumber(),
+        activeProposals: stats.activeProposals.toNumber(),
+        passedProposals: stats.passedProposals.toNumber(),
+        executedProposals: stats.executedProposals.toNumber(),
+      };
+    } catch (error) {
+      console.error("Error getting DAO stats:", error);
+      return {
+        totalProposals: 0,
+        activeProposals: 0,
+        passedProposals: 0,
+        executedProposals: 0,
+      };
+    }
+  }
+
+  /**
+   * Finalize voting on a proposal
+   */
+  public async finalizeVote(proposalId: string): Promise<StakingTransaction> {
+    try {
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Finalizing vote for proposal:", proposalId);
+
+      const tx = await contract.finalizeVote(proposalId);
+      
+      return {
+        hash: tx.hash,
+        type: 'proposal',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw finalize vote error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Execute a passed proposal
+   */
+  public async executeProposal(proposalId: string): Promise<StakingTransaction> {
+    try {
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Executing proposal:", proposalId);
+
+      const tx = await contract.executeProposal(proposalId);
+      
+      return {
+        hash: tx.hash,
+        type: 'proposal',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+      };
+    } catch (error: any) {
+      console.error("Raw execute proposal error:", error);
+      throw error;
     }
   }
 }

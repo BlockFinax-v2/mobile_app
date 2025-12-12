@@ -24,6 +24,9 @@ import {
   PoolStats,
   StakingConfig,
   StakingTransaction,
+  Proposal,
+  DAOStats,
+  DAOConfig,
 } from "@/services/stakingService";
 
 type NavigationProp = StackNavigationProp<
@@ -57,6 +60,7 @@ export function TreasuryPortalScreen() {
   const [pendingTx, setPendingTx] = useState<StakingTransaction | null>(null);
   const [stakeAmount, setStakeAmount] = useState("");
   const [unstakeAmount, setUnstakeAmount] = useState("");
+  const [stakingProgress, setStakingProgress] = useState<string>("");
 
   // Create Proposal state
   const [proposalTitle, setProposalTitle] = useState("");
@@ -64,6 +68,17 @@ export function TreasuryPortalScreen() {
   const [proposalCategory, setProposalCategory] = useState<
     "Treasury" | "Investment" | "Guarantee"
   >("Treasury");
+
+  // Governance state
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [daoStats, setDAOStats] = useState<DAOStats | null>(null);
+  const [daoConfig, setDAOConfig] = useState<DAOConfig | null>(null);
+  const [isLoadingProposals, setIsLoadingProposals] = useState(false);
+
+  // Financier state
+  const [isApplyingFinancier, setIsApplyingFinancier] = useState(false);
+  const [isEligibleFinancier, setIsEligibleFinancier] = useState(false);
+  const [stakeAsFinancier, setStakeAsFinancier] = useState(false);
 
   // Load staking data on component mount and when wallet changes
   const loadStakingData = async () => {
@@ -89,19 +104,27 @@ export function TreasuryPortalScreen() {
       // Initialize staking service with user's wallet credentials
       await initializeStakingService();
 
-      const [stake, pool, config, balance, apr] = await Promise.all([
-        stakingService.getStakeInfo(address),
-        stakingService.getPoolStats(),
-        stakingService.getStakingConfig(),
-        stakingService.getUSDCBalance(address),
-        stakingService.calculateCurrentAPR(),
-      ]);
+      const [stake, pool, config, balance, apr, isEligible] = await Promise.all(
+        [
+          stakingService.getStakeInfo(address),
+          stakingService.getPoolStats(),
+          stakingService.getStakingConfig(),
+          stakingService.getUSDCBalance(address),
+          stakingService.calculateCurrentAPR(),
+          stakingService.isEligibleFinancier(address),
+        ]
+      );
 
       setStakeInfo(stake);
       setPoolStats(pool);
       setStakingConfig(config);
       setUsdcBalance(balance);
       setCurrentAPR(apr);
+      console.log("🔍 ========== UI STATE UPDATE ==========");
+      console.log("🔍 isEligible from service:", isEligible);
+      console.log("🔍 Setting isEligibleFinancier state to:", isEligible);
+      console.log("🔍 =====================================");
+      setIsEligibleFinancier(isEligible);
     } catch (error) {
       console.error("Failed to load staking data:", error);
       Alert.alert("Error", "Failed to load staking data. Please try again.");
@@ -110,10 +133,56 @@ export function TreasuryPortalScreen() {
     }
   };
 
+  // Load governance data
+  const loadGovernanceData = async () => {
+    if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
+      return;
+    }
+
+    try {
+      setIsLoadingProposals(true);
+      await initializeStakingService();
+
+      const [allProposals, stats, config] = await Promise.all([
+        stakingService.getAllProposals(),
+        stakingService.getDAOStats(),
+        stakingService.getDAOConfig(),
+      ]);
+
+      setProposals(allProposals);
+      setDAOStats(stats);
+      setDAOConfig(config);
+    } catch (error) {
+      console.error("Failed to load governance data:", error);
+    } finally {
+      setIsLoadingProposals(false);
+    }
+  };
+
   // Load data on mount and when wallet/network changes
   useEffect(() => {
     loadStakingData();
+    loadGovernanceData();
   }, [isUnlocked, address, selectedNetwork.chainId]);
+
+  // DEBUG: Log eligibility state changes
+  useEffect(() => {
+    console.log("🔍 ========== ELIGIBILITY STATE CHANGED ==========");
+    console.log("🔍 isEligibleFinancier:", isEligibleFinancier);
+    console.log("🔍 Type:", typeof isEligibleFinancier);
+    console.log("🔍 Truthy check:", !!isEligibleFinancier);
+    console.log("🔍 Negation (for conditionals):", !isEligibleFinancier);
+    console.log("🔍 Should show prompt?", !isEligibleFinancier);
+    console.log("🔍 Should show content?", isEligibleFinancier);
+    console.log("🔍 ==============================================");
+  }, [isEligibleFinancier]);
+
+  // Load proposals when switching to vote tab
+  useEffect(() => {
+    if (activeTab === "vote" || activeTab === "create") {
+      loadGovernanceData();
+    }
+  }, [activeTab]);
 
   // Refresh data periodically to stay up to date
   useEffect(() => {
@@ -249,32 +318,6 @@ export function TreasuryPortalScreen() {
   };
 
   // Real staking transaction handlers
-  const handleApproveUSDC = async () => {
-    if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
-      Alert.alert("Error", "Please enter a valid stake amount");
-      return;
-    }
-
-    try {
-      setIsTransacting(true);
-      // Initialize connection if not done already
-      await initializeStakingService();
-
-      const tx = await stakingService.approveUSDC(stakeAmount);
-      setPendingTx(tx);
-
-      Alert.alert(
-        "Approval Submitted",
-        "USDC approval transaction has been submitted. Please wait for confirmation before staking.",
-        [{ text: "OK" }]
-      );
-    } catch (error: any) {
-      Alert.alert("Approval Failed", error.message);
-    } finally {
-      setIsTransacting(false);
-    }
-  };
-
   const handleStakeUSDC = async () => {
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       Alert.alert("Error", "Please enter a valid stake amount");
@@ -286,11 +329,17 @@ export function TreasuryPortalScreen() {
       return;
     }
 
-    // Check minimum stake
-    if (parseFloat(stakeAmount) < parseFloat(stakingConfig.minimumStake)) {
+    // Check minimum stake based on stake type
+    const minStake = stakeAsFinancier
+      ? parseFloat(stakingConfig.minimumFinancierStake)
+      : parseFloat(stakingConfig.minimumStake);
+
+    if (parseFloat(stakeAmount) < minStake) {
       Alert.alert(
         "Minimum Stake Required",
-        `Minimum stake amount is ${stakingConfig.minimumStake} USDC`
+        `Minimum ${
+          stakeAsFinancier ? "financier " : ""
+        }stake amount is ${minStake} USDC`
       );
       return;
     }
@@ -306,31 +355,43 @@ export function TreasuryPortalScreen() {
 
     try {
       setIsTransacting(true);
+      setStakingProgress("Initializing...");
+
       // Initialize connection if not done already
       await initializeStakingService();
 
-      // Check allowance first
-      const hasAllowance = await stakingService.checkAllowance(stakeAmount);
-      if (!hasAllowance) {
-        Alert.alert(
-          "Approval Required",
-          "You need to approve USDC spending first. Please click 'Approve USDC' button.",
-          [{ text: "OK" }]
+      // Stake with progress callbacks - use appropriate function
+      let tx;
+      if (stakeAsFinancier) {
+        tx = await stakingService.stakeAsFinancier(
+          stakeAmount,
+          (stage, message) => {
+            setStakingProgress(message);
+            console.log(`Staking as financier progress [${stage}]: ${message}`);
+          }
         );
-        setIsTransacting(false);
-        return;
+      } else {
+        tx = await stakingService.stake(stakeAmount, (stage, message) => {
+          setStakingProgress(message);
+          console.log(`Staking progress [${stage}]: ${message}`);
+        });
       }
 
-      const tx = await stakingService.stake(stakeAmount);
       setPendingTx(tx);
       setStakeAmount(""); // Clear input
+      setStakeAsFinancier(false); // Reset checkbox
+      setStakingProgress("");
 
       Alert.alert(
         "Stake Submitted",
-        "Your stake transaction has been submitted. Please wait for confirmation.",
+        `Your ${
+          stakeAsFinancier ? "financier " : ""
+        }stake transaction has been submitted. Please wait for confirmation.`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
+      console.error("Staking error:", error);
+      setStakingProgress("");
       Alert.alert("Staking Failed", error.message);
     } finally {
       setIsTransacting(false);
@@ -459,9 +520,10 @@ export function TreasuryPortalScreen() {
 
   const handleRefreshData = () => {
     loadStakingData();
+    loadGovernanceData();
   };
 
-  const handleCreateProposal = () => {
+  const handleCreateProposal = async () => {
     if (!proposalTitle.trim() || !proposalDescription.trim()) {
       Alert.alert(
         "Missing Information",
@@ -470,6 +532,11 @@ export function TreasuryPortalScreen() {
       return;
     }
 
+    // Generate unique proposal ID
+    const proposalId = `proposal-${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+
     Alert.alert(
       "Submit Proposal",
       `Submit proposal "${proposalTitle}" for voting?`,
@@ -477,55 +544,167 @@ export function TreasuryPortalScreen() {
         { text: "Cancel", style: "cancel" },
         {
           text: "Submit",
-          onPress: () => {
-            // Reset form
-            setProposalTitle("");
-            setProposalDescription("");
-            setProposalCategory("Treasury");
-            Alert.alert(
-              "Proposal Submitted!",
-              "Your proposal has been submitted and will appear in the voting section once approved."
-            );
+          onPress: async () => {
+            try {
+              setIsTransacting(true);
+              await initializeStakingService();
+
+              const tx = await stakingService.createProposal(
+                proposalId,
+                proposalCategory,
+                proposalTitle,
+                proposalDescription
+              );
+
+              setPendingTx(tx);
+
+              Alert.alert(
+                "Proposal Submitted!",
+                `Your proposal has been submitted to the blockchain.\n\nTransaction Hash: ${tx.hash}\n\nIt will appear in the voting section once confirmed.`,
+                [{ text: "OK" }]
+              );
+
+              // Reset form
+              setProposalTitle("");
+              setProposalDescription("");
+              setProposalCategory("Treasury");
+
+              // Reload proposals after a delay
+              setTimeout(() => {
+                loadGovernanceData();
+              }, 3000);
+            } catch (error: any) {
+              console.error("Create proposal error:", error);
+              Alert.alert(
+                "Proposal Creation Failed",
+                error.message || "Failed to create proposal"
+              );
+            } finally {
+              setIsTransacting(false);
+            }
           },
         },
       ]
     );
   };
 
-  const proposals = [
-    {
-      id: 1,
-      title: "Treasury Pool Expansion",
-      description:
-        "Increase treasury pool allocation by 15% for better yield opportunities",
-      status: "Active",
-      votesFor: 1250,
-      votesAgainst: 320,
-      timeLeft: "2d 14h",
-      category: "Treasury",
-    },
-    {
-      id: 2,
-      title: "New Investment Strategy",
-      description:
-        "Diversify treasury investments into DeFi protocols for enhanced returns",
-      status: "Active",
-      votesFor: 980,
-      votesAgainst: 180,
-      timeLeft: "5d 8h",
-      category: "Investment",
-    },
-    {
-      id: 3,
-      title: "Pool Guarantee Extension",
-      description: "Extend pool guarantee program for 6 more months",
-      status: "Passed",
-      votesFor: 2100,
-      votesAgainst: 150,
-      timeLeft: "Ended",
-      category: "Guarantee",
-    },
-  ];
+  const handleVoteOnProposal = async (proposalId: string, support: boolean) => {
+    try {
+      setIsTransacting(true);
+      await initializeStakingService();
+
+      const tx = await stakingService.voteOnProposal(proposalId, support);
+      setPendingTx(tx);
+
+      Alert.alert(
+        "Vote Submitted!",
+        `Your ${
+          support ? "FOR" : "AGAINST"
+        } vote has been submitted.\n\nTransaction Hash: ${tx.hash}`,
+        [{ text: "OK" }]
+      );
+
+      // Reload proposals after a delay
+      setTimeout(() => {
+        loadGovernanceData();
+      }, 3000);
+    } catch (error: any) {
+      console.error("Vote error:", error);
+      Alert.alert("Vote Failed", error.message || "Failed to submit vote");
+    } finally {
+      setIsTransacting(false);
+    }
+  };
+
+  // Handle Apply as Financier
+  const handleApplyAsFinancier = async () => {
+    try {
+      setIsApplyingFinancier(true);
+
+      // Check if user has sufficient stake
+      if (!stakeInfo || !stakeInfo.active) {
+        Alert.alert(
+          "No Active Stake",
+          "You need to stake USDC first before applying as a financier.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      const minFinancierStake = parseFloat(
+        stakingConfig?.minimumFinancierStake || "0"
+      );
+      const currentStake = parseFloat(stakeInfo.amount);
+
+      if (currentStake < minFinancierStake) {
+        Alert.alert(
+          "Insufficient Stake",
+          `You need at least ${minFinancierStake} USDC staked to become a financier.\n\nCurrent stake: ${currentStake} USDC`,
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Confirm application
+      Alert.alert(
+        "Apply as Financier",
+        `You are about to apply as a financier. This will grant you permission to:\n\n• Create proposals\n• Vote on proposals\n• Participate in pool guarantee decisions\n\nProceed with application?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Apply",
+            onPress: async () => {
+              try {
+                await initializeStakingService();
+                const tx = await stakingService.applyAsFinancier();
+
+                console.log("Applying as financier, tx:", tx.hash);
+                setPendingTx(tx);
+                setIsTransacting(true);
+
+                Alert.alert(
+                  "Application Submitted!",
+                  `Your financier application has been submitted.\n\nTransaction Hash: ${tx.hash}\n\nYou will be able to create proposals, vote, and participate in pool guarantees once confirmed.`,
+                  [{ text: "OK" }]
+                );
+
+                // Reload stake info after a delay
+                setTimeout(() => {
+                  loadStakingData();
+                }, 3000);
+              } catch (error: any) {
+                console.error("Apply as financier error:", error);
+                Alert.alert(
+                  "Application Failed",
+                  error.message || "Failed to apply as financier"
+                );
+              } finally {
+                setIsApplyingFinancier(false);
+              }
+            },
+          },
+        ]
+      );
+    } catch (error: any) {
+      console.error("Apply as financier error:", error);
+      Alert.alert("Error", error.message || "Failed to apply as financier");
+      setIsApplyingFinancier(false);
+    }
+  };
+
+  // Helper function to calculate time left
+  const getTimeLeft = (deadline: number): string => {
+    const now = Math.floor(Date.now() / 1000);
+    const diff = deadline - now;
+
+    if (diff <= 0) return "Ended";
+
+    const days = Math.floor(diff / 86400);
+    const hours = Math.floor((diff % 86400) / 3600);
+
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h`;
+  };
 
   return (
     <Screen>
@@ -696,7 +875,11 @@ export function TreasuryPortalScreen() {
                           : "0"}
                       </Text>
                       <Text style={styles.statSubtext}>
-                        {stakeInfo?.active ? "Active" : "Inactive"}
+                        {stakeInfo?.isFinancier
+                          ? "Financier"
+                          : stakeInfo?.active
+                          ? "Active"
+                          : "Inactive"}
                       </Text>
                     </View>
                   </View>
@@ -753,13 +936,53 @@ export function TreasuryPortalScreen() {
                         <Text style={styles.maxButtonText}>MAX</Text>
                       </TouchableOpacity>
                     </View>
+
+                    {/* Stake as Financier Option */}
+                    <TouchableOpacity
+                      style={styles.financierCheckbox}
+                      onPress={() => setStakeAsFinancier(!stakeAsFinancier)}
+                      disabled={isTransacting}
+                    >
+                      <View
+                        style={[
+                          styles.checkbox,
+                          stakeAsFinancier && styles.checkboxChecked,
+                        ]}
+                      >
+                        {stakeAsFinancier && (
+                          <MaterialCommunityIcons
+                            name="check"
+                            size={16}
+                            color="white"
+                          />
+                        )}
+                      </View>
+                      <View style={styles.checkboxLabel}>
+                        <Text style={styles.checkboxText}>
+                          Stake as Financier
+                        </Text>
+                        <Text style={styles.checkboxSubtext}>
+                          Grant voting rights and governance access (minimum{" "}
+                          {stakingConfig?.minimumFinancierStake || "0"} USDC)
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+
                     {stakingConfig &&
                       stakeAmount &&
                       parseFloat(stakeAmount) > 0 && (
                         <Text style={styles.stakingInfo}>
-                          Min stake: {stakingConfig.minimumStake} USDC • Lock
-                          period:{" "}
-                          {Math.floor(stakingConfig.minLockDuration / 86400)}{" "}
+                          Min stake:{" "}
+                          {stakeAsFinancier
+                            ? stakingConfig.minimumFinancierStake
+                            : stakingConfig.minimumStake}{" "}
+                          USDC • Lock period:{" "}
+                          {Math.floor(
+                            (stakeAsFinancier
+                              ? stakingConfig.minFinancierLockDuration
+                              : stakingConfig.minNormalStakerLockDuration) /
+                              86400
+                          )}{" "}
                           days
                         </Text>
                       )}
@@ -769,38 +992,7 @@ export function TreasuryPortalScreen() {
                   <View style={styles.actionButtons}>
                     <TouchableOpacity
                       style={[
-                        styles.approveButton,
-                        (isTransacting ||
-                          !stakeAmount ||
-                          parseFloat(stakeAmount) <= 0) &&
-                          styles.buttonDisabled,
-                      ]}
-                      onPress={handleApproveUSDC}
-                      disabled={
-                        isTransacting ||
-                        !stakeAmount ||
-                        parseFloat(stakeAmount) <= 0
-                      }
-                    >
-                      {isTransacting && pendingTx?.type === "approve" ? (
-                        <ActivityIndicator size="small" color="white" />
-                      ) : (
-                        <MaterialCommunityIcons
-                          name="check-circle"
-                          size={20}
-                          color="white"
-                        />
-                      )}
-                      <Text style={styles.approveButtonText}>
-                        {isTransacting && pendingTx?.type === "approve"
-                          ? "Approving..."
-                          : "Approve USDC"}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.stakeButton,
+                        styles.stakeButtonFull,
                         (isTransacting ||
                           !stakeAmount ||
                           parseFloat(stakeAmount) <= 0) &&
@@ -813,20 +1005,25 @@ export function TreasuryPortalScreen() {
                         parseFloat(stakeAmount) <= 0
                       }
                     >
-                      {isTransacting && pendingTx?.type === "stake" ? (
-                        <ActivityIndicator size="small" color="white" />
+                      {isTransacting ? (
+                        <>
+                          <ActivityIndicator size="small" color="white" />
+                          <Text style={styles.stakeButtonText}>
+                            {stakingProgress || "Processing..."}
+                          </Text>
+                        </>
                       ) : (
-                        <MaterialCommunityIcons
-                          name="plus-circle"
-                          size={20}
-                          color="white"
-                        />
+                        <>
+                          <MaterialCommunityIcons
+                            name="plus-circle"
+                            size={20}
+                            color="white"
+                          />
+                          <Text style={styles.stakeButtonText}>
+                            Stake {stakeAsFinancier ? "as Financier" : "USDC"}
+                          </Text>
+                        </>
                       )}
-                      <Text style={styles.stakeButtonText}>
-                        {isTransacting && pendingTx?.type === "stake"
-                          ? "Staking..."
-                          : "Stake USDC"}
-                      </Text>
                     </TouchableOpacity>
                   </View>
 
@@ -1095,543 +1292,802 @@ export function TreasuryPortalScreen() {
 
         {activeTab === "create" && (
           <>
-            {/* Create Proposal Section */}
-            <View style={styles.createProposalCard}>
-              <View style={styles.cardHeader}>
-                <MaterialCommunityIcons
-                  name="plus-circle"
-                  size={32}
-                  color={colors.primary}
-                />
-                <Text style={styles.cardTitle}>Create New Proposal</Text>
-              </View>
-
-              <Text style={styles.createDescription}>
-                Submit a proposal for the treasury community to vote on. Your
-                proposal will be reviewed and then opened for voting.
-              </Text>
-
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Proposal Category</Text>
-                <View style={styles.categoryContainer}>
+            {/* Financier Check for Create Proposal */}
+            {!isEligibleFinancier ? (
+              <View style={styles.section}>
+                <View style={styles.financierPrompt}>
+                  <MaterialCommunityIcons
+                    name="account-star"
+                    size={64}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.financierPromptTitle}>
+                    Become a Financier to Create Proposals
+                  </Text>
+                  <Text style={styles.financierPromptText}>
+                    To create proposals, you need to be an eligible financier.
+                    Financiers have voting rights and can participate in
+                    treasury governance.
+                  </Text>
+                  <View style={styles.financierRequirements}>
+                    <Text style={styles.requirementsTitle}>Requirements:</Text>
+                    <Text style={styles.requirementsItem}>
+                      • Minimum stake:{" "}
+                      {stakingConfig?.minimumFinancierStake || "0"} USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Your current stake:{" "}
+                      {stakeInfo?.amount
+                        ? parseFloat(stakeInfo.amount).toFixed(2)
+                        : "0.00"}{" "}
+                      USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Status: {stakeInfo?.active ? "✓ Active" : "✗ Inactive"}
+                    </Text>
+                  </View>
                   <TouchableOpacity
                     style={[
-                      styles.categoryButton,
-                      proposalCategory === "Treasury" &&
-                        styles.categoryButtonActive,
+                      styles.applyFinancierButton,
+                      (!stakeInfo?.active ||
+                        parseFloat(stakeInfo?.amount || "0") <
+                          parseFloat(
+                            stakingConfig?.minimumFinancierStake || "0"
+                          )) &&
+                        styles.buttonDisabled,
                     ]}
-                    onPress={() => setProposalCategory("Treasury")}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        proposalCategory === "Treasury" &&
-                          styles.categoryTextActive,
-                      ]}
-                    >
-                      Treasury
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.categoryButton,
-                      proposalCategory === "Investment" &&
-                        styles.categoryButtonActive,
-                    ]}
-                    onPress={() => setProposalCategory("Investment")}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        proposalCategory === "Investment" &&
-                          styles.categoryTextActive,
-                      ]}
-                    >
-                      Investment
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.categoryButton,
-                      proposalCategory === "Guarantee" &&
-                        styles.categoryButtonActive,
-                    ]}
-                    onPress={() => setProposalCategory("Guarantee")}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        proposalCategory === "Guarantee" &&
-                          styles.categoryTextActive,
-                      ]}
-                    >
-                      Guarantee
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Proposal Title *</Text>
-                <TextInput
-                  style={styles.textInput}
-                  value={proposalTitle}
-                  onChangeText={setProposalTitle}
-                  placeholder="Enter a clear, concise title for your proposal"
-                  placeholderTextColor={colors.textSecondary}
-                  multiline={false}
-                />
-              </View>
-
-              <View style={styles.formSection}>
-                <Text style={styles.inputLabel}>Proposal Description *</Text>
-                <TextInput
-                  style={[styles.textInput, styles.textAreaInput]}
-                  value={proposalDescription}
-                  onChangeText={setProposalDescription}
-                  placeholder="Provide detailed information about your proposal, including objectives, implementation plan, and expected outcomes..."
-                  placeholderTextColor={colors.textSecondary}
-                  multiline={true}
-                  numberOfLines={6}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              <View style={styles.proposalRequirements}>
-                <MaterialCommunityIcons
-                  name="information"
-                  size={20}
-                  color={colors.primary}
-                />
-                <View style={styles.requirementsText}>
-                  <Text style={styles.requirementsTitle}>Requirements:</Text>
-                  <Text style={styles.requirementsItem}>
-                    • Must have at least 100 USDC staked to propose
-                  </Text>
-                  <Text style={styles.requirementsItem}>
-                    • Current stake:{" "}
-                    {stakeInfo?.amount
-                      ? parseFloat(stakeInfo.amount).toFixed(2)
-                      : "0.00"}{" "}
-                    USDC
-                  </Text>
-                  <Text style={styles.requirementsItem}>
-                    • Proposal will be reviewed within 24 hours
-                  </Text>
-                  <Text style={styles.requirementsItem}>
-                    • Voting period lasts 7 days once approved
-                  </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.submitProposalButton,
-                  (!proposalTitle.trim() ||
-                    !proposalDescription.trim() ||
-                    !stakeInfo?.active ||
-                    parseFloat(stakeInfo?.amount || "0") < 100) &&
-                    styles.buttonDisabled,
-                ]}
-                onPress={handleCreateProposal}
-                disabled={
-                  !proposalTitle.trim() ||
-                  !proposalDescription.trim() ||
-                  !stakeInfo?.active ||
-                  parseFloat(stakeInfo?.amount || "0") < 100
-                }
-              >
-                <MaterialCommunityIcons
-                  name="send"
-                  size={20}
-                  color={
-                    !proposalTitle.trim() ||
-                    !proposalDescription.trim() ||
-                    !stakeInfo?.active ||
-                    parseFloat(stakeInfo?.amount || "0") < 100
-                      ? colors.textSecondary
-                      : "white"
-                  }
-                />
-                <Text
-                  style={[
-                    styles.submitProposalButtonText,
-                    (!proposalTitle.trim() ||
-                      !proposalDescription.trim() ||
+                    onPress={handleApplyAsFinancier}
+                    disabled={
+                      isApplyingFinancier ||
                       !stakeInfo?.active ||
-                      parseFloat(stakeInfo?.amount || "0") < 100) &&
-                      styles.buttonTextDisabled,
-                  ]}
-                >
-                  Submit Proposal
+                      parseFloat(stakeInfo?.amount || "0") <
+                        parseFloat(stakingConfig?.minimumFinancierStake || "0")
+                    }
+                  >
+                    {isApplyingFinancier ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="account-check"
+                          size={20}
+                          color="white"
+                        />
+                        <Text style={styles.applyFinancierButtonText}>
+                          Apply as Financier
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              /* Create Proposal Section */
+              <View style={styles.createProposalCard}>
+                <View style={styles.cardHeader}>
+                  <MaterialCommunityIcons
+                    name="plus-circle"
+                    size={32}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.cardTitle}>Create New Proposal</Text>
+                </View>
+
+                <Text style={styles.createDescription}>
+                  Submit a proposal for the treasury community to vote on. Your
+                  proposal will be reviewed and then opened for voting.
                 </Text>
-              </TouchableOpacity>
-            </View>
+
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Proposal Category</Text>
+                  <View style={styles.categoryContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.categoryButton,
+                        proposalCategory === "Treasury" &&
+                          styles.categoryButtonActive,
+                      ]}
+                      onPress={() => setProposalCategory("Treasury")}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          proposalCategory === "Treasury" &&
+                            styles.categoryTextActive,
+                        ]}
+                      >
+                        Treasury
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.categoryButton,
+                        proposalCategory === "Investment" &&
+                          styles.categoryButtonActive,
+                      ]}
+                      onPress={() => setProposalCategory("Investment")}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          proposalCategory === "Investment" &&
+                            styles.categoryTextActive,
+                        ]}
+                      >
+                        Investment
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.categoryButton,
+                        proposalCategory === "Guarantee" &&
+                          styles.categoryButtonActive,
+                      ]}
+                      onPress={() => setProposalCategory("Guarantee")}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          proposalCategory === "Guarantee" &&
+                            styles.categoryTextActive,
+                        ]}
+                      >
+                        Guarantee
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Proposal Title *</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    value={proposalTitle}
+                    onChangeText={setProposalTitle}
+                    placeholder="Enter a clear, concise title for your proposal"
+                    placeholderTextColor={colors.textSecondary}
+                    multiline={false}
+                  />
+                </View>
+
+                <View style={styles.formSection}>
+                  <Text style={styles.inputLabel}>Proposal Description *</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.textAreaInput]}
+                    value={proposalDescription}
+                    onChangeText={setProposalDescription}
+                    placeholder="Provide detailed information about your proposal, including objectives, implementation plan, and expected outcomes..."
+                    placeholderTextColor={colors.textSecondary}
+                    multiline={true}
+                    numberOfLines={6}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                <View style={styles.proposalRequirements}>
+                  <MaterialCommunityIcons
+                    name="information"
+                    size={20}
+                    color={colors.primary}
+                  />
+                  <View style={styles.requirementsText}>
+                    <Text style={styles.requirementsTitle}>Requirements:</Text>
+                    <Text style={styles.requirementsItem}>
+                      • Must be an eligible financier to propose
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Current stake:{" "}
+                      {stakeInfo?.amount
+                        ? parseFloat(stakeInfo.amount).toFixed(2)
+                        : "0.00"}{" "}
+                      USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Proposal will be reviewed within 24 hours
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Voting period lasts 7 days once approved
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.submitProposalButton,
+                    (!proposalTitle.trim() || !proposalDescription.trim()) &&
+                      styles.buttonDisabled,
+                  ]}
+                  onPress={handleCreateProposal}
+                  disabled={
+                    !proposalTitle.trim() || !proposalDescription.trim()
+                  }
+                >
+                  <MaterialCommunityIcons
+                    name="send"
+                    size={20}
+                    color={
+                      !proposalTitle.trim() || !proposalDescription.trim()
+                        ? colors.textSecondary
+                        : "white"
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.submitProposalButtonText,
+                      (!proposalTitle.trim() || !proposalDescription.trim()) &&
+                        styles.buttonTextDisabled,
+                    ]}
+                  >
+                    Submit Proposal
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </>
         )}
 
         {activeTab === "vote" && (
           <>
-            {/* Treasury Voting */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Treasury Voting</Text>
-                <TouchableOpacity style={styles.viewAllButton}>
-                  <Text style={styles.viewAllText}>View All</Text>
-                </TouchableOpacity>
-              </View>
-
-              {proposals.map((proposal) => (
-                <View key={proposal.id} style={styles.proposalCard}>
-                  <View style={styles.proposalHeader}>
-                    <View style={styles.proposalBadge}>
-                      <Text style={styles.proposalCategory}>
-                        {proposal.category}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        proposal.status === "Active" &&
-                          styles.statusBadgeActive,
-                        proposal.status === "Passed" &&
-                          styles.statusBadgePassed,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          proposal.status === "Active" &&
-                            styles.statusTextActive,
-                          proposal.status === "Passed" &&
-                            styles.statusTextPassed,
-                        ]}
-                      >
-                        {proposal.status}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.proposalTitle}>{proposal.title}</Text>
-                  <Text style={styles.proposalDescription}>
-                    {proposal.description}
+            {/* Financier Check for Voting */}
+            {!isEligibleFinancier ? (
+              <View style={styles.section}>
+                <View style={styles.financierPrompt}>
+                  <MaterialCommunityIcons
+                    name="vote-outline"
+                    size={64}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.financierPromptTitle}>
+                    Become a Financier to Vote
                   </Text>
-
-                  <View style={styles.votingStats}>
-                    <View style={styles.voteBar}>
-                      <View style={styles.voteBarTrack}>
-                        <View
-                          style={[
-                            styles.voteBarFill,
-                            {
-                              width: `${
-                                (proposal.votesFor /
-                                  (proposal.votesFor + proposal.votesAgainst)) *
-                                100
-                              }%`,
-                            },
-                          ]}
+                  <Text style={styles.financierPromptText}>
+                    Voting on proposals requires financier status. Apply as a
+                    financier to participate in treasury governance.
+                  </Text>
+                  <View style={styles.financierRequirements}>
+                    <Text style={styles.requirementsTitle}>Requirements:</Text>
+                    <Text style={styles.requirementsItem}>
+                      • Minimum stake:{" "}
+                      {stakingConfig?.minimumFinancierStake || "0"} USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Your current stake:{" "}
+                      {stakeInfo?.amount
+                        ? parseFloat(stakeInfo.amount).toFixed(2)
+                        : "0.00"}{" "}
+                      USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Status: {stakeInfo?.active ? "✓ Active" : "✗ Inactive"}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.applyFinancierButton,
+                      (!stakeInfo?.active ||
+                        parseFloat(stakeInfo?.amount || "0") <
+                          parseFloat(
+                            stakingConfig?.minimumFinancierStake || "0"
+                          )) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={handleApplyAsFinancier}
+                    disabled={
+                      isApplyingFinancier ||
+                      !stakeInfo?.active ||
+                      parseFloat(stakeInfo?.amount || "0") <
+                        parseFloat(stakingConfig?.minimumFinancierStake || "0")
+                    }
+                  >
+                    {isApplyingFinancier ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="account-check"
+                          size={20}
+                          color="white"
                         />
-                      </View>
-                      <View style={styles.voteNumbers}>
-                        <Text style={styles.votesFor}>
-                          For: {proposal.votesFor}
+                        <Text style={styles.applyFinancierButtonText}>
+                          Apply as Financier
                         </Text>
-                        <Text style={styles.votesAgainst}>
-                          Against: {proposal.votesAgainst}
-                        </Text>
-                      </View>
-                    </View>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              /* Treasury Voting */
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Treasury Voting</Text>
+                  <TouchableOpacity
+                    onPress={loadGovernanceData}
+                    disabled={isLoadingProposals}
+                  >
+                    <MaterialCommunityIcons
+                      name="refresh"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                </View>
 
-                    {proposal.status === "Active" && (
-                      <View style={styles.voteActions}>
-                        <TouchableOpacity style={styles.voteButton}>
-                          <Text style={styles.voteButtonText}>Vote For</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.voteButton, styles.voteButtonAgainst]}
-                        >
-                          <Text
+                {isLoadingProposals ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={colors.primary} />
+                    <Text style={styles.loadingText}>Loading proposals...</Text>
+                  </View>
+                ) : proposals.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <MaterialCommunityIcons
+                      name="vote-outline"
+                      size={64}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={styles.emptyStateTitle}>No Proposals Yet</Text>
+                    <Text style={styles.emptyStateText}>
+                      Be the first to create a proposal! Switch to the "create"
+                      tab to get started.
+                    </Text>
+                  </View>
+                ) : (
+                  proposals.map((proposal) => {
+                    const totalVotes =
+                      parseFloat(proposal.votesFor) +
+                      parseFloat(proposal.votesAgainst);
+                    const forPercentage =
+                      totalVotes > 0
+                        ? (parseFloat(proposal.votesFor) / totalVotes) * 100
+                        : 0;
+                    const isActive =
+                      proposal.votingDeadline > Math.floor(Date.now() / 1000) &&
+                      !proposal.executed;
+                    const status = proposal.executed
+                      ? "Executed"
+                      : isActive
+                      ? "Active"
+                      : "Ended";
+
+                    return (
+                      <View key={proposal.id} style={styles.proposalCard}>
+                        <View style={styles.proposalHeader}>
+                          <View style={styles.proposalBadge}>
+                            <Text style={styles.proposalCategory}>
+                              {proposal.category}
+                            </Text>
+                          </View>
+                          <View
                             style={[
-                              styles.voteButtonText,
-                              styles.voteButtonTextAgainst,
+                              styles.statusBadge,
+                              isActive
+                                ? styles.statusBadgeActive
+                                : styles.statusBadgePassed,
                             ]}
                           >
-                            Vote Against
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
+                            <Text
+                              style={[
+                                styles.statusText,
+                                isActive
+                                  ? styles.statusTextActive
+                                  : styles.statusTextPassed,
+                              ]}
+                            >
+                              {status}
+                            </Text>
+                          </View>
+                        </View>
 
-                  <Text style={styles.timeLeft}>
-                    Time left: {proposal.timeLeft}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                        <Text style={styles.proposalTitle}>
+                          {proposal.title}
+                        </Text>
+                        <Text
+                          style={styles.proposalDescription}
+                          numberOfLines={3}
+                        >
+                          {proposal.description}
+                        </Text>
+
+                        <View style={styles.votingStats}>
+                          <View style={styles.voteBar}>
+                            <View style={styles.voteBarTrack}>
+                              <View
+                                style={[
+                                  styles.voteBarFill,
+                                  { width: `${forPercentage}%` },
+                                ]}
+                              />
+                            </View>
+                            <View style={styles.voteNumbers}>
+                              <Text style={styles.votesFor}>
+                                For: {proposal.votesFor}
+                              </Text>
+                              <Text style={styles.votesAgainst}>
+                                Against: {proposal.votesAgainst}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {isActive && (
+                            <>
+                              <Text style={styles.timeLeft}>
+                                {getTimeLeft(proposal.votingDeadline)} left to
+                                vote
+                              </Text>
+                              <View style={styles.voteActions}>
+                                <TouchableOpacity
+                                  style={styles.voteButton}
+                                  onPress={() =>
+                                    handleVoteOnProposal(proposal.id, true)
+                                  }
+                                  disabled={isTransacting}
+                                >
+                                  <Text style={styles.voteButtonText}>
+                                    Vote For
+                                  </Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.voteButton,
+                                    styles.voteButtonAgainst,
+                                  ]}
+                                  onPress={() =>
+                                    handleVoteOnProposal(proposal.id, false)
+                                  }
+                                  disabled={isTransacting}
+                                >
+                                  <Text style={styles.voteButtonTextAgainst}>
+                                    Vote Against
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+            )}
           </>
         )}
 
         {activeTab === "pool" && (
           <>
-            {/* Pool Guarantee Applications for Review */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Pool Guarantee Applications
-              </Text>
-
-              {/* Search Bar */}
-              <View style={styles.searchContainer}>
-                <MaterialCommunityIcons
-                  name="magnify"
-                  size={20}
-                  color={colors.textSecondary}
-                />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search by ID, buyer, seller, or description..."
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-
-              {/* Filter Tabs - Mobile Optimized */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.filterTabsContainer}
-              >
-                <View style={styles.filterTabs}>
+            {/* Financier Check for Pool Guarantee */}
+            {!isEligibleFinancier ? (
+              <View style={styles.section}>
+                <View style={styles.financierPrompt}>
+                  <MaterialCommunityIcons
+                    name="shield-check"
+                    size={64}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.financierPromptTitle}>
+                    Become a Financier for Pool Guarantee
+                  </Text>
+                  <Text style={styles.financierPromptText}>
+                    Participating in pool guarantee decisions requires financier
+                    status. Apply as a financier to review and approve pool
+                    guarantee applications.
+                  </Text>
+                  <View style={styles.financierRequirements}>
+                    <Text style={styles.requirementsTitle}>Requirements:</Text>
+                    <Text style={styles.requirementsItem}>
+                      • Minimum stake:{" "}
+                      {stakingConfig?.minimumFinancierStake || "0"} USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Your current stake:{" "}
+                      {stakeInfo?.amount
+                        ? parseFloat(stakeInfo.amount).toFixed(2)
+                        : "0.00"}{" "}
+                      USDC
+                    </Text>
+                    <Text style={styles.requirementsItem}>
+                      • Status: {stakeInfo?.active ? "✓ Active" : "✗ Inactive"}
+                    </Text>
+                  </View>
                   <TouchableOpacity
-                    style={[styles.filterTab, styles.filterTabActive]}
+                    style={[
+                      styles.applyFinancierButton,
+                      (!stakeInfo?.active ||
+                        parseFloat(stakeInfo?.amount || "0") <
+                          parseFloat(
+                            stakingConfig?.minimumFinancierStake || "0"
+                          )) &&
+                        styles.buttonDisabled,
+                    ]}
+                    onPress={handleApplyAsFinancier}
+                    disabled={
+                      isApplyingFinancier ||
+                      !stakeInfo?.active ||
+                      parseFloat(stakeInfo?.amount || "0") <
+                        parseFloat(stakingConfig?.minimumFinancierStake || "0")
+                    }
                   >
-                    <Text
-                      style={[styles.filterTabText, styles.filterTabTextActive]}
-                    >
-                      Pending (5)
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.filterTab}>
-                    <Text style={styles.filterTabText}>Approved (0)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.filterTab}>
-                    <Text style={styles.filterTabText}>Issuance (1)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.filterTab}>
-                    <Text style={styles.filterTabText}>Issued (5)</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.filterTab}>
-                    <Text style={styles.filterTabText}>Rejected (0)</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-
-              {/* Application Card */}
-              <View style={styles.applicationReviewCard}>
-                <View style={styles.applicationReviewHeader}>
-                  <View style={styles.applicationTitleRow}>
-                    <MaterialCommunityIcons
-                      name="file-document"
-                      size={20}
-                      color={colors.primary}
-                    />
-                    <View style={styles.applicationIdContainer}>
-                      <Text style={styles.applicationId}>
-                        PG-1763321117688-OWSX869
-                      </Text>
-                      <View style={styles.pendingBadge}>
-                        <Text style={styles.pendingBadgeText}>
-                          PENDING VOTE
+                    {isApplyingFinancier ? (
+                      <ActivityIndicator size="small" color="white" />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons
+                          name="account-check"
+                          size={20}
+                          color="white"
+                        />
+                        <Text style={styles.applyFinancierButtonText}>
+                          Apply as Financier
                         </Text>
-                      </View>
-                    </View>
-                  </View>
-                  <Text style={styles.applicationDate}>
-                    Applied on Nov 16, 2025
-                  </Text>
-                </View>
-
-                <View style={styles.applicationInfo}>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      0x759ed3d2...fe5e5582a
-                    </Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Seller (Beneficiary)</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      0x324ffda4...b9f141
-                    </Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Goods Description</Text>
-                    <Text style={styles.infoValue}>
-                      Import of Cloth from Ghana
-                    </Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Guarantee Amount</Text>
-                    <Text style={styles.infoValue}>$4.00</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Collateral Posted</Text>
-                    <Text style={styles.infoValue}>$0.40</Text>
-                  </View>
-                </View>
-
-                <View style={styles.votingSection}>
-                  <View style={styles.votingHeader}>
-                    <Text style={styles.votingTitle}>Current Votes</Text>
-                  </View>
-                  <Text style={styles.approvalThreshold}>
-                    60% approval threshold required
-                  </Text>
-
-                  <View style={styles.voteProgressBar}>
-                    <View style={styles.voteProgress}>
-                      <View
-                        style={[styles.voteProgressFill, { width: "0%" }]}
-                      />
-                    </View>
-                    <Text style={styles.voteProgressText}>
-                      For: 0 Against: 0
-                    </Text>
-                  </View>
-
-                  <View style={styles.voteActions}>
-                    <TouchableOpacity style={styles.approveVoteButton}>
-                      <MaterialCommunityIcons
-                        name="thumb-up"
-                        size={16}
-                        color="white"
-                      />
-                      <Text style={styles.voteButtonText}>Approve</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.rejectVoteButton}>
-                      <MaterialCommunityIcons
-                        name="thumb-down"
-                        size={16}
-                        color="white"
-                      />
-                      <Text style={styles.voteButtonText}>Reject</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.applicationActions}>
-                  <TouchableOpacity style={styles.viewDocumentsButton}>
-                    <MaterialCommunityIcons
-                      name="file-multiple"
-                      size={16}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.viewDocumentsText}>Documents</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={styles.viewDraftButton}>
-                    <MaterialCommunityIcons
-                      name="eye"
-                      size={16}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.viewDraftText}>View Draft</Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
+            ) : (
+              /* Pool Guarantee Applications for Review */
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                  Pool Guarantee Applications
+                </Text>
 
-              {/* Certificate Issuance Card */}
-              <View style={styles.certificateIssuanceCard}>
-                <View style={styles.applicationReviewHeader}>
-                  <View style={styles.applicationTitleRow}>
-                    <MaterialCommunityIcons
-                      name="certificate"
-                      size={20}
-                      color={colors.success}
-                    />
-                    <View style={styles.applicationIdContainer}>
-                      <Text style={styles.applicationId}>
-                        PG-1763321117688-OWSX869
-                      </Text>
-                      <View style={styles.issuanceBadge}>
-                        <Text style={styles.issuanceBadgeText}>
-                          READY FOR ISSUANCE
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                  <Text style={styles.applicationDate}>
-                    Invoice Settled on Nov 16, 2025
-                  </Text>
+                {/* Search Bar */}
+                <View style={styles.searchContainer}>
+                  <MaterialCommunityIcons
+                    name="magnify"
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by ID, buyer, seller, or description..."
+                    placeholderTextColor={colors.textSecondary}
+                  />
                 </View>
 
-                <View style={styles.applicationInfo}>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
-                    <Text style={styles.infoValue}>BILAL LTD</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Trade Description</Text>
-                    <Text style={styles.infoValue}>
-                      Import of Cloth from Ghana
-                    </Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Guarantee Amount</Text>
-                    <Text style={styles.infoValue}>4.00 USDC</Text>
-                  </View>
-                  <View style={styles.infoRow}>
-                    <Text style={styles.infoLabel}>Invoice Settlement</Text>
-                    <Text style={[styles.infoValue, { color: colors.success }]}>
-                      ✓ Paid in Full
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.issuanceSection}>
-                  <View style={styles.issuanceHeader}>
-                    <MaterialCommunityIcons
-                      name="information"
-                      size={20}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.issuanceTitle}>
-                      Ready for Certificate Issuance
-                    </Text>
-                  </View>
-
-                  <Text style={styles.issuanceDescription}>
-                    All requirements met. Invoice has been settled. Treasury
-                    delegates can now issue the pool guarantee certificate.
-                  </Text>
-
-                  <View style={styles.certificateActions}>
-                    <TouchableOpacity style={styles.issueCertificateButton}>
-                      <MaterialCommunityIcons
-                        name="certificate"
-                        size={16}
-                        color="white"
-                      />
-                      <Text style={styles.issueCertificateButtonText}>
-                        Issue Certificate
+                {/* Filter Tabs - Mobile Optimized */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.filterTabsContainer}
+                >
+                  <View style={styles.filterTabs}>
+                    <TouchableOpacity
+                      style={[styles.filterTab, styles.filterTabActive]}
+                    >
+                      <Text
+                        style={[
+                          styles.filterTabText,
+                          styles.filterTabTextActive,
+                        ]}
+                      >
+                        Pending (5)
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.filterTab}>
+                      <Text style={styles.filterTabText}>Approved (0)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.filterTab}>
+                      <Text style={styles.filterTabText}>Issuance (1)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.filterTab}>
+                      <Text style={styles.filterTabText}>Issued (5)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.filterTab}>
+                      <Text style={styles.filterTabText}>Rejected (0)</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
 
-                    <TouchableOpacity style={styles.viewDetailsButton}>
+                {/* Application Card */}
+                <View style={styles.applicationReviewCard}>
+                  <View style={styles.applicationReviewHeader}>
+                    <View style={styles.applicationTitleRow}>
+                      <MaterialCommunityIcons
+                        name="file-document"
+                        size={20}
+                        color={colors.primary}
+                      />
+                      <View style={styles.applicationIdContainer}>
+                        <Text style={styles.applicationId}>
+                          PG-1763321117688-OWSX869
+                        </Text>
+                        <View style={styles.pendingBadge}>
+                          <Text style={styles.pendingBadgeText}>
+                            PENDING VOTE
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <Text style={styles.applicationDate}>
+                      Applied on Nov 16, 2025
+                    </Text>
+                  </View>
+
+                  <View style={styles.applicationInfo}>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
+                      <Text style={styles.infoValue} numberOfLines={1}>
+                        0x759ed3d2...fe5e5582a
+                      </Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Seller (Beneficiary)</Text>
+                      <Text style={styles.infoValue} numberOfLines={1}>
+                        0x324ffda4...b9f141
+                      </Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Goods Description</Text>
+                      <Text style={styles.infoValue}>
+                        Import of Cloth from Ghana
+                      </Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Guarantee Amount</Text>
+                      <Text style={styles.infoValue}>$4.00</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Collateral Posted</Text>
+                      <Text style={styles.infoValue}>$0.40</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.votingSection}>
+                    <View style={styles.votingHeader}>
+                      <Text style={styles.votingTitle}>Current Votes</Text>
+                    </View>
+                    <Text style={styles.approvalThreshold}>
+                      60% approval threshold required
+                    </Text>
+
+                    <View style={styles.voteProgressBar}>
+                      <View style={styles.voteProgress}>
+                        <View
+                          style={[styles.voteProgressFill, { width: "0%" }]}
+                        />
+                      </View>
+                      <Text style={styles.voteProgressText}>
+                        For: 0 Against: 0
+                      </Text>
+                    </View>
+
+                    <View style={styles.voteActions}>
+                      <TouchableOpacity style={styles.approveVoteButton}>
+                        <MaterialCommunityIcons
+                          name="thumb-up"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.voteButtonText}>Approve</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={styles.rejectVoteButton}>
+                        <MaterialCommunityIcons
+                          name="thumb-down"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.voteButtonText}>Reject</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={styles.applicationActions}>
+                    <TouchableOpacity style={styles.viewDocumentsButton}>
+                      <MaterialCommunityIcons
+                        name="file-multiple"
+                        size={16}
+                        color={colors.primary}
+                      />
+                      <Text style={styles.viewDocumentsText}>Documents</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.viewDraftButton}>
                       <MaterialCommunityIcons
                         name="eye"
                         size={16}
                         color={colors.primary}
                       />
-                      <Text style={styles.viewDetailsButtonText}>
-                        View Details
-                      </Text>
+                      <Text style={styles.viewDraftText}>View Draft</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
+
+                {/* Certificate Issuance Card */}
+                <View style={styles.certificateIssuanceCard}>
+                  <View style={styles.applicationReviewHeader}>
+                    <View style={styles.applicationTitleRow}>
+                      <MaterialCommunityIcons
+                        name="certificate"
+                        size={20}
+                        color={colors.success}
+                      />
+                      <View style={styles.applicationIdContainer}>
+                        <Text style={styles.applicationId}>
+                          PG-1763321117688-OWSX869
+                        </Text>
+                        <View style={styles.issuanceBadge}>
+                          <Text style={styles.issuanceBadgeText}>
+                            READY FOR ISSUANCE
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <Text style={styles.applicationDate}>
+                      Invoice Settled on Nov 16, 2025
+                    </Text>
+                  </View>
+
+                  <View style={styles.applicationInfo}>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Buyer (Applicant)</Text>
+                      <Text style={styles.infoValue}>BILAL LTD</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Trade Description</Text>
+                      <Text style={styles.infoValue}>
+                        Import of Cloth from Ghana
+                      </Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Guarantee Amount</Text>
+                      <Text style={styles.infoValue}>4.00 USDC</Text>
+                    </View>
+                    <View style={styles.infoRow}>
+                      <Text style={styles.infoLabel}>Invoice Settlement</Text>
+                      <Text
+                        style={[styles.infoValue, { color: colors.success }]}
+                      >
+                        ✓ Paid in Full
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.issuanceSection}>
+                    <View style={styles.issuanceHeader}>
+                      <MaterialCommunityIcons
+                        name="information"
+                        size={20}
+                        color={colors.primary}
+                      />
+                      <Text style={styles.issuanceTitle}>
+                        Ready for Certificate Issuance
+                      </Text>
+                    </View>
+
+                    <Text style={styles.issuanceDescription}>
+                      All requirements met. Invoice has been settled. Treasury
+                      delegates can now issue the pool guarantee certificate.
+                    </Text>
+
+                    <View style={styles.certificateActions}>
+                      <TouchableOpacity style={styles.issueCertificateButton}>
+                        <MaterialCommunityIcons
+                          name="certificate"
+                          size={16}
+                          color="white"
+                        />
+                        <Text style={styles.issueCertificateButtonText}>
+                          Issue Certificate
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity style={styles.viewDetailsButton}>
+                        <MaterialCommunityIcons
+                          name="eye"
+                          size={16}
+                          color={colors.primary}
+                        />
+                        <Text style={styles.viewDetailsButtonText}>
+                          View Details
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
               </View>
-            </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -1640,6 +2096,7 @@ export function TreasuryPortalScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ... (all existing styles remain the same)
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -2000,6 +2457,92 @@ const styles = StyleSheet.create({
   voteButtonTextAgainst: {
     color: colors.error,
   },
+
+  // Financier Prompt Styles
+  financierPrompt: {
+    alignItems: "center",
+    padding: spacing.xl,
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    marginBottom: spacing.lg,
+  },
+  financierPromptTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: colors.text,
+    marginTop: spacing.lg,
+    marginBottom: spacing.md,
+    textAlign: "center",
+  },
+  financierPromptText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: spacing.lg,
+    lineHeight: 20,
+  },
+  financierRequirements: {
+    backgroundColor: "white",
+    padding: spacing.lg,
+    borderRadius: 12,
+    width: "100%",
+    marginBottom: spacing.lg,
+  },
+  applyFinancierButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    borderRadius: 12,
+    gap: spacing.sm,
+    width: "100%",
+  },
+  applyFinancierButtonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
+  // Financier Checkbox Styles
+  financierCheckbox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    borderRadius: 12,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    marginRight: spacing.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxChecked: {
+    backgroundColor: colors.primary,
+  },
+  checkboxLabel: {
+    flex: 1,
+  },
+  checkboxText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  checkboxSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
+
   timeLeft: {
     fontSize: 12,
     color: colors.textSecondary,
@@ -2225,6 +2768,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: 12,
+    alignSelf: "flex-start",
   },
   pendingBadgeText: {
     fontSize: 10,
@@ -2371,6 +2915,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: 12,
+    alignSelf: "flex-start",
   },
   issuanceBadgeText: {
     color: "white",
@@ -2498,20 +3043,14 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.sm,
   },
-  approveButton: {
+  stakeButtonFull: {
     flex: 1,
-    backgroundColor: colors.success,
+    backgroundColor: colors.primary,
     borderRadius: 12,
     padding: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: spacing.sm,
-  },
-  approveButtonText: {
-    color: "white",
-    fontWeight: "600",
-    marginLeft: spacing.sm,
   },
   unstakeSection: {
     marginTop: spacing.lg,
@@ -2554,5 +3093,36 @@ const styles = StyleSheet.create({
   maxButtonDisabled: {
     backgroundColor: colors.textSecondary,
     opacity: 0.5,
+  },
+  loadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl * 2,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl * 2,
+    backgroundColor: "white",
+    borderRadius: 12,
+    marginVertical: spacing.md,
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.text,
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });
