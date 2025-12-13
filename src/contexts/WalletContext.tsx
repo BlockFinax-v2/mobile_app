@@ -24,6 +24,7 @@ import React, {
   useState,
 } from "react";
 import { Alert, AppState, AppStateStatus } from "react-native";
+import { dataPreloader } from "@/utils/dataPreloader";
 
 const MNEMONIC_KEY = "blockfinax.mnemonic";
 const PRIVATE_KEY = "blockfinax.privateKey";
@@ -902,8 +903,24 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       // Load data after unlock
       forceRefreshBalance();
       refreshTransactions();
+
+      // 🚀 Preload all app data immediately after unlock
+      if (address && selectedNetwork.chainId) {
+        console.log("[WalletContext] Triggering data preload after unlock");
+        dataPreloader
+          .preloadAll(address, selectedNetwork.chainId)
+          .catch((error) => {
+            console.error("[WalletContext] Preload failed:", error);
+          });
+      }
     },
-    [hydrateWallet, forceRefreshBalance, refreshTransactions]
+    [
+      hydrateWallet,
+      forceRefreshBalance,
+      refreshTransactions,
+      address,
+      selectedNetwork.chainId,
+    ]
   );
 
   const unlockWithBiometrics = useCallback(async () => {

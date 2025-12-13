@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Alert,
   ScrollView,
@@ -28,6 +28,17 @@ import {
   DAOStats,
   DAOConfig,
 } from "@/services/stakingService";
+import { performanceCache } from "@/utils/performanceCache";
+import { asyncQueue, TaskPriority, debounce } from "@/utils/asyncQueue";
+import { withOptimisticUpdate } from "@/utils/optimisticUpdate";
+import { dataPreloader } from "@/utils/dataPreloader";
+import {
+  Skeleton,
+  SkeletonCard,
+  SkeletonStatsGrid,
+  SkeletonProposalCard,
+  SkeletonList,
+} from "@/components/ui/SkeletonLoader";
 
 type NavigationProp = StackNavigationProp<
   WalletStackParamList,
@@ -80,8 +91,13 @@ export function TreasuryPortalScreen() {
   const [isEligibleFinancier, setIsEligibleFinancier] = useState(false);
   const [stakeAsFinancier, setStakeAsFinancier] = useState(false);
 
+  // Performance: Track loading states separately
+  const [dataVersion, setDataVersion] = useState(0);
+  const isInitialMount = useRef(true);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Load staking data on component mount and when wallet changes
-  const loadStakingData = async () => {
+  const loadStakingData = useCallback(async () => {
     if (!isUnlocked || !address) {
       setIsLoading(false);
       return;
@@ -101,63 +117,164 @@ export function TreasuryPortalScreen() {
         return;
       }
 
+      // 🚀 Try to get preloaded data first
+      const preloadedData = await dataPreloader.preloadAll(address, selectedNetwork.chainId);
+      
+      if (preloadedData.staking) {
+        console.log('[TreasuryPortal] Using preloaded staking data');
+        setStakeInfo(preloadedData.staking.stakeInfo);
+        setPoolStats(preloadedData.staking.poolStats);
+        setStakingConfig(preloadedData.staking.stakingConfig);
+        setUsdcBalance(preloadedData.staking.usdcBalance);
+        setCurrentAPR(preloadedData.staking.currentAPR);
+        setIsEligibleFinancier(preloadedData.staking.isEligibleFinancier);
+        setIsLoading(false);
+        setDataVersion(v => v + 1);
+        return;
+      }
+
       // Initialize staking service with user's wallet credentials
       await initializeStakingService();
 
-      const [stake, pool, config, balance, apr, isEligible] = await Promise.all(
-        [
-          stakingService.getStakeInfo(address),
-          stakingService.getPoolStats(),
-          stakingService.getStakingConfig(),
-          stakingService.getUSDCBalance(address),
-          stakingService.calculateCurrentAPR(),
-          stakingService.isEligibleFinancier(address),
-        ]
-      );
+      // Performance: Use cache for frequently accessed data
+      const cacheKey = `staking:${address}:${selectedNetwork.chainId}`;
+      const cachedData = performanceCache.get<any>(cacheKey);
 
+      if (cachedData && isInitialMount.current) {
+        // Use cached data on initial load for instant UI
+        console.log('[Perf] Using cached data for instant load');
+        setStakeInfo(cachedData.stake);
+        setPoolStats(cachedData.pool);
+        setStakingConfig(cachedData.config);
+        setUsdcBalance(cachedData.balance);
+        setCurrentAPR(cachedData.apr);
+        setIsEligibleFinancier(cachedData.isEligible);
+        setIsLoading(false);
+      }
+
+      // Performance: Queue data fetching with priority
+      const [stake, pool, config, balance, apr, isEligible] = await Promise.all([
+        asyncQueue.enqueue(
+          () => stakingService.getStakeInfo(address),
+          TaskPriority.HIGH
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.getPoolStats(),
+          TaskPriority.NORMAL
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.getStakingConfig(),
+          TaskPriority.HIGH
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.getUSDCBalance(address),
+          TaskPriority.NORMAL
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.calculateCurrentAPR(),
+          TaskPriority.LOW
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.isEligibleFinancier(address),
+          TaskPriority.HIGH
+        ),
+      ]);
+
+      // Update state
       setStakeInfo(stake);
       setPoolStats(pool);
       setStakingConfig(config);
       setUsdcBalance(balance);
       setCurrentAPR(apr);
-      console.log("🔍 ========== UI STATE UPDATE ==========");
-      console.log("🔍 isEligible from service:", isEligible);
-      console.log("🔍 Setting isEligibleFinancier state to:", isEligible);
-      console.log("🔍 =====================================");
       setIsEligibleFinancier(isEligible);
+
+      // Cache the results (5 minute TTL)
+      performanceCache.set(cacheKey, {
+        stake,
+        pool,
+        config,
+        balance,
+        apr,
+        isEligible,
+      }, 5 * 60 * 1000);
+
+      setDataVersion(v => v + 1);
     } catch (error) {
       console.error("Failed to load staking data:", error);
       Alert.alert("Error", "Failed to load staking data. Please try again.");
     } finally {
       setIsLoading(false);
+      isInitialMount.current = false;
     }
-  };
+  }, [isUnlocked, address, selectedNetwork.chainId]);
 
   // Load governance data
-  const loadGovernanceData = async () => {
+  const loadGovernanceData = useCallback(async () => {
     if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
       return;
     }
 
     try {
       setIsLoadingProposals(true);
+
+      // 🚀 Try to get preloaded data first
+      const preloadedData = await dataPreloader.preloadAll(address, selectedNetwork.chainId);
+      
+      if (preloadedData.governance) {
+        console.log('[TreasuryPortal] Using preloaded governance data');
+        setProposals(preloadedData.governance.proposals);
+        setDAOStats(preloadedData.governance.daoStats);
+        setDAOConfig(preloadedData.governance.daoConfig);
+        setIsLoadingProposals(false);
+        return;
+      }
+
       await initializeStakingService();
 
+      // Performance: Cache governance data
+      const cacheKey = `governance:${address}:${selectedNetwork.chainId}`;
+      const cachedData = performanceCache.get<any>(cacheKey);
+
+      if (cachedData) {
+        console.log('[Perf] Using cached governance data');
+        setProposals(cachedData.proposals);
+        setDAOStats(cachedData.stats);
+        setDAOConfig(cachedData.config);
+        setIsLoadingProposals(false);
+      }
+
+      // Performance: Queue governance data fetching
       const [allProposals, stats, config] = await Promise.all([
-        stakingService.getAllProposals(),
-        stakingService.getDAOStats(),
-        stakingService.getDAOConfig(),
+        asyncQueue.enqueue(
+          () => stakingService.getAllProposals(),
+          TaskPriority.NORMAL
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.getDAOStats(),
+          TaskPriority.LOW
+        ),
+        asyncQueue.enqueue(
+          () => stakingService.getDAOConfig(),
+          TaskPriority.NORMAL
+        ),
       ]);
 
       setProposals(allProposals);
       setDAOStats(stats);
       setDAOConfig(config);
+
+      // Cache for 2 minutes
+      performanceCache.set(cacheKey, {
+        proposals: allProposals,
+        stats,
+        config,
+      }, 2 * 60 * 1000);
     } catch (error) {
       console.error("Failed to load governance data:", error);
     } finally {
       setIsLoadingProposals(false);
     }
-  };
+  }, [isUnlocked, address, selectedNetwork.chainId]);
 
   // Load data on mount and when wallet/network changes
   useEffect(() => {
@@ -184,21 +301,38 @@ export function TreasuryPortalScreen() {
     }
   }, [activeTab]);
 
+  // Performance: Debounced refresh to prevent excessive reloads
+  const debouncedRefresh = useMemo(
+    () => debounce(() => {
+      if (!isTransacting) {
+        loadStakingData();
+      }
+    }, 30000), // 30 seconds
+    [isTransacting, loadStakingData]
+  );
+
   // Refresh data periodically to stay up to date
   useEffect(() => {
     if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
       return;
     }
 
-    // Refresh data every 30 seconds when user is active
-    const interval = setInterval(() => {
-      if (!isTransacting) {
-        loadStakingData();
-      }
-    }, 30000);
+    // Performance: Use timeout instead of interval for better control
+    const scheduleRefresh = () => {
+      loadingTimeoutRef.current = setTimeout(() => {
+        debouncedRefresh();
+        scheduleRefresh();
+      }, 30000);
+    };
 
-    return () => clearInterval(interval);
-  }, [isUnlocked, address, selectedNetwork.chainId, isTransacting]);
+    scheduleRefresh();
+
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, [isUnlocked, address, selectedNetwork.chainId, debouncedRefresh]);
 
   // Handle payment results when returning from payment screens
   useEffect(() => {
@@ -317,8 +451,8 @@ export function TreasuryPortalScreen() {
     }
   };
 
-  // Real staking transaction handlers
-  const handleStakeUSDC = async () => {
+  // Real staking transaction handlers with optimistic updates
+  const handleStakeUSDC = useCallback(async () => {
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       Alert.alert("Error", "Please enter a valid stake amount");
       return;
@@ -382,6 +516,9 @@ export function TreasuryPortalScreen() {
       setStakeAsFinancier(false); // Reset checkbox
       setStakingProgress("");
 
+      // Performance: Invalidate cache
+      performanceCache.invalidatePattern(`staking:${address}`);
+
       Alert.alert(
         "Stake Submitted",
         `Your ${
@@ -396,9 +533,9 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  };
+  }, [stakeAmount, stakingConfig, usdcBalance, stakeAsFinancier, address]);
 
-  const handleUnstake = async () => {
+  const handleUnstake = useCallback(async () => {
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
       Alert.alert("Error", "Please enter a valid unstake amount");
       return;
@@ -421,6 +558,9 @@ export function TreasuryPortalScreen() {
       setPendingTx(tx);
       setUnstakeAmount(""); // Clear input
 
+      // Performance: Invalidate cache
+      performanceCache.invalidatePattern(`staking:${address}`);
+
       Alert.alert(
         "Unstake Submitted",
         `Unstaking ${unstakeAmount} USDC. Transaction hash: ${tx.hash}`,
@@ -432,9 +572,9 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  };
+  }, [unstakeAmount, stakeInfo, address]);
 
-  const handleClaimRewards = async () => {
+  const handleClaimRewards = useCallback(async () => {
     try {
       setIsTransacting(true);
       await initializeStakingService();
@@ -444,6 +584,9 @@ export function TreasuryPortalScreen() {
 
       const tx = await stakingService.claimRewards();
       setPendingTx(tx);
+
+      // Performance: Invalidate cache
+      performanceCache.invalidatePattern(`staking:${address}`);
 
       Alert.alert(
         "Claim Submitted",
@@ -456,9 +599,9 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  };
+  }, [stakeInfo, address]);
 
-  const handleEmergencyWithdraw = async () => {
+  const handleEmergencyWithdraw = useCallback(async () => {
     // Check if user has an active stake
     const stakedAmount = parseFloat(stakeInfo?.amount || "0");
     const hasActiveStake = stakeInfo?.active && stakedAmount > 0;
@@ -501,6 +644,9 @@ export function TreasuryPortalScreen() {
               const tx = await stakingService.emergencyWithdraw();
               setPendingTx(tx);
 
+              // Performance: Invalidate cache
+              performanceCache.invalidatePattern(`staking:${address}`);
+
               Alert.alert(
                 "Emergency Withdrawal Submitted",
                 `Emergency withdrawal transaction submitted. Hash: ${tx.hash}`,
@@ -516,14 +662,16 @@ export function TreasuryPortalScreen() {
         },
       ]
     );
-  };
+  }, [stakeInfo, stakingConfig, address]);
 
-  const handleRefreshData = () => {
+  const handleRefreshData = useCallback(() => {
+    // Performance: Clear cache on manual refresh
+    performanceCache.clear();
     loadStakingData();
     loadGovernanceData();
-  };
+  }, [loadStakingData, loadGovernanceData]);
 
-  const handleCreateProposal = async () => {
+  const handleCreateProposal = useCallback(async () => {
     if (!proposalTitle.trim() || !proposalDescription.trim()) {
       Alert.alert(
         "Missing Information",
@@ -532,14 +680,19 @@ export function TreasuryPortalScreen() {
       return;
     }
 
-    // Generate unique proposal ID
+    // Generate unique proposal ID (use substring instead of deprecated substr)
     const proposalId = `proposal-${Date.now()}-${Math.random()
       .toString(36)
-      .substr(2, 9)}`;
+      .substring(2, 11)}`;
+
+    // Trim whitespace from inputs
+    const cleanTitle = proposalTitle.trim();
+    const cleanDescription = proposalDescription.trim();
+    const cleanCategory = proposalCategory; // Already a typed value
 
     Alert.alert(
       "Submit Proposal",
-      `Submit proposal "${proposalTitle}" for voting?`,
+      `Submit proposal "${cleanTitle}" for voting?`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -549,11 +702,21 @@ export function TreasuryPortalScreen() {
               setIsTransacting(true);
               await initializeStakingService();
 
+              console.log("📝 Creating proposal with cleaned inputs:");
+              console.log("  proposalId:", proposalId);
+              console.log("  category:", cleanCategory);
+              console.log("  title:", cleanTitle);
+              console.log("  description:", cleanDescription);
+              console.log("  proposalId length:", proposalId.length);
+              console.log("  category length:", cleanCategory.length);
+              console.log("  title length:", cleanTitle.length);
+              console.log("  description length:", cleanDescription.length);
+
               const tx = await stakingService.createProposal(
                 proposalId,
-                proposalCategory,
-                proposalTitle,
-                proposalDescription
+                cleanCategory,
+                cleanTitle,
+                cleanDescription
               );
 
               setPendingTx(tx);
@@ -568,6 +731,9 @@ export function TreasuryPortalScreen() {
               setProposalTitle("");
               setProposalDescription("");
               setProposalCategory("Treasury");
+
+              // Performance: Invalidate governance cache
+              performanceCache.invalidatePattern(`governance:${address}`);
 
               // Reload proposals after a delay
               setTimeout(() => {
@@ -586,15 +752,18 @@ export function TreasuryPortalScreen() {
         },
       ]
     );
-  };
+  }, [proposalTitle, proposalDescription, proposalCategory, address]);
 
-  const handleVoteOnProposal = async (proposalId: string, support: boolean) => {
+  const handleVoteOnProposal = useCallback(async (proposalId: string, support: boolean) => {
     try {
       setIsTransacting(true);
       await initializeStakingService();
 
       const tx = await stakingService.voteOnProposal(proposalId, support);
       setPendingTx(tx);
+
+      // Performance: Invalidate governance cache
+      performanceCache.invalidatePattern(`governance:${address}`);
 
       Alert.alert(
         "Vote Submitted!",
@@ -614,10 +783,10 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  };
+  }, [address]);
 
   // Handle Apply as Financier
-  const handleApplyAsFinancier = async () => {
+  const handleApplyAsFinancier = useCallback(async () => {
     try {
       setIsApplyingFinancier(true);
 
@@ -662,6 +831,9 @@ export function TreasuryPortalScreen() {
                 setPendingTx(tx);
                 setIsTransacting(true);
 
+                // Performance: Invalidate cache
+                performanceCache.invalidatePattern(`staking:${address}`);
+
                 Alert.alert(
                   "Application Submitted!",
                   `Your financier application has been submitted.\n\nTransaction Hash: ${tx.hash}\n\nYou will be able to create proposals, vote, and participate in pool guarantees once confirmed.`,
@@ -690,10 +862,10 @@ export function TreasuryPortalScreen() {
       Alert.alert("Error", error.message || "Failed to apply as financier");
       setIsApplyingFinancier(false);
     }
-  };
+  }, [stakeInfo, stakingConfig, address]);
 
   // Helper function to calculate time left
-  const getTimeLeft = (deadline: number): string => {
+  const getTimeLeft = useCallback((deadline: number): string => {
     const now = Math.floor(Date.now() / 1000);
     const diff = deadline - now;
 
@@ -704,7 +876,23 @@ export function TreasuryPortalScreen() {
 
     if (days > 0) return `${days}d ${hours}h`;
     return `${hours}h`;
-  };
+  }, []);
+
+  // Performance: Memoize expensive computations
+  const stakedAmount = useMemo(
+    () => parseFloat(stakeInfo?.amount || "0"),
+    [stakeInfo?.amount]
+  );
+
+  const hasActiveStake = useMemo(
+    () => stakeInfo?.active && stakedAmount > 0,
+    [stakeInfo?.active, stakedAmount]
+  );
+
+  const pendingRewardsAmount = useMemo(
+    () => parseFloat(stakeInfo?.pendingRewards || "0"),
+    [stakeInfo?.pendingRewards]
+  );
 
   return (
     <Screen>
@@ -854,6 +1042,18 @@ export function TreasuryPortalScreen() {
                 </View>
               ) : (
                 <>
+                  {/* Show skeleton loaders while loading */}
+                  {isLoading ? (
+                    <>
+                      <SkeletonStatsGrid />
+                      <View style={{ marginTop: spacing.lg }}>
+                        <Skeleton width="40%" height={16} style={{ marginBottom: spacing.md }} />
+                        <Skeleton width="100%" height={48} style={{ marginBottom: spacing.md }} />
+                        <Skeleton width="100%" height={48} />
+                      </View>
+                    </>
+                  ) : (
+                    <>
                   <View style={styles.statsGrid}>
                     <View style={styles.statBox}>
                       <Text style={styles.statLabel}>Your Stake</Text>
@@ -1177,6 +1377,8 @@ export function TreasuryPortalScreen() {
                       </View>
                     </View>
                   )}
+                  </>
+                  )}
                 </>
               )}
             </View>
@@ -1197,6 +1399,10 @@ export function TreasuryPortalScreen() {
                     />
                   </TouchableOpacity>
                 </View>
+                
+                {isLoading ? (
+                  <SkeletonCard />
+                ) : (
                 <View style={styles.earningsCard}>
                   <View style={styles.earningsRow}>
                     <View style={styles.earningsItem}>
@@ -1285,6 +1491,7 @@ export function TreasuryPortalScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                )}
               </View>
             )}
           </>
@@ -1614,10 +1821,7 @@ export function TreasuryPortalScreen() {
                 </View>
 
                 {isLoadingProposals ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={colors.primary} />
-                    <Text style={styles.loadingText}>Loading proposals...</Text>
-                  </View>
+                  <SkeletonList count={3} />
                 ) : proposals.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons

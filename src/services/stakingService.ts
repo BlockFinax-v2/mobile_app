@@ -762,21 +762,11 @@ class StakingService {
       if (!isEligible) {
         const stakingConfig = await this.getStakingConfig();
         const currentStake = ethers.utils.formatUnits(stakeData.amount, 6);
-        const lockRemaining = stakeData.deadline - Math.floor(Date.now() / 1000);
-        const lockRemainingDays = Math.floor(lockRemaining / 86400);
-        const minLockDays = Math.floor(stakingConfig.minFinancierLockDuration / 86400);
-        
         console.log('❌ Not eligible. Current stake:', currentStake, 'USDC');
-        console.log('❌ Minimum required stake:', stakingConfig.minimumFinancierStake, 'USDC');
-        console.log('❌ Lock duration remaining:', lockRemaining, 'seconds (', lockRemainingDays, 'days)');
-        console.log('❌ Minimum lock duration required:', stakingConfig.minFinancierLockDuration, 'seconds (', minLockDays, 'days)');
+        console.log('❌ Minimum required:', stakingConfig.minimumFinancierStake, 'USDC');
+        console.log('❌ Lock duration remaining:', stakeData.lockDuration?.toString());
         
-        throw new Error(
-          `Cannot apply as financier. Requirements:\n\n` +
-          `• Stake Amount: ${currentStake} USDC ` + (parseFloat(currentStake) >= parseFloat(stakingConfig.minimumFinancierStake) ? '✓' : `✗ (need ${stakingConfig.minimumFinancierStake})`) + `\n` +
-          `• Lock Duration: ${lockRemainingDays} days remaining ` + (lockRemaining >= stakingConfig.minFinancierLockDuration ? '✓' : `✗ (need ${minLockDays} days)`) + `\n\n` +
-          `Tip: You staked with a regular lock period. To become a financier, you need to stake with the "Stake as Financier" option which uses a longer lock period.`
-        );
+        throw new Error(`You need at least ${stakingConfig.minimumFinancierStake} USDC staked to become a financier.\n\nCurrent stake: ${currentStake} USDC\n\nNote: The contract may also check lock duration or other requirements.`);
       }
       
       // Try with manual gas limit to avoid estimation issues
@@ -1157,7 +1147,7 @@ class StakingService {
 
       // Add manual gas limit to avoid estimation errors
       const gasLimit = ethers.utils.hexlify(300000); // 300k gas limit
-      const tx = await contract.createProposal(proposalId, category, title, description, { gasLimit });
+      const tx = await contract.createProposal(proposalId, category, title, description);
       
       return {
         hash: tx.hash,
