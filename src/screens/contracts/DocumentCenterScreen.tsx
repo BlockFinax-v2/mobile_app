@@ -3,10 +3,16 @@ import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { uploadToIPFS } from "@/config/ipfs";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
-import React, { useMemo, useState } from "react";
+import * as DocumentPicker from "expo-document-picker";
+import * as WebBrowser from "expo-web-browser";
+import * as Clipboard from "expo-clipboard";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Linking } from "react-native";
+import React, { useState, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
   Alert,
@@ -14,82 +20,190 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from "react-native";
 
 interface DocumentForm {
   title: string;
-  type: string;
-  reference: string;
-  notes: string;
 }
 
 interface StoredDocument {
   id: string;
   title: string;
-  type: string;
-  reference: string;
-  status: "Pending" | "Verified" | "Rejected";
+  fileName: string;
+  fileUri: string;
+  ipfsHash: string;
+  ipfsUrl: string;
+  fileType: string;
+  fileSize: number;
   uploadedAt: string;
 }
 
-const initialDocuments: StoredDocument[] = [
-  {
-    id: "doc-1",
-    title: "Commercial Invoice",
-    type: "Invoice",
-    reference: "CT-1209",
-    status: "Verified",
-    uploadedAt: "Oct 24, 2025",
-  },
-  {
-    id: "doc-2",
-    title: "Bill of Lading",
-    type: "Shipping",
-    reference: "CT-1188",
-    status: "Pending",
-    uploadedAt: "Oct 21, 2025",
-  },
-];
+const DOCUMENTS_STORAGE_KEY = "@stored_documents";
 
 export const DocumentCenterScreen: React.FC = () => {
   const navigation = useNavigation();
-  const [documents, setDocuments] = useState(initialDocuments);
+  const [documents, setDocuments] = useState<StoredDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<{
+    uri: string;
+    name: string;
+    type: string;
+    size: number;
+  } | null>(null);
 
   const { control, handleSubmit, reset, watch } = useForm<DocumentForm>({
     defaultValues: {
       title: "",
-      type: "",
-      reference: "",
-      notes: "",
     },
   });
 
-  const pendingCount = useMemo(
-    () => documents.filter((doc) => doc.status === "Pending").length,
-    [documents]
-  );
+  // Load documents from AsyncStorage on mount
+  useEffect(() => {
+    loadDocuments();
+  }, []);
 
-  const onSubmit = handleSubmit((values) => {
-    const now = new Date();
-    const nextDocument: StoredDocument = {
-      id: `doc-${Date.now()}`,
-      title: values.title.trim(),
-      type: values.type.trim() || "General",
-      reference: values.reference.trim() || "N/A",
-      status: "Pending",
-      uploadedAt: now.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-    };
+  // Save documents to AsyncStorage whenever they change
+  useEffect(() => {
+    if (documents.length > 0) {
+      saveDocuments();
+    }
+  }, [documents]);
 
-    setDocuments((prev) => [nextDocument, ...prev]);
-    reset();
+  const loadDocuments = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      if (stored) {
+        setDocuments(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error("Failed to load documents:", error);
+    }
+  };
+
+  const saveDocuments = async () => {
+    try {
+      await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
+    } catch (error) {
+      console.error("Failed to save documents:", error);
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "*/*",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const file = result.assets[0];
+        setSelectedFile({
+          uri: file.uri,
+          name: file.name,
+          type: file.mimeType || "application/octet-stream",
+          size: file.size || 0,
+        });
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to pick document");
+    }
+  };
+
+  const viewDocument = async (doc: StoredDocument) => {
+    try {
+      // Always use IPFS URL for viewing
+      await WebBrowser.openBrowserAsync(doc.ipfsUrl);
+    } catch (error) {
+      Alert.alert("Error", "Failed to open document from IPFS");
+    }
+  };
+
+  const copyShareLink = async (doc: StoredDocument) => {
+    try {
+      await Clipboard.setStringAsync(doc.ipfsUrl);
+      Alert.alert(
+        "Link Copied!",
+        `The shareable IPFS link for "${doc.title}" has been copied to your clipboard. Anyone with this link can view the document.`
+      );
+    } catch (error) {
+      Alert.alert("Error", "Failed to copy link to clipboard");
+    }
+  };
+
+  const deleteDocument = (doc: StoredDocument) => {
     Alert.alert(
-      "Document Submitted",
-      "We will notify you once verification completes."
+      "Delete Document",
+      `Are you sure you want to delete "${doc.title}"? This action cannot be undone.\n\nNote: The document will still exist on IPFS and can be accessed via the IPFS link.`,
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const updatedDocs = documents.filter((d) => d.id !== doc.id);
+            setDocuments(updatedDocs);
+            await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(updatedDocs));
+            Alert.alert(
+              "Deleted",
+              `"${doc.title}" has been removed from your documents.`
+            );
+          },
+        },
+      ]
     );
+  };
+
+  const onSubmit = handleSubmit(async (values) => {
+    if (!selectedFile) {
+      Alert.alert("No File Selected", "Please select a document to upload");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      // Upload to IPFS
+      const { ipfsHash, ipfsUrl } = await uploadToIPFS(
+        selectedFile.uri,
+        selectedFile.name,
+        selectedFile.type
+      );
+
+      const now = new Date();
+      const nextDocument: StoredDocument = {
+        id: `doc-${Date.now()}`,
+        title: values.title.trim(),
+        fileName: selectedFile.name,
+        fileUri: selectedFile.uri,
+        ipfsHash,
+        ipfsUrl,
+        fileType: selectedFile.type,
+        fileSize: selectedFile.size,
+        uploadedAt: now.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        }),
+      };
+
+      setDocuments((prev) => [nextDocument, ...prev]);
+      reset();
+      setSelectedFile(null);
+      Alert.alert(
+        "Document Uploaded",
+        `Your document has been uploaded to IPFS and is ready to use.\n\nIPFS: ${ipfsHash}`
+      );
+    } catch (error) {
+      Alert.alert(
+        "Upload Failed",
+        "Failed to upload document to IPFS. Please try again."
+      );
+    } finally {
+      setUploading(false);
+    }
   });
 
   return (
@@ -100,7 +214,8 @@ export const DocumentCenterScreen: React.FC = () => {
         <View style={styles.header}>
           <Text style={styles.title}>Document Center</Text>
           <Text style={styles.subtitle}>
-            {documents.length} total • {pendingCount} awaiting review
+            {documents.length}{" "}
+            {documents.length === 1 ? "document" : "documents"} stored
           </Text>
         </View>
 
@@ -113,7 +228,7 @@ export const DocumentCenterScreen: React.FC = () => {
                 size={24}
                 color={colors.primary}
               />
-              <Text style={styles.cardTitle}>Upload Supporting Document</Text>
+              <Text style={styles.cardTitle}>Upload Document</Text>
             </View>
 
             <Controller
@@ -131,74 +246,87 @@ export const DocumentCenterScreen: React.FC = () => {
               )}
             />
 
-            <Controller
-              control={control}
-              name="type"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Document Type"
-                  value={value}
-                  onChangeText={onChange}
-                  placeholder="Invoice, Shipping, Compliance..."
+            {/* File Picker */}
+            <View>
+              <Text style={styles.inputLabel}>Select File</Text>
+              <TouchableOpacity
+                style={styles.filePickerButton}
+                onPress={pickDocument}
+              >
+                <MaterialCommunityIcons
+                  name={selectedFile ? "file-check" : "file-upload"}
+                  size={24}
+                  color={selectedFile ? colors.success : colors.textSecondary}
                 />
-              )}
-            />
-
-            <Controller
-              control={control}
-              name="reference"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Contract Reference"
-                  value={value}
-                  onChangeText={onChange}
-                  placeholder="Link to contract or trade ID"
+                <View style={styles.filePickerContent}>
+                  <Text style={styles.filePickerText}>
+                    {selectedFile
+                      ? selectedFile.name
+                      : "Choose a file to upload"}
+                  </Text>
+                  {selectedFile && (
+                    <Text style={styles.filePickerSize}>
+                      {(selectedFile.size / 1024).toFixed(1)} KB
+                    </Text>
+                  )}
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={24}
+                  color={colors.textSecondary}
                 />
-              )}
-            />
-
-            <Controller
-              control={control}
-              name="notes"
-              render={({ field: { onChange, value } }) => (
-                <Input
-                  label="Notes"
-                  value={value}
-                  onChangeText={onChange}
-                  placeholder="Add any verification context"
-                  multiline
-                  numberOfLines={3}
-                  helperText={`${value.length}/200 characters`}
-                  maxLength={200}
-                />
-              )}
-            />
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={[
                 styles.uploadButton,
-                !watch("title").trim() && styles.uploadButtonDisabled,
+                (!watch("title").trim() || !selectedFile || uploading) &&
+                  styles.uploadButtonDisabled,
               ]}
               onPress={onSubmit}
-              disabled={!watch("title").trim()}
+              disabled={!watch("title").trim() || !selectedFile || uploading}
             >
-              <MaterialCommunityIcons name="upload" size={20} color="white" />
-              <Text style={styles.uploadButtonText}>
-                Submit for Verification
-              </Text>
+              {uploading ? (
+                <>
+                  <ActivityIndicator size="small" color="white" />
+                  <Text style={styles.uploadButtonText}>
+                    Uploading to IPFS...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="upload"
+                    size={20}
+                    color="white"
+                  />
+                  <Text style={styles.uploadButtonText}>Upload Document</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Recent Documents */}
+        {/* Stored Documents */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Documents</Text>
+          <Text style={styles.sectionTitle}>Your Documents</Text>
           {documents.map((doc) => (
             <View key={doc.id} style={styles.documentCard}>
-              <View style={styles.documentHeader}>
+              <TouchableOpacity
+                style={styles.documentMainContent}
+                onPress={() => viewDocument(doc)}
+                activeOpacity={0.7}
+              >
                 <View style={styles.documentIcon}>
                   <MaterialCommunityIcons
-                    name="file-document"
+                    name={
+                      doc.fileType.startsWith("image/")
+                        ? "file-image"
+                        : doc.fileType === "application/pdf"
+                        ? "file-pdf-box"
+                        : "file-document"
+                    }
                     size={24}
                     color={colors.primary}
                   />
@@ -206,31 +334,51 @@ export const DocumentCenterScreen: React.FC = () => {
                 <View style={styles.documentInfo}>
                   <Text style={styles.documentTitle}>{doc.title}</Text>
                   <Text style={styles.documentMeta}>
-                    {doc.type} • Ref {doc.reference}
+                    {doc.fileName} • {(doc.fileSize / 1024).toFixed(1)} KB
+                  </Text>
+                  <Text style={styles.ipfsHash} numberOfLines={1}>
+                    IPFS: {doc.ipfsHash}
                   </Text>
                 </View>
                 <View style={styles.documentStatus}>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      doc.status === "Verified" && styles.statusVerified,
-                      doc.status === "Rejected" && styles.statusRejected,
-                      doc.status === "Pending" && styles.statusPending,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusText,
-                        doc.status === "Verified" && styles.statusTextVerified,
-                        doc.status === "Rejected" && styles.statusTextRejected,
-                        doc.status === "Pending" && styles.statusTextPending,
-                      ]}
-                    >
-                      {doc.status}
-                    </Text>
+                  <View style={styles.statusBadge}>
+                    <MaterialCommunityIcons
+                      name="eye"
+                      size={16}
+                      color={colors.primary}
+                    />
                   </View>
                   <Text style={styles.documentDate}>{doc.uploadedAt}</Text>
                 </View>
+              </TouchableOpacity>
+
+              {/* Action Buttons */}
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.shareButton}
+                  onPress={() => copyShareLink(doc)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name="share-variant"
+                    size={18}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.shareButtonText}>Copy Link</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteButton}
+                  onPress={() => deleteDocument(doc)}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name="delete-outline"
+                    size={18}
+                    color={colors.error}
+                  />
+                  <Text style={styles.deleteButtonText}>Delete</Text>
+                </TouchableOpacity>
               </View>
             </View>
           ))}
@@ -335,6 +483,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  documentMainContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   documentHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -361,40 +513,84 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
   },
+  ipfsHash: {
+    fontSize: 12,
+    color: colors.primary,
+    marginTop: spacing.xs,
+    fontFamily: "monospace",
+  },
   documentStatus: {
     alignItems: "flex-end",
   },
   statusBadge: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: 16,
     marginBottom: spacing.xs,
   },
-  statusVerified: {
-    backgroundColor: colors.success + "20",
-  },
-  statusRejected: {
-    backgroundColor: colors.error + "20",
-  },
-  statusPending: {
-    backgroundColor: colors.warning + "20",
-  },
-  statusText: {
-    fontSize: 12,
+  inputLabel: {
+    fontSize: 14,
     fontWeight: "500",
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
-  statusTextVerified: {
-    color: colors.success,
+  filePickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.md,
+    gap: spacing.md,
   },
-  statusTextRejected: {
-    color: colors.error,
+  filePickerContent: {
+    flex: 1,
   },
-  statusTextPending: {
-    color: colors.warning,
+  filePickerText: {
+    fontSize: 15,
+    color: colors.text,
+    marginBottom: 2,
+  },
+  filePickerSize: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   documentDate: {
     fontSize: 12,
     color: colors.textSecondary,
+  },
+  actionButtons: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  shareButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.primary + "10",
+    borderRadius: 8,
+    padding: spacing.sm,
+    gap: spacing.xs,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.primary,
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.error + "10",
+    borderRadius: 8,
+    padding: spacing.sm,
+    gap: spacing.xs,
+  },
+  deleteButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.error,
   },
   emptyState: {
     backgroundColor: "white",

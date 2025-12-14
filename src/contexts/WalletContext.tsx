@@ -502,9 +502,15 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
             selectedNetwork
           );
 
-          // Calculate USD values for tokens
+          // Calculate USD values for tokens (excluding native token to avoid double counting)
+          // Native token USD value is already calculated in primaryUsdValue
+          const nonNativeTokens = tokens.filter(
+            (token) =>
+              token.address !== "0x0000000000000000000000000000000000000000"
+          );
+
           const tokensWithUSD = await Promise.all(
-            tokens.map(async (token) => {
+            nonNativeTokens.map(async (token) => {
               const usdValue = await priceService.calculateUSDValue(
                 token.symbol,
                 token.balance,
@@ -517,7 +523,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
             })
           );
 
-          // Calculate total USD value
+          // Calculate total USD value from stablecoins only
           const totalTokenUsdValue = tokensWithUSD.reduce(
             (sum, token) => sum + (token.usdValue || 0),
             0

@@ -28,6 +28,7 @@ import {
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import { PoolGuaranteeApplicationFlow } from "@/components/trade/PoolGuaranteeApplicationFlow";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -779,89 +780,182 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
 
   const renderOverviewTab = () => (
     <View style={styles.content}>
-      {/* Portfolio Balance Section */}
-      <View style={styles.portfolioCard}>
-        <View style={styles.portfolioHeader}>
-          <Text style={styles.portfolioTitle}>Portfolio Balance</Text>
-          <Text style={styles.networkLabel}>Base Sepolia Network</Text>
-        </View>
-        <Text style={styles.portfolioBalance}>{poolBalance.balance}</Text>
-        <Text style={styles.portfolioSubtext}>{poolBalance.liveBalance}</Text>
-        <Text style={styles.portfolioSubtext}>{poolBalance.stakedInDB}</Text>
-      </View>
-
-      {/* Trade Finance Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Treasury Pool Balance</Text>
-          <Text style={styles.statValue}>{poolBalance.balance}</Text>
-          <Text style={styles.statSubtext}>{poolBalance.liveBalance}</Text>
-          <Text style={styles.statSubtext}>{poolBalance.stakedInDB}</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Pending Guarantees</Text>
-          <Text style={styles.statValue}>{guaranteeStats.pending}</Text>
-          <Text style={styles.statSubtext}>Being processed</Text>
+      {/* Treasury Pool Overview Card */}
+      <View style={styles.treasuryOverviewCard}>
+        <View style={styles.treasuryHeader}>
+          <View style={styles.treasuryHeaderLeft}>
+            <MaterialCommunityIcons
+              name="bank"
+              size={24}
+              color={colors.primary}
+            />
+            <View style={styles.treasuryHeaderText}>
+              <Text style={styles.treasuryTitle}>Treasury Pool</Text>
+              <Text style={styles.treasuryNetwork}>Polygon Network</Text>
+            </View>
+          </View>
+          <MaterialCommunityIcons
+            name="information-outline"
+            size={20}
+            color={colors.textSecondary}
+          />
         </View>
 
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Total Guaranteed</Text>
-          <Text style={styles.statValue}>{guaranteeStats.totalGuaranteed}</Text>
-          <Text style={styles.statSubtext}>Active guarantees</Text>
+        <View style={styles.treasuryBalance}>
+          <Text style={styles.treasuryBalanceLabel}>Available Balance</Text>
+          <Text style={styles.treasuryBalanceValue}>{poolBalance.balance}</Text>
+          <Text style={styles.treasuryBalanceSubtext}>
+            {poolBalance.liveBalance}
+          </Text>
+        </View>
+
+        <View style={styles.treasuryDivider} />
+
+        <View style={styles.treasuryStatsRow}>
+          <View style={styles.treasuryStatItem}>
+            <MaterialCommunityIcons
+              name="progress-clock"
+              size={20}
+              color="#FF9800"
+            />
+            <Text style={styles.treasuryStatValue}>
+              {guaranteeStats.inProgress}
+            </Text>
+            <Text style={styles.treasuryStatLabel}>In Progress</Text>
+          </View>
+
+          <View style={styles.treasuryStatDivider} />
+
+          <View style={styles.treasuryStatItem}>
+            <MaterialCommunityIcons
+              name="clock-outline"
+              size={20}
+              color="#2196F3"
+            />
+            <Text style={styles.treasuryStatValue}>
+              {guaranteeStats.pending}
+            </Text>
+            <Text style={styles.treasuryStatLabel}>Pending</Text>
+          </View>
+
+          <View style={styles.treasuryStatDivider} />
+
+          <View style={styles.treasuryStatItem}>
+            <MaterialCommunityIcons
+              name="shield-check"
+              size={20}
+              color="#4CAF50"
+            />
+            <Text style={styles.treasuryStatValue}>
+              {guaranteeStats.totalGuaranteed}
+            </Text>
+            <Text style={styles.treasuryStatLabel}>Guaranteed</Text>
+          </View>
         </View>
       </View>
 
       {/* Role Selection Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>I am a...</Text>
-        <Text style={styles.sectionSubtitle}>
-          Select your role in the trade finance process
-        </Text>
+      <View style={styles.roleSelectionSection}>
+        <View style={styles.roleSelectionHeader}>
+          <Text style={styles.roleSelectionTitle}>Select Your Role</Text>
+          <Text style={styles.roleSelectionSubtitle}>
+            Choose how you want to participate in trade finance
+          </Text>
+        </View>
 
-        <View style={styles.roleSelection}>
+        <View style={styles.roleCardsContainer}>
           <TouchableOpacity
             style={[
-              styles.roleButton,
-              userRole === "buyer" && styles.roleButtonActive,
+              styles.roleCard,
+              userRole === "buyer" && styles.roleCardActive,
             ]}
             onPress={() => setUserRole("buyer")}
+            activeOpacity={0.7}
           >
-            <MaterialCommunityIcons
-              name="account"
-              size={20}
-              color={userRole === "buyer" ? "white" : colors.primary}
-            />
+            <View
+              style={[
+                styles.roleCardIcon,
+                userRole === "buyer" && styles.roleCardIconActive,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="cart"
+                size={32}
+                color={userRole === "buyer" ? "white" : colors.primary}
+              />
+            </View>
             <Text
               style={[
-                styles.roleButtonText,
-                userRole === "buyer" && styles.roleButtonTextActive,
+                styles.roleCardTitle,
+                userRole === "buyer" && styles.roleCardTitleActive,
               ]}
             >
               Buyer
             </Text>
+            <Text
+              style={[
+                styles.roleCardDescription,
+                userRole === "buyer" && styles.roleCardDescriptionActive,
+              ]}
+            >
+              Apply for pool guarantees to secure your trade purchases
+            </Text>
+            {userRole === "buyer" && (
+              <View style={styles.roleCardCheckmark}>
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={24}
+                  color={colors.primary}
+                />
+              </View>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.roleButton,
-              userRole === "seller" && styles.roleButtonActive,
+              styles.roleCard,
+              userRole === "seller" && styles.roleCardActive,
             ]}
             onPress={() => setUserRole("seller")}
+            activeOpacity={0.7}
           >
-            <MaterialCommunityIcons
-              name="store"
-              size={20}
-              color={userRole === "seller" ? "white" : colors.primary}
-            />
+            <View
+              style={[
+                styles.roleCardIcon,
+                userRole === "seller" && styles.roleCardIconActive,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="store"
+                size={32}
+                color={userRole === "seller" ? "white" : colors.primary}
+              />
+            </View>
             <Text
               style={[
-                styles.roleButtonText,
-                userRole === "seller" && styles.roleButtonTextActive,
+                styles.roleCardTitle,
+                userRole === "seller" && styles.roleCardTitleActive,
               ]}
             >
               Seller
             </Text>
+            <Text
+              style={[
+                styles.roleCardDescription,
+                userRole === "seller" && styles.roleCardDescriptionActive,
+              ]}
+            >
+              Review and approve guarantee drafts from buyers
+            </Text>
+            {userRole === "seller" && (
+              <View style={styles.roleCardCheckmark}>
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={24}
+                  color={colors.primary}
+                />
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -1190,433 +1284,19 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
         {renderOverviewTab()}
       </ScrollView>
 
-      {/* Pool Guarantee Application Modal */}
+      {/* Pool Guarantee Application Modal - Multi-Step Flow */}
       <Modal
         visible={showApplicationModal}
         animationType="slide"
-        presentationStyle="pageSheet"
+        presentationStyle="fullScreen"
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Apply for Pool Guarantee</Text>
-            <TouchableOpacity onPress={() => setShowApplicationModal(false)}>
-              <MaterialCommunityIcons
-                name="close"
-                size={24}
-                color={colors.text}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={styles.modalContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.modalSubtitle}>
-              Submit application with proforma invoice and sales contract.
-              Replaces traditional Letter of Credit.
-            </Text>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>
-                Customer Identity (Required)
-              </Text>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Company Name *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.companyName}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        companyName: text,
-                      })
-                    }
-                    placeholder="ABC Trading Ltd."
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Registration Number *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.registrationNumber}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        registrationNumber: text,
-                      })
-                    }
-                    placeholder="12345678"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Country *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.country}
-                    onChangeText={(text) =>
-                      setApplicationForm({ ...applicationForm, country: text })
-                    }
-                    placeholder="United States"
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Contact Person *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.contactPerson}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        contactPerson: text,
-                      })
-                    }
-                    placeholder="John Doe"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Email *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.email}
-                    onChangeText={(text) =>
-                      setApplicationForm({ ...applicationForm, email: text })
-                    }
-                    placeholder="contact@company.com"
-                    keyboardType="email-address"
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Phone *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.phone}
-                    onChangeText={(text) =>
-                      setApplicationForm({ ...applicationForm, phone: text })
-                    }
-                    placeholder="+1 234 567 8900"
-                    keyboardType="phone-pad"
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>Trade Details</Text>
-
-              <View style={styles.formField}>
-                <Text style={styles.formLabel}>Trade Description *</Text>
-                <TextInput
-                  style={[styles.formInput, styles.textArea]}
-                  value={applicationForm.tradeDescription}
-                  onChangeText={(text) =>
-                    setApplicationForm({
-                      ...applicationForm,
-                      tradeDescription: text,
-                    })
-                  }
-                  placeholder="e.g., Import of 10,000 units of electronics from China"
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Total Trade Value (USDC)</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.totalTradeValue}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        totalTradeValue: text,
-                      })
-                    }
-                    placeholder="100000"
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>
-                    Guarantee Amount Requested (USDC) *
-                  </Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.guaranteeAmount}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        guaranteeAmount: text,
-                      })
-                    }
-                    placeholder="50000"
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Collateral Description *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.collateralDescription}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        collateralDescription: text,
-                      })
-                    }
-                    placeholder="e.g., 10,000 units of electronics (goods as collateral)"
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Collateral Value (USDC)</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.collateralValue}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        collateralValue: text,
-                      })
-                    }
-                    placeholder="100000"
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>
-                    Seller/Beneficiary Wallet Address *
-                  </Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.sellerWalletAddress}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        sellerWalletAddress: text,
-                      })
-                    }
-                    placeholder="0x..."
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>
-                    Financing Duration (days)
-                  </Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.financingDuration}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        financingDuration: text,
-                      })
-                    }
-                    placeholder="90"
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>
-                Sales Contract Reference
-              </Text>
-
-              <View style={styles.formRow}>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Contract Number</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.contractNumber}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        contractNumber: text,
-                      })
-                    }
-                    placeholder="SC-2025-001"
-                  />
-                </View>
-                <View style={styles.formFieldHalf}>
-                  <Text style={styles.formLabel}>Contract Date</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={applicationForm.contractDate}
-                    onChangeText={(text) =>
-                      setApplicationForm({
-                        ...applicationForm,
-                        contractDate: text,
-                      })
-                    }
-                    placeholder="mm/dd/yyyy"
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.formSection}>
-              <Text style={styles.formSectionTitle}>Required Documents</Text>
-
-              <View style={styles.documentUpload}>
-                <Text style={styles.formLabel}>Proforma Invoice *</Text>
-                {applicationForm.proformaInvoice ? (
-                  <View style={styles.uploadedFile}>
-                    <MaterialCommunityIcons
-                      name="file-check"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.uploadedFileName}>
-                      {applicationForm.proformaInvoice.name}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() =>
-                        setApplicationForm({
-                          ...applicationForm,
-                          proformaInvoice: null,
-                        })
-                      }
-                    >
-                      <MaterialCommunityIcons
-                        name="close"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.uploadButtons}>
-                    <TouchableOpacity
-                      style={styles.uploadButton}
-                      onPress={() => handleDocumentPick("proformaInvoice")}
-                    >
-                      <MaterialCommunityIcons
-                        name="file-upload"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.uploadButtonText}>
-                        Choose Document
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.uploadButton}
-                      onPress={() => handleImagePick("proformaInvoice")}
-                    >
-                      <MaterialCommunityIcons
-                        name="camera"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.uploadButtonText}>Take Photo</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                <Text style={styles.uploadSubtext}>
-                  PDF or Image (PNG, JPG) • Max 10MB
-                </Text>
-              </View>
-
-              <View style={styles.documentUpload}>
-                <Text style={styles.formLabel}>Sales Contract *</Text>
-                {applicationForm.salesContract ? (
-                  <View style={styles.uploadedFile}>
-                    <MaterialCommunityIcons
-                      name="file-check"
-                      size={24}
-                      color={colors.primary}
-                    />
-                    <Text style={styles.uploadedFileName}>
-                      {applicationForm.salesContract.name}
-                    </Text>
-                    <TouchableOpacity
-                      onPress={() =>
-                        setApplicationForm({
-                          ...applicationForm,
-                          salesContract: null,
-                        })
-                      }
-                    >
-                      <MaterialCommunityIcons
-                        name="close"
-                        size={20}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.uploadButtons}>
-                    <TouchableOpacity
-                      style={styles.uploadButton}
-                      onPress={() => handleDocumentPick("salesContract")}
-                    >
-                      <MaterialCommunityIcons
-                        name="file-upload"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.uploadButtonText}>
-                        Choose Document
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.uploadButton}
-                      onPress={() => handleImagePick("salesContract")}
-                    >
-                      <MaterialCommunityIcons
-                        name="camera"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.uploadButtonText}>Take Photo</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                <Text style={styles.uploadSubtext}>
-                  PDF or Image (PNG, JPG) • Max 10MB
-                </Text>
-              </View>
-
-              <View style={styles.issuanceFee}>
-                <MaterialCommunityIcons
-                  name="information"
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={styles.issuanceFeeText}>
-                  Issuance Fee (1%): Payable after seller approves draft
-                  certificate
-                </Text>
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleSubmitApplication}
-            >
-              <MaterialCommunityIcons name="send" size={20} color="white" />
-              <Text style={styles.submitButtonText}>
-                Submit Pool Guarantee Application
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
+        <PoolGuaranteeApplicationFlow
+          onClose={() => setShowApplicationModal(false)}
+          onSubmit={handleSubmitApplication}
+          onDocumentPick={handleDocumentPick}
+          onImagePick={handleImagePick}
+          initialFormData={applicationForm}
+        />
       </Modal>
 
       {/* Draft Certificate Modal */}
@@ -2540,6 +2220,170 @@ const styles = StyleSheet.create({
   },
   roleButtonTextActive: {
     color: "white",
+  },
+  // Treasury Overview Card Styles
+  treasuryOverviewCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  treasuryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.lg,
+  },
+  treasuryHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  treasuryHeaderText: {
+    gap: spacing.xs / 2,
+  },
+  treasuryTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  treasuryNetwork: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  treasuryBalance: {
+    alignItems: "center",
+    paddingVertical: spacing.md,
+  },
+  treasuryBalanceLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    fontWeight: "500",
+  },
+  treasuryBalanceValue: {
+    fontSize: 36,
+    fontWeight: "700",
+    color: colors.primary,
+    marginBottom: spacing.xs / 2,
+  },
+  treasuryBalanceSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  treasuryDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
+  },
+  treasuryStatsRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+  },
+  treasuryStatItem: {
+    alignItems: "center",
+    gap: spacing.xs,
+    flex: 1,
+  },
+  treasuryStatValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  treasuryStatLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  treasuryStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: colors.border,
+  },
+  // Role Selection Styles
+  roleSelectionSection: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  roleSelectionHeader: {
+    marginBottom: spacing.lg,
+  },
+  roleSelectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  roleSelectionSubtitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  roleCardsContainer: {
+    gap: spacing.md,
+  },
+  roleCard: {
+    backgroundColor: "white",
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderRadius: 12,
+    padding: spacing.lg,
+    position: "relative",
+  },
+  roleCardActive: {
+    borderColor: colors.primary,
+    backgroundColor: "#F5F3FF",
+  },
+  roleCardIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#F5F3FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.md,
+  },
+  roleCardIconActive: {
+    backgroundColor: colors.primary,
+  },
+  roleCardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  roleCardTitleActive: {
+    color: colors.primary,
+  },
+  roleCardDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  roleCardDescriptionActive: {
+    color: colors.text,
+  },
+  roleCardCheckmark: {
+    position: "absolute",
+    top: spacing.md,
+    right: spacing.md,
   },
   applyButton: {
     backgroundColor: colors.primary,

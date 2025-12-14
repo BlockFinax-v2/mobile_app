@@ -440,7 +440,7 @@ export default function DashboardHomeScreen() {
               </Pressable>
             </View>
           </View>
-          <Text style={styles.balanceAmount}>${balances.usd.toFixed(2)}</Text>
+          <Text style={styles.balanceAmount}>${balances.usd.toFixed(1)}</Text>
           <Text style={styles.balanceUsd}>Total USD Value</Text>
 
           {/* Last Update Indicator */}
