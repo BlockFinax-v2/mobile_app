@@ -67,7 +67,7 @@ class TransactionService {
     }
     return TransactionService.instance;
   }
-
+  
   /**
    * Get provider for a network
    */

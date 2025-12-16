@@ -1,6 +1,7 @@
 import { CommunicationProvider } from "@/contexts/CommunicationContext";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { WalletProvider } from "@/contexts/WalletContext";
+import { SmartAccountProvider } from "@/contexts/SmartAccountContext";
 import { TradeFinanceProvider } from "@/contexts/TradeFinanceContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useMemo } from "react";
@@ -22,9 +23,11 @@ const AppProviders: React.FC<React.PropsWithChildren> = ({ children }) => {
     <QueryClientProvider client={client}>
       <NetworkProvider>
         <WalletProvider>
-          <TradeFinanceProvider>
-            <CommunicationProvider>{children}</CommunicationProvider>
-          </TradeFinanceProvider>
+          <SmartAccountProvider>
+            <TradeFinanceProvider>
+              <CommunicationProvider>{children}</CommunicationProvider>
+            </TradeFinanceProvider>
+          </SmartAccountProvider>
         </WalletProvider>
       </NetworkProvider>
     </QueryClientProvider>
