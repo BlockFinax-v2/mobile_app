@@ -1,6 +1,13 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  memo,
+} from "react";
 import {
   Alert,
   ScrollView,
@@ -28,6 +35,20 @@ import {
   DAOStats,
   DAOConfig,
 } from "@/services/stakingService";
+import {
+  multiTokenStakingService,
+  MultiTokenUserStakes,
+  TokenStakeInfo,
+  MultiTokenPoolStats,
+} from "@/services/multiTokenStakingService";
+import {
+  isStakingSupportedOnNetwork,
+} from "@/services/multiNetworkStakingService";
+import {
+  getSupportedStablecoins,
+  convertToUSD,
+  StablecoinConfig,
+} from "@/config/stablecoinPrices";
 import { performanceCache } from "@/utils/performanceCache";
 import { asyncQueue, TaskPriority, debounce } from "@/utils/asyncQueue";
 import { withOptimisticUpdate } from "@/utils/optimisticUpdate";
@@ -91,58 +112,359 @@ export function TreasuryPortalScreen() {
   const [isEligibleFinancier, setIsEligibleFinancier] = useState(false);
   const [stakeAsFinancier, setStakeAsFinancier] = useState(false);
 
+  // Multi-token state
+  const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
+    null
+  );
+  const [supportedTokens, setSupportedTokens] = useState<StablecoinConfig[]>(
+    []
+  );
+  const [multiTokenStakes, setMultiTokenStakes] =
+    useState<MultiTokenUserStakes | null>(null);
+  const [tokenBalances, setTokenBalances] = useState<Record<string, string>>(
+    {}
+  );
+  const [showTokenSelector, setShowTokenSelector] = useState(false);
+  const [poolTokenStats, setPoolTokenStats] = useState<{
+    [tokenAddress: string]: { amount: string; usdValue: number };
+  }>({});
+  const [totalPoolUSD, setTotalPoolUSD] = useState<number>(0);
+
+  // Cross-network aggregated stats
+  const [userTotalStakedUSD, setUserTotalStakedUSD] = useState<number>(0);
+  const [userStakesByNetwork, setUserStakesByNetwork] = useState<
+    Record<
+      number,
+      {
+        tokens: Array<{ symbol: string; amount: string; usdValue: number }>;
+        totalUSD: number;
+      }
+    >
+  >({});
+  const [globalPoolTotalUSD, setGlobalPoolTotalUSD] = useState<number>(0);
+
   // Performance: Track loading states separately
   const [dataVersion, setDataVersion] = useState(0);
   const isInitialMount = useRef(true);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isInitializing = useRef(false); // Prevent concurrent initialization
+  const isInitialized = useRef(false); // Track if service is already initialized
 
-  // Load staking data on component mount and when wallet changes
+  // Initialize staking service with user's actual wallet credentials
+  // 🚀 OPTIMIZED: Singleton pattern to prevent multiple initializations
+  const initializeStakingService = useCallback(async () => {
+    // Skip if already initialized or currently initializing
+    if (isInitialized.current || isInitializing.current) {
+      console.log("[Perf] Staking service already initialized, skipping...");
+      return;
+    }
+
+    try {
+      if (!isUnlocked) {
+        console.log("Wallet is locked, cannot initialize staking service");
+        return;
+      }
+
+      isInitializing.current = true;
+      console.log(
+        "Initializing staking service with user's wallet credentials..."
+      );
+
+      const signer = await stakingService.getSigner();
+      const signerAddress = await signer.getAddress();
+      console.log("Staking service connected with user wallet:", signerAddress);
+
+      isInitialized.current = true;
+    } catch (error) {
+      console.error("Failed to initialize staking service:", error);
+      throw error;
+    } finally {
+      isInitializing.current = false;
+    }
+  }, [isUnlocked]);
+
+  // Load multi-token balances and stakes across ALL supported networks
+  const loadMultiTokenData = useCallback(async () => {
+    if (!isUnlocked || !address) {
+      return;
+    }
+
+    try {
+      console.log(
+        "[Multi-Token] Starting cross-network data load for address:",
+        address
+      );
+
+      // Get all supported networks with Diamond contracts
+      const supportedChainIds = [4202, 84532]; // Lisk Sepolia, Base Sepolia
+
+      let globalUserTotalUSD = 0;
+      let globalPoolTotalUSD = 0;
+      const userStakesByNet: Record<
+        number,
+        {
+          tokens: Array<{ symbol: string; amount: string; usdValue: number }>;
+          totalUSD: number;
+        }
+      > = {};
+
+      // Load current network tokens first
+      const currentNetworkTokens = getSupportedStablecoins(
+        selectedNetwork.chainId
+      );
+      if (currentNetworkTokens.length > 0) {
+        setSupportedTokens(currentNetworkTokens);
+        if (!selectedToken) {
+          setSelectedToken(currentNetworkTokens[0]);
+        }
+      }
+
+      // Load data for each supported network
+      // Note: Current contracts only support single-token (USDC) staking
+      // Multi-token support (USDT, DAI) requires deploying MultiTokenStakingFacet
+      // For now, we only load Lisk Sepolia which has the basic staking
+      const activeChainIds = [4202, 84532]; // Lisk Sepolia and Base Sepolia with multi-token staking
+
+      console.log("[Multi-Token] ⚠️ Using legacy single-token mode");
+      console.log(
+        "[Multi-Token] To enable multi-token: deploy MultiTokenStakingFacet and add tokens"
+      );
+
+      for (const chainId of activeChainIds) {
+        const networkTokens = getSupportedStablecoins(chainId);
+        const networkUserStakes: Array<{
+          symbol: string;
+          amount: string;
+          usdValue: number;
+        }> = [];
+        let networkUserTotalUSD = 0;
+
+        console.log(
+          `[Multi-Token] Loading data for chain ${chainId}, tokens:`,
+          networkTokens.map((t) => t.symbol)
+        );
+
+        try {
+          // Load user stakes for this network using new service
+          const stakesData = await multiTokenStakingService.getAllUserStakes(
+            address,
+            chainId
+          );
+
+          console.log(
+            `[Multi-Token] Stakes data for chain ${chainId}:`,
+            JSON.stringify(stakesData, null, 2)
+          );
+          console.log(
+            `[Multi-Token] Stakes array length:`,
+            stakesData?.stakes?.length || 0
+          );
+          console.log(`[Multi-Token] Stakes array:`, stakesData?.stakes);
+
+          // Process each stake from new service structure
+          if (
+            stakesData &&
+            stakesData.stakes &&
+            Array.isArray(stakesData.stakes)
+          ) {
+            console.log(
+              `[Multi-Token] Processing ${stakesData.stakes.length} stakes for chain ${chainId}`
+            );
+
+            for (const stake of stakesData.stakes) {
+              console.log(`[Multi-Token] Examining stake:`, {
+                tokenSymbol: stake.tokenSymbol,
+                amount: stake.amount,
+                active: stake.active,
+                usdValue: stake.usdValue,
+              });
+
+              if (stake.active && parseFloat(stake.amount) > 0) {
+                networkUserStakes.push({
+                  symbol: stake.tokenSymbol,
+                  amount: stake.amount,
+                  usdValue: stake.usdValue,
+                });
+                networkUserTotalUSD += stake.usdValue;
+
+                console.log(
+                  `[Multi-Token] ✅ Active stake found: ${stake.amount} ${stake.tokenSymbol} = $${stake.usdValue}`
+                );
+              } else {
+                console.log(
+                  `[Multi-Token] ⏭️ Skipping stake (active: ${stake.active}, amount: ${stake.amount})`
+                );
+              }
+            }
+          } else {
+            console.log(
+              `[Multi-Token] ⚠️ No valid stakes array for chain ${chainId}. stakesData:`,
+              stakesData
+            );
+          }
+
+          globalUserTotalUSD += networkUserTotalUSD;
+
+          if (networkUserStakes.length > 0) {
+            userStakesByNet[chainId] = {
+              tokens: networkUserStakes,
+              totalUSD: networkUserTotalUSD,
+            };
+          }
+
+          // Load pool stats for this network
+          for (const token of networkTokens) {
+            try {
+              const totalStaked =
+                await multiTokenStakingService.getTotalStakedForToken(
+                  token.address,
+                  chainId
+                );
+              if (parseFloat(totalStaked) > 0) {
+                const usdValue = await convertToUSD(
+                  parseFloat(totalStaked),
+                  token.symbol,
+                  chainId
+                );
+                globalPoolTotalUSD += usdValue;
+                console.log(
+                  `[Multi-Token] Pool ${token.symbol} on chain ${chainId}: ${totalStaked} = $${usdValue}`
+                );
+              }
+            } catch (error) {
+              console.error(
+                `Failed to load pool stats for ${token.symbol} on chain ${chainId}:`,
+                error
+              );
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to load data for chain ${chainId}:`, error);
+        }
+      }
+
+      console.log("[Multi-Token] Global user total USD:", globalUserTotalUSD);
+      console.log("[Multi-Token] Global pool total USD:", globalPoolTotalUSD);
+      console.log("[Multi-Token] User stakes by network:", userStakesByNet);
+
+      // Update state with aggregated data
+      setUserTotalStakedUSD(globalUserTotalUSD);
+      setUserStakesByNetwork(userStakesByNet);
+      setGlobalPoolTotalUSD(globalPoolTotalUSD);
+
+      // Load current network-specific data
+      const stakes = await multiTokenStakingService.getAllUserStakes(
+        address,
+        selectedNetwork.chainId
+      );
+      setMultiTokenStakes(stakes);
+
+      // Load balances for all supported tokens
+      const balances: Record<string, string> = {};
+      await Promise.all(
+        supportedTokens.map(async (token) => {
+          try {
+            const balance = await multiTokenStakingService.getTokenBalance(
+              address,
+              token.address,
+              selectedNetwork.chainId
+            );
+            balances[token.address] = balance;
+          } catch (error) {
+            console.error(`Failed to load balance for ${token.symbol}:`, error);
+            balances[token.address] = "0";
+          }
+        })
+      );
+      setTokenBalances(balances);
+
+      // Load pool-wide token statistics
+      const poolStats: {
+        [tokenAddress: string]: { amount: string; usdValue: number };
+      } = {};
+      let totalUSD = 0;
+
+      await Promise.all(
+        supportedTokens.map(async (token) => {
+          try {
+            // Get total staked for this token from contract
+            const totalStaked =
+              await multiTokenStakingService.getTotalStakedForToken(
+                token.address,
+                selectedNetwork.chainId
+              );
+
+            // Convert to USD
+            const usdValue = await convertToUSD(
+              parseFloat(totalStaked),
+              token.symbol,
+              selectedNetwork.chainId
+            );
+
+            poolStats[token.address] = {
+              amount: totalStaked,
+              usdValue: usdValue,
+            };
+            totalUSD += usdValue;
+          } catch (error) {
+            console.error(
+              `Failed to load pool stats for ${token.symbol}:`,
+              error
+            );
+            poolStats[token.address] = { amount: "0", usdValue: 0 };
+          }
+        })
+      );
+
+      setPoolTokenStats(poolStats);
+      setTotalPoolUSD(totalUSD);
+    } catch (error) {
+      console.error("Failed to load multi-token data:", error);
+    }
+  }, [isUnlocked, address, supportedTokens, selectedNetwork.chainId]);
+
+  // 🚀 OPTIMIZED: Only load data for active tab
   const loadStakingData = useCallback(async () => {
     if (!isUnlocked || !address) {
       setIsLoading(false);
       return;
     }
 
+    // Skip if not on stake or pool tab
+    if (activeTab !== "stake" && activeTab !== "pool") {
+      console.log("[Perf] Skipping staking data load - not on stake/pool tab");
+      return;
+    }
+
     try {
       setIsLoading(true);
 
-      // Check if we're on the correct network (Lisk Sepolia)
-      if (selectedNetwork.chainId !== 4202) {
-        Alert.alert(
-          "Wrong Network",
-          "Please switch to Lisk Sepolia network to use staking features.",
-          [{ text: "OK" }]
+      // Check if staking is supported on this network
+      if (!isStakingSupportedOnNetwork(selectedNetwork.chainId)) {
+        console.log(
+          `Staking not yet deployed on ${selectedNetwork.name} (chainId: ${selectedNetwork.chainId})`
         );
         setIsLoading(false);
         return;
       }
 
-      // 🚀 Try to get preloaded data first
-      const preloadedData = await dataPreloader.preloadAll(address, selectedNetwork.chainId);
-      
-      if (preloadedData.staking) {
-        console.log('[TreasuryPortal] Using preloaded staking data');
-        setStakeInfo(preloadedData.staking.stakeInfo);
-        setPoolStats(preloadedData.staking.poolStats);
-        setStakingConfig(preloadedData.staking.stakingConfig);
-        setUsdcBalance(preloadedData.staking.usdcBalance);
-        setCurrentAPR(preloadedData.staking.currentAPR);
-        setIsEligibleFinancier(preloadedData.staking.isEligibleFinancier);
-        setIsLoading(false);
-        setDataVersion(v => v + 1);
-        return;
+      // Load supported tokens for this network
+      const tokens = getSupportedStablecoins(selectedNetwork.chainId);
+      setSupportedTokens(tokens);
+      if (tokens.length > 0 && !selectedToken) {
+        setSelectedToken(tokens[0]); // Default to first token (usually USDC)
       }
 
-      // Initialize staking service with user's wallet credentials
+      // Initialize service only onceB
       await initializeStakingService();
 
       // Performance: Use cache for frequently accessed data
       const cacheKey = `staking:${address}:${selectedNetwork.chainId}`;
       const cachedData = performanceCache.get<any>(cacheKey);
 
-      if (cachedData && isInitialMount.current) {
-        // Use cached data on initial load for instant UI
-        console.log('[Perf] Using cached data for instant load');
+      if (cachedData) {
+        // Use cached data for instant UI
+        console.log("[Perf] Using cached staking data for instant load");
         setStakeInfo(cachedData.stake);
         setPoolStats(cachedData.pool);
         setStakingConfig(cachedData.config);
@@ -150,35 +472,39 @@ export function TreasuryPortalScreen() {
         setCurrentAPR(cachedData.apr);
         setIsEligibleFinancier(cachedData.isEligible);
         setIsLoading(false);
+        setDataVersion((v) => v + 1);
+        return;
       }
 
       // Performance: Queue data fetching with priority
-      const [stake, pool, config, balance, apr, isEligible] = await Promise.all([
-        asyncQueue.enqueue(
-          () => stakingService.getStakeInfo(address),
-          TaskPriority.HIGH
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.getPoolStats(),
-          TaskPriority.NORMAL
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.getStakingConfig(),
-          TaskPriority.HIGH
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.getUSDCBalance(address),
-          TaskPriority.NORMAL
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.calculateCurrentAPR(),
-          TaskPriority.LOW
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.isEligibleFinancier(address),
-          TaskPriority.HIGH
-        ),
-      ]);
+      const [stake, pool, config, balance, apr, isEligible] = await Promise.all(
+        [
+          asyncQueue.enqueue(
+            () => stakingService.getStakeInfo(address),
+            TaskPriority.HIGH
+          ),
+          asyncQueue.enqueue(
+            () => stakingService.getPoolStats(),
+            TaskPriority.NORMAL
+          ),
+          asyncQueue.enqueue(
+            () => stakingService.getStakingConfig(),
+            TaskPriority.HIGH
+          ),
+          asyncQueue.enqueue(
+            () => stakingService.getUSDCBalance(address),
+            TaskPriority.NORMAL
+          ),
+          asyncQueue.enqueue(
+            () => stakingService.calculateCurrentAPR(),
+            TaskPriority.LOW
+          ),
+          asyncQueue.enqueue(
+            () => stakingService.isEligibleFinancier(address),
+            TaskPriority.HIGH
+          ),
+        ]
+      );
 
       // Update state
       setStakeInfo(stake);
@@ -189,16 +515,23 @@ export function TreasuryPortalScreen() {
       setIsEligibleFinancier(isEligible);
 
       // Cache the results (5 minute TTL)
-      performanceCache.set(cacheKey, {
-        stake,
-        pool,
-        config,
-        balance,
-        apr,
-        isEligible,
-      }, 5 * 60 * 1000);
+      performanceCache.set(
+        cacheKey,
+        {
+          stake,
+          pool,
+          config,
+          balance,
+          apr,
+          isEligible,
+        },
+        5 * 60 * 1000
+      );
 
-      setDataVersion(v => v + 1);
+      setDataVersion((v) => v + 1);
+
+      // Load multi-token data
+      await loadMultiTokenData();
     } catch (error) {
       console.error("Failed to load staking data:", error);
       Alert.alert("Error", "Failed to load staking data. Please try again.");
@@ -206,29 +539,32 @@ export function TreasuryPortalScreen() {
       setIsLoading(false);
       isInitialMount.current = false;
     }
-  }, [isUnlocked, address, selectedNetwork.chainId]);
+  }, [
+    isUnlocked,
+    address,
+    selectedNetwork.chainId,
+    activeTab,
+    initializeStakingService,
+  ]);
 
-  // Load governance data
+  // 🚀 OPTIMIZED: Only load governance data when on create or vote tab
   const loadGovernanceData = useCallback(async () => {
     if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
+      return;
+    }
+
+    // Skip if not on create or vote tab
+    if (activeTab !== "create" && activeTab !== "vote") {
+      console.log(
+        "[Perf] Skipping governance data load - not on create/vote tab"
+      );
       return;
     }
 
     try {
       setIsLoadingProposals(true);
 
-      // 🚀 Try to get preloaded data first
-      const preloadedData = await dataPreloader.preloadAll(address, selectedNetwork.chainId);
-      
-      if (preloadedData.governance) {
-        console.log('[TreasuryPortal] Using preloaded governance data');
-        setProposals(preloadedData.governance.proposals);
-        setDAOStats(preloadedData.governance.daoStats);
-        setDAOConfig(preloadedData.governance.daoConfig);
-        setIsLoadingProposals(false);
-        return;
-      }
-
+      // Initialize service only once
       await initializeStakingService();
 
       // Performance: Cache governance data
@@ -236,11 +572,12 @@ export function TreasuryPortalScreen() {
       const cachedData = performanceCache.get<any>(cacheKey);
 
       if (cachedData) {
-        console.log('[Perf] Using cached governance data');
+        console.log("[Perf] Using cached governance data");
         setProposals(cachedData.proposals);
         setDAOStats(cachedData.stats);
         setDAOConfig(cachedData.config);
         setIsLoadingProposals(false);
+        return;
       }
 
       // Performance: Queue governance data fetching
@@ -264,75 +601,43 @@ export function TreasuryPortalScreen() {
       setDAOConfig(config);
 
       // Cache for 2 minutes
-      performanceCache.set(cacheKey, {
-        proposals: allProposals,
-        stats,
-        config,
-      }, 2 * 60 * 1000);
+      performanceCache.set(
+        cacheKey,
+        {
+          proposals: allProposals,
+          stats,
+          config,
+        },
+        2 * 60 * 1000
+      );
     } catch (error) {
       console.error("Failed to load governance data:", error);
     } finally {
       setIsLoadingProposals(false);
     }
-  }, [isUnlocked, address, selectedNetwork.chainId]);
+  }, [
+    isUnlocked,
+    address,
+    selectedNetwork.chainId,
+    activeTab,
+    initializeStakingService,
+  ]);
 
-  // Load data on mount and when wallet/network changes
+  // 🚀 OPTIMIZED: Load data only when needed based on active tab
   useEffect(() => {
-    loadStakingData();
-    loadGovernanceData();
-  }, [isUnlocked, address, selectedNetwork.chainId]);
-
-  // DEBUG: Log eligibility state changes
-  useEffect(() => {
-    console.log("🔍 ========== ELIGIBILITY STATE CHANGED ==========");
-    console.log("🔍 isEligibleFinancier:", isEligibleFinancier);
-    console.log("🔍 Type:", typeof isEligibleFinancier);
-    console.log("🔍 Truthy check:", !!isEligibleFinancier);
-    console.log("🔍 Negation (for conditionals):", !isEligibleFinancier);
-    console.log("🔍 Should show prompt?", !isEligibleFinancier);
-    console.log("🔍 Should show content?", isEligibleFinancier);
-    console.log("🔍 ==============================================");
-  }, [isEligibleFinancier]);
-
-  // Load proposals when switching to vote tab
-  useEffect(() => {
-    if (activeTab === "vote" || activeTab === "create") {
+    if (activeTab === "stake" || activeTab === "pool") {
+      loadStakingData();
+    } else if (activeTab === "create" || activeTab === "vote") {
       loadGovernanceData();
     }
-  }, [activeTab]);
+  }, [activeTab, isUnlocked, address, selectedNetwork.chainId]);
 
-  // Performance: Debounced refresh to prevent excessive reloads
-  const debouncedRefresh = useMemo(
-    () => debounce(() => {
-      if (!isTransacting) {
-        loadStakingData();
-      }
-    }, 30000), // 30 seconds
-    [isTransacting, loadStakingData]
-  );
-
-  // Refresh data periodically to stay up to date
-  useEffect(() => {
-    if (!isUnlocked || !address || selectedNetwork.chainId !== 4202) {
-      return;
-    }
-
-    // Performance: Use timeout instead of interval for better control
-    const scheduleRefresh = () => {
-      loadingTimeoutRef.current = setTimeout(() => {
-        debouncedRefresh();
-        scheduleRefresh();
-      }, 30000);
-    };
-
-    scheduleRefresh();
-
-    return () => {
-      if (loadingTimeoutRef.current) {
-        clearTimeout(loadingTimeoutRef.current);
-      }
-    };
-  }, [isUnlocked, address, selectedNetwork.chainId, debouncedRefresh]);
+  // 🚀 OPTIMIZED: Removed auto-refresh - use manual refresh or event-based updates only
+  // The 30-second auto-refresh was causing performance issues
+  // Data will refresh when:
+  // 1. User switches tabs
+  // 2. User completes a transaction
+  // 3. User manually pulls to refresh (if implemented)
 
   // Handle payment results when returning from payment screens
   useEffect(() => {
@@ -427,34 +732,15 @@ export function TreasuryPortalScreen() {
     monitorTransaction();
   }, [pendingTx]);
 
-  // Initialize staking service with user's actual wallet credentials
-  const initializeStakingService = async () => {
-    try {
-      if (!isUnlocked) {
-        console.log("Wallet is locked, cannot initialize staking service");
-        return;
-      }
-
-      // Use the actual user's wallet credentials from secure storage
-      console.log(
-        "Initializing staking service with user's wallet credentials..."
-      );
-
-      // The stakingService.getSigner() will automatically use the user's credentials
-      // from secure storage (mnemonic or private key) - no need to pass hardcoded key
-      const signer = await stakingService.getSigner();
-      const signerAddress = await signer.getAddress();
-      console.log("Staking service connected with user wallet:", signerAddress);
-    } catch (error) {
-      console.error("Failed to initialize staking service:", error);
-      throw error;
-    }
-  };
-
   // Real staking transaction handlers with optimistic updates
   const handleStakeUSDC = useCallback(async () => {
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       Alert.alert("Error", "Please enter a valid stake amount");
+      return;
+    }
+
+    if (!selectedToken) {
+      Alert.alert("Error", "Please select a token to stake");
       return;
     }
 
@@ -473,16 +759,17 @@ export function TreasuryPortalScreen() {
         "Minimum Stake Required",
         `Minimum ${
           stakeAsFinancier ? "financier " : ""
-        }stake amount is ${minStake} USDC`
+        }stake amount is ${minStake} ${selectedToken.symbol}`
       );
       return;
     }
 
-    // Check USDC balance
-    if (parseFloat(usdcBalance) < parseFloat(stakeAmount)) {
+    // Check token balance
+    const tokenBalance = tokenBalances[selectedToken.address] || "0";
+    if (parseFloat(tokenBalance) < parseFloat(stakeAmount)) {
       Alert.alert(
         "Insufficient Balance",
-        "You don't have enough USDC to stake this amount"
+        `You don't have enough ${selectedToken.symbol} to stake this amount`
       );
       return;
     }
@@ -491,27 +778,27 @@ export function TreasuryPortalScreen() {
       setIsTransacting(true);
       setStakingProgress("Initializing...");
 
-      // Initialize connection if not done already
-      await initializeStakingService();
+      // Calculate USD equivalent for the stake
+      const usdEquivalent = await convertToUSD(
+        parseFloat(stakeAmount),
+        selectedToken.symbol,
+        selectedNetwork.chainId
+      );
 
-      // Stake with progress callbacks - use appropriate function
-      let tx;
-      if (stakeAsFinancier) {
-        tx = await stakingService.stakeAsFinancier(
-          stakeAmount,
-          (stage, message) => {
-            setStakingProgress(message);
-            console.log(`Staking as financier progress [${stage}]: ${message}`);
-          }
-        );
-      } else {
-        tx = await stakingService.stake(stakeAmount, (stage, message) => {
-          setStakingProgress(message);
-          console.log(`Staking progress [${stage}]: ${message}`);
-        });
-      }
+      // Calculate custom deadline (90 days from now)
+      const customDeadline = Math.floor(Date.now() / 1000) + 90 * 24 * 60 * 60;
 
-      setPendingTx(tx);
+      setStakingProgress(`Staking ${stakeAmount} ${selectedToken.symbol}...`);
+
+      // Use new multi-token staking service
+      const txHash = await multiTokenStakingService.stakeToken(
+        selectedToken.address,
+        stakeAmount,
+        customDeadline,
+        selectedNetwork.chainId,
+        stakeAsFinancier
+      );
+
       setStakeAmount(""); // Clear input
       setStakeAsFinancier(false); // Reset checkbox
       setStakingProgress("");
@@ -519,11 +806,12 @@ export function TreasuryPortalScreen() {
       // Performance: Invalidate cache
       performanceCache.invalidatePattern(`staking:${address}`);
 
+      // Reload data
+      await loadMultiTokenData();
+
       Alert.alert(
         "Stake Submitted",
-        `Your ${
-          stakeAsFinancier ? "financier " : ""
-        }stake transaction has been submitted. Please wait for confirmation.`,
+        `Successfully staked ${stakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
@@ -533,7 +821,7 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [stakeAmount, stakingConfig, usdcBalance, stakeAsFinancier, address]);
+  }, [stakeAmount, stakingConfig, selectedToken, tokenBalances, stakeAsFinancier, address, selectedNetwork.chainId, loadMultiTokenData]);
 
   const handleUnstake = useCallback(async () => {
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
@@ -541,29 +829,44 @@ export function TreasuryPortalScreen() {
       return;
     }
 
-    // Basic validation - let contract handle the rest
-    if (stakeInfo && parseFloat(unstakeAmount) > parseFloat(stakeInfo.amount)) {
+    if (!selectedToken) {
+      Alert.alert("Error", "Please select a token to unstake");
+      return;
+    }
+
+    // Find the stake for the selected token
+    const tokenStake = multiTokenStakes?.stakes.find(
+      (s) => s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase()
+    );
+
+    if (!tokenStake || parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)) {
       Alert.alert("Error", "Cannot unstake more than your staked amount");
       return;
     }
 
     try {
       setIsTransacting(true);
-      await initializeStakingService();
 
-      console.log("Attempting to unstake:", unstakeAmount, "USDC");
-      console.log("Current stake info:", stakeInfo);
+      console.log("Attempting to unstake:", unstakeAmount, selectedToken.symbol);
+      console.log("Token stake info:", tokenStake);
 
-      const tx = await stakingService.unstake(unstakeAmount);
-      setPendingTx(tx);
+      const txHash = await multiTokenStakingService.unstakeToken(
+        selectedToken.address,
+        unstakeAmount,
+        selectedNetwork.chainId
+      );
+
       setUnstakeAmount(""); // Clear input
 
       // Performance: Invalidate cache
       performanceCache.invalidatePattern(`staking:${address}`);
 
+      // Reload data
+      await loadMultiTokenData();
+
       Alert.alert(
         "Unstake Submitted",
-        `Unstaking ${unstakeAmount} USDC. Transaction hash: ${tx.hash}`,
+        `Successfully unstaked ${unstakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
@@ -572,25 +875,33 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [unstakeAmount, stakeInfo, address]);
+  }, [unstakeAmount, selectedToken, multiTokenStakes, address, selectedNetwork.chainId, loadMultiTokenData]);
 
   const handleClaimRewards = useCallback(async () => {
+    if (!selectedToken) {
+      Alert.alert("Error", "Please select a token to claim rewards from");
+      return;
+    }
+
     try {
       setIsTransacting(true);
-      await initializeStakingService();
 
-      console.log("Attempting to claim rewards...");
-      console.log("Current stake info:", stakeInfo);
+      console.log("Attempting to claim rewards for", selectedToken.symbol);
 
-      const tx = await stakingService.claimRewards();
-      setPendingTx(tx);
+      const txHash = await multiTokenStakingService.claimTokenRewards(
+        selectedToken.address,
+        selectedNetwork.chainId
+      );
 
       // Performance: Invalidate cache
       performanceCache.invalidatePattern(`staking:${address}`);
 
+      // Reload data
+      await loadMultiTokenData();
+
       Alert.alert(
         "Claim Submitted",
-        `Reward claim transaction submitted. Hash: ${tx.hash}`,
+        `Successfully claimed rewards for ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
         [{ text: "OK" }]
       );
     } catch (error: any) {
@@ -599,7 +910,7 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [stakeInfo, address]);
+  }, [selectedToken, address, selectedNetwork.chainId, loadMultiTokenData]);
 
   const handleEmergencyWithdraw = useCallback(async () => {
     // Check if user has an active stake
@@ -754,36 +1065,39 @@ export function TreasuryPortalScreen() {
     );
   }, [proposalTitle, proposalDescription, proposalCategory, address]);
 
-  const handleVoteOnProposal = useCallback(async (proposalId: string, support: boolean) => {
-    try {
-      setIsTransacting(true);
-      await initializeStakingService();
+  const handleVoteOnProposal = useCallback(
+    async (proposalId: string, support: boolean) => {
+      try {
+        setIsTransacting(true);
+        await initializeStakingService();
 
-      const tx = await stakingService.voteOnProposal(proposalId, support);
-      setPendingTx(tx);
+        const tx = await stakingService.voteOnProposal(proposalId, support);
+        setPendingTx(tx);
 
-      // Performance: Invalidate governance cache
-      performanceCache.invalidatePattern(`governance:${address}`);
+        // Performance: Invalidate governance cache
+        performanceCache.invalidatePattern(`governance:${address}`);
 
-      Alert.alert(
-        "Vote Submitted!",
-        `Your ${
-          support ? "FOR" : "AGAINST"
-        } vote has been submitted.\n\nTransaction Hash: ${tx.hash}`,
-        [{ text: "OK" }]
-      );
+        Alert.alert(
+          "Vote Submitted!",
+          `Your ${
+            support ? "FOR" : "AGAINST"
+          } vote has been submitted.\n\nTransaction Hash: ${tx.hash}`,
+          [{ text: "OK" }]
+        );
 
-      // Reload proposals after a delay
-      setTimeout(() => {
-        loadGovernanceData();
-      }, 3000);
-    } catch (error: any) {
-      console.error("Vote error:", error);
-      Alert.alert("Vote Failed", error.message || "Failed to submit vote");
-    } finally {
-      setIsTransacting(false);
-    }
-  }, [address]);
+        // Reload proposals after a delay
+        setTimeout(() => {
+          loadGovernanceData();
+        }, 3000);
+      } catch (error: any) {
+        console.error("Vote error:", error);
+        Alert.alert("Vote Failed", error.message || "Failed to submit vote");
+      } finally {
+        setIsTransacting(false);
+      }
+    },
+    [address]
+  );
 
   // Handle Apply as Financier
   const handleApplyAsFinancier = useCallback(async () => {
@@ -889,10 +1203,13 @@ export function TreasuryPortalScreen() {
     [stakeInfo?.active, stakedAmount]
   );
 
-  const pendingRewardsAmount = useMemo(
-    () => parseFloat(stakeInfo?.pendingRewards || "0"),
-    [stakeInfo?.pendingRewards]
-  );
+  const pendingRewardsAmount = useMemo(() => {
+    // Calculate total pending rewards across all tokens
+    if (!multiTokenStakes?.stakes) return 0;
+    return multiTokenStakes.stakes.reduce((total, stake) => {
+      return total + parseFloat(stake.pendingRewards || "0");
+    }, 0);
+  }, [multiTokenStakes?.stakes]);
 
   return (
     <Screen>
@@ -1029,7 +1346,7 @@ export function TreasuryPortalScreen() {
                     Connect your wallet to view staking information
                   </Text>
                 </View>
-              ) : selectedNetwork.chainId !== 4202 ? (
+              ) : !isStakingSupportedOnNetwork(selectedNetwork.chainId) ? (
                 <View style={styles.networkPrompt}>
                   <MaterialCommunityIcons
                     name="network"
@@ -1037,7 +1354,15 @@ export function TreasuryPortalScreen() {
                     color={colors.warning}
                   />
                   <Text style={styles.networkPromptText}>
-                    Please switch to Lisk Sepolia network
+                    Staking not yet deployed on {selectedNetwork.name}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.networkPromptText,
+                      { fontSize: 12, marginTop: 8, opacity: 0.7 },
+                    ]}
+                  >
+                    Supported: Lisk Sepolia, Base Sepolia
                   </Text>
                 </View>
               ) : (
@@ -1047,453 +1372,527 @@ export function TreasuryPortalScreen() {
                     <>
                       <SkeletonStatsGrid />
                       <View style={{ marginTop: spacing.lg }}>
-                        <Skeleton width="40%" height={16} style={{ marginBottom: spacing.md }} />
-                        <Skeleton width="100%" height={48} style={{ marginBottom: spacing.md }} />
+                        <Skeleton
+                          width="40%"
+                          height={16}
+                          style={{ marginBottom: spacing.md }}
+                        />
+                        <Skeleton
+                          width="100%"
+                          height={48}
+                          style={{ marginBottom: spacing.md }}
+                        />
                         <Skeleton width="100%" height={48} />
                       </View>
                     </>
                   ) : (
                     <>
-                  <View style={styles.statsGrid}>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statLabel}>Your Stake</Text>
-                      <Text style={styles.statValue}>
-                        {stakeInfo?.amount
-                          ? parseFloat(stakeInfo.amount).toFixed(2)
-                          : "0.00"}{" "}
-                        USDC
-                      </Text>
-                      <Text style={styles.statSubtext}>
-                        Balance: {parseFloat(usdcBalance).toFixed(2)} USDC
-                      </Text>
-                    </View>
-                    <View style={styles.statBox}>
-                      <Text style={styles.statLabel}>Voting Power</Text>
-                      <Text style={styles.statValue}>
-                        {stakeInfo?.votingPower
-                          ? parseFloat(stakeInfo.votingPower).toFixed(0)
-                          : "0"}
-                      </Text>
-                      <Text style={styles.statSubtext}>
-                        {stakeInfo?.isFinancier
-                          ? "Financier"
-                          : stakeInfo?.active
-                          ? "Active"
-                          : "Inactive"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.poolInfo}>
-                    <View style={styles.poolStat}>
-                      <Text style={styles.poolLabel}>Total Pool</Text>
-                      <Text style={styles.poolValue}>
-                        {poolStats
-                          ? `${parseFloat(
-                              poolStats.totalStaked
-                            ).toLocaleString()} USDC`
-                          : "Loading..."}
-                      </Text>
-                    </View>
-                    <View style={styles.poolStat}>
-                      <Text style={styles.poolLabel}>Current APR</Text>
-                      <Text style={styles.poolValuePositive}>
-                        {currentAPR.toFixed(2)}%
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Stake Input Section */}
-                  <View style={styles.stakeInputSection}>
-                    <Text style={styles.inputLabel}>Stake Amount (USDC)</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={[
-                          styles.amountInput,
-                          isTransacting && styles.inputDisabled,
-                        ]}
-                        value={stakeAmount}
-                        onChangeText={setStakeAmount}
-                        placeholder="Enter amount to stake"
-                        placeholderTextColor={colors.textSecondary}
-                        keyboardType="decimal-pad"
-                        editable={!isTransacting}
-                      />
-                      <TouchableOpacity
-                        style={[
-                          styles.maxButton,
-                          isTransacting && styles.maxButtonDisabled,
-                        ]}
-                        onPress={() => {
-                          const maxStake = Math.max(
-                            0,
-                            parseFloat(usdcBalance) - 0.01
-                          );
-                          setStakeAmount(maxStake.toFixed(6));
-                        }}
-                        disabled={isTransacting}
-                      >
-                        <Text style={styles.maxButtonText}>MAX</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Stake as Financier Option */}
-                    <TouchableOpacity
-                      style={styles.financierCheckbox}
-                      onPress={() => setStakeAsFinancier(!stakeAsFinancier)}
-                      disabled={isTransacting}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          stakeAsFinancier && styles.checkboxChecked,
-                        ]}
-                      >
-                        {stakeAsFinancier && (
+                      {/* Hero Card - Total Staked Across All Networks */}
+                      <View style={styles.heroCard}>
+                        <View style={styles.heroHeader}>
                           <MaterialCommunityIcons
-                            name="check"
-                            size={16}
-                            color="white"
+                            name="cash-multiple"
+                            size={28}
+                            color={colors.primary}
                           />
-                        )}
-                      </View>
-                      <View style={styles.checkboxLabel}>
-                        <Text style={styles.checkboxText}>
-                          Stake as Financier
+                          <Text style={styles.heroTitle}>Portfolio Value</Text>
+                        </View>
+                        <Text style={styles.heroAmount}>
+                          $
+                          {(userTotalStakedUSD || 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
                         </Text>
-                        <Text style={styles.checkboxSubtext}>
-                          Grant voting rights and governance access (minimum{" "}
-                          {stakingConfig?.minimumFinancierStake || "0"} USDC)
+                        <Text style={styles.heroSubtext}>
+                          Staked across{" "}
+                          {Object.keys(userStakesByNetwork || {}).length}{" "}
+                          network(s)
                         </Text>
                       </View>
-                    </TouchableOpacity>
 
-                    {stakingConfig &&
-                      stakeAmount &&
-                      parseFloat(stakeAmount) > 0 && (
-                        <Text style={styles.stakingInfo}>
-                          Min stake:{" "}
-                          {stakeAsFinancier
-                            ? stakingConfig.minimumFinancierStake
-                            : stakingConfig.minimumStake}{" "}
-                          USDC • Lock period:{" "}
-                          {Math.floor(
-                            (stakeAsFinancier
-                              ? stakingConfig.minFinancierLockDuration
-                              : stakingConfig.minNormalStakerLockDuration) /
-                              86400
-                          )}{" "}
-                          days
-                        </Text>
-                      )}
-                  </View>
-
-                  {/* Action Buttons */}
-                  <View style={styles.actionButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.stakeButtonFull,
-                        (isTransacting ||
-                          !stakeAmount ||
-                          parseFloat(stakeAmount) <= 0) &&
-                          styles.buttonDisabled,
-                      ]}
-                      onPress={handleStakeUSDC}
-                      disabled={
-                        isTransacting ||
-                        !stakeAmount ||
-                        parseFloat(stakeAmount) <= 0
-                      }
-                    >
-                      {isTransacting ? (
-                        <>
-                          <ActivityIndicator size="small" color="white" />
-                          <Text style={styles.stakeButtonText}>
-                            {stakingProgress || "Processing..."}
+                      {/* Network Breakdown - Only show if user has stakes */}
+                      {Object.keys(userStakesByNetwork || {}).length > 0 && (
+                        <View style={styles.breakdownSection}>
+                          <Text style={styles.sectionTitle}>
+                            Your Stakes by Network
                           </Text>
-                        </>
-                      ) : (
-                        <>
+                          {Object.entries(userStakesByNetwork || {}).map(
+                            ([chainId, networkData]) => {
+                              const networkName =
+                                chainId === "4202"
+                                  ? "Lisk Sepolia"
+                                  : chainId === "84532"
+                                  ? "Base Sepolia"
+                                  : `Chain ${chainId}`;
+                              const networkIcon =
+                                chainId === "4202"
+                                  ? "alpha-l-circle"
+                                  : chainId === "84532"
+                                  ? "alpha-b-circle"
+                                  : "network";
+
+                              return networkData.tokens.length > 0 ? (
+                                <View key={chainId} style={styles.networkCard}>
+                                  <View style={styles.networkCardHeader}>
+                                    <View style={styles.networkTitleRow}>
+                                      <MaterialCommunityIcons
+                                        name={networkIcon}
+                                        size={24}
+                                        color={colors.primary}
+                                      />
+                                      <Text style={styles.networkCardTitle}>
+                                        {networkName}
+                                      </Text>
+                                    </View>
+                                    <Text style={styles.networkCardTotal}>
+                                      ${(networkData?.totalUSD || 0).toFixed(2)}
+                                    </Text>
+                                  </View>
+
+                                  {(networkData?.tokens || []).map(
+                                    (token, idx) => (
+                                      <View
+                                        key={idx}
+                                        style={styles.tokenStakeRow}
+                                      >
+                                        <View style={styles.tokenStakeLeft}>
+                                          <View
+                                            style={styles.tokenIconPlaceholder}
+                                          >
+                                            <Text style={styles.tokenIconText}>
+                                              {token.symbol[0]}
+                                            </Text>
+                                          </View>
+                                          <View>
+                                            <Text style={styles.tokenStakeName}>
+                                              {token?.symbol || "Unknown"}
+                                            </Text>
+                                            <Text
+                                              style={styles.tokenStakeAmount}
+                                            >
+                                              {parseFloat(
+                                                token?.amount || "0"
+                                              ).toFixed(4)}
+                                            </Text>
+                                          </View>
+                                        </View>
+                                        <Text style={styles.tokenStakeValue}>
+                                          ${(token?.usdValue || 0).toFixed(2)}
+                                        </Text>
+                                      </View>
+                                    )
+                                  )}
+                                </View>
+                              ) : null;
+                            }
+                          )}
+                        </View>
+                      )}
+
+                      {/* Quick Stats Grid */}
+                      <View style={styles.quickStatsGrid}>
+                        <View style={styles.quickStatCard}>
                           <MaterialCommunityIcons
-                            name="plus-circle"
-                            size={20}
-                            color="white"
+                            name="vote"
+                            size={24}
+                            color={colors.primary}
                           />
-                          <Text style={styles.stakeButtonText}>
-                            Stake {stakeAsFinancier ? "as Financier" : "USDC"}
+                          <Text style={styles.quickStatValue}>
+                            {multiTokenStakes?.totalVotingPower
+                              ? parseFloat(
+                                  multiTokenStakes.totalVotingPower || "0"
+                                ).toFixed(0)
+                              : "0"}
                           </Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                          <Text style={styles.quickStatLabel}>
+                            Voting Power
+                          </Text>
+                        </View>
 
-                  {/* Unstake Section */}
-                  {stakeInfo?.active && (
-                    <View style={styles.unstakeSection}>
-                      <Text style={styles.inputLabel}>
-                        Unstake Amount (USDC)
-                      </Text>
-                      <View style={styles.inputContainer}>
-                        <TextInput
-                          style={[
-                            styles.amountInput,
-                            isTransacting && styles.inputDisabled,
-                          ]}
-                          value={unstakeAmount}
-                          onChangeText={setUnstakeAmount}
-                          placeholder="Enter amount to unstake"
-                          placeholderTextColor={colors.textSecondary}
-                          keyboardType="decimal-pad"
-                          editable={!isTransacting}
-                        />
+                        <View style={styles.quickStatCard}>
+                          <MaterialCommunityIcons
+                            name="earth"
+                            size={24}
+                            color={colors.success}
+                          />
+                          <Text style={styles.quickStatValue}>
+                            $
+                            {(globalPoolTotalUSD || 0).toLocaleString("en-US", {
+                              maximumFractionDigits: 0,
+                            })}
+                          </Text>
+                          <Text style={styles.quickStatLabel}>Global Pool</Text>
+                        </View>
+
+                        <View style={styles.quickStatCard}>
+                          <MaterialCommunityIcons
+                            name="chart-line"
+                            size={24}
+                            color={colors.warning}
+                          />
+                          <Text style={styles.quickStatValue}>
+                            {(currentAPR || 0).toFixed(1)}%
+                          </Text>
+                          <Text style={styles.quickStatLabel}>APR</Text>
+                        </View>
+                      </View>
+
+                      {/* Token Selector */}
+                      <View style={styles.stakeInputSection}>
+                        <Text style={styles.inputLabel}>Select Token</Text>
                         <TouchableOpacity
-                          style={[
-                            styles.maxButton,
-                            isTransacting && styles.maxButtonDisabled,
-                          ]}
-                          onPress={() => setUnstakeAmount(stakeInfo.amount)}
+                          style={styles.tokenSelectorButton}
+                          onPress={() =>
+                            setShowTokenSelector(!showTokenSelector)
+                          }
                           disabled={isTransacting}
                         >
-                          <Text style={styles.maxButtonText}>MAX</Text>
+                          <View style={styles.selectedTokenInfo}>
+                            <Text style={styles.tokenSymbol}>
+                              {selectedToken?.symbol || "Select Token"}
+                            </Text>
+                            <Text style={styles.tokenBalance}>
+                              Balance:{" "}
+                              {selectedToken
+                                ? tokenBalances[selectedToken.address] || "0"
+                                : "0"}
+                            </Text>
+                          </View>
+                          <MaterialCommunityIcons
+                            name={
+                              showTokenSelector ? "chevron-up" : "chevron-down"
+                            }
+                            size={24}
+                            color={colors.primary}
+                          />
                         </TouchableOpacity>
+
+                        {/* Token Dropdown */}
+                        {showTokenSelector && (
+                          <View style={styles.tokenDropdown}>
+                            {supportedTokens.map((token) => (
+                              <TouchableOpacity
+                                key={token.address}
+                                style={[
+                                  styles.tokenOption,
+                                  selectedToken?.address === token.address &&
+                                    styles.tokenOptionSelected,
+                                ]}
+                                onPress={() => {
+                                  setSelectedToken(token);
+                                  setShowTokenSelector(false);
+                                }}
+                              >
+                                <View style={styles.tokenOptionInfo}>
+                                  <Text style={styles.tokenOptionSymbol}>
+                                    {token.symbol}
+                                  </Text>
+                                  <Text style={styles.tokenOptionName}>
+                                    {token.name}
+                                  </Text>
+                                </View>
+                                <View style={styles.tokenOptionBalance}>
+                                  <Text style={styles.tokenOptionBalanceText}>
+                                    {tokenBalances[token.address] || "0"}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
                       </View>
 
-                      {stakeInfo.timeUntilUnlock &&
-                        stakeInfo.timeUntilUnlock > 0 && (
-                          <Text style={styles.lockWarning}>
-                            ⚠️ Locked for{" "}
-                            {Math.ceil(stakeInfo.timeUntilUnlock / 86400)} more
-                            days
-                          </Text>
-                        )}
-
-                      <View style={styles.unstakeButtons}>
-                        <TouchableOpacity
-                          style={[
-                            styles.unstakeButton,
-                            isTransacting ||
-                            !unstakeAmount ||
-                            parseFloat(unstakeAmount) <= 0 ||
-                            Boolean(
-                              stakeInfo?.timeUntilUnlock &&
-                                stakeInfo.timeUntilUnlock > 0
-                            )
-                              ? styles.buttonDisabled
-                              : null,
-                          ]}
-                          onPress={handleUnstake}
-                          disabled={
-                            isTransacting ||
-                            !unstakeAmount ||
-                            parseFloat(unstakeAmount) <= 0 ||
-                            Boolean(
-                              stakeInfo?.timeUntilUnlock &&
-                                stakeInfo.timeUntilUnlock > 0
-                            )
-                          }
-                        >
-                          {isTransacting && pendingTx?.type === "unstake" ? (
-                            <ActivityIndicator
-                              size="small"
-                              color={colors.warning}
-                            />
-                          ) : (
-                            <MaterialCommunityIcons
-                              name="minus-circle"
-                              size={20}
-                              color={
-                                stakeInfo?.timeUntilUnlock &&
-                                stakeInfo.timeUntilUnlock > 0
-                                  ? colors.textSecondary
-                                  : colors.warning
-                              }
-                            />
-                          )}
-                          <Text
+                      {/* Stake Input Section */}
+                      <View style={styles.stakeInputSection}>
+                        <Text style={styles.inputLabel}>
+                          Stake Amount ({selectedToken?.symbol || "USDC"})
+                        </Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
                             style={[
-                              styles.unstakeButtonText,
-                              Boolean(
-                                stakeInfo?.timeUntilUnlock &&
-                                  stakeInfo.timeUntilUnlock > 0
-                              )
-                                ? styles.buttonTextDisabled
-                                : null,
+                              styles.amountInput,
+                              isTransacting && styles.inputDisabled,
+                            ]}
+                            value={stakeAmount}
+                            onChangeText={setStakeAmount}
+                            placeholder="Enter amount to stake"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="decimal-pad"
+                            editable={!isTransacting}
+                          />
+                          <TouchableOpacity
+                            style={[
+                              styles.maxButton,
+                              isTransacting && styles.maxButtonDisabled,
+                            ]}
+                            onPress={() => {
+                              const balance = selectedToken
+                                ? tokenBalances[selectedToken.address] || "0"
+                                : usdcBalance;
+                              const maxStake = Math.max(
+                                0,
+                                parseFloat(balance) - 0.01
+                              );
+                              setStakeAmount(maxStake.toFixed(6));
+                            }}
+                            disabled={isTransacting}
+                          >
+                            <Text style={styles.maxButtonText}>MAX</Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Stake as Financier Option */}
+                        <TouchableOpacity
+                          style={styles.financierCheckbox}
+                          onPress={() => setStakeAsFinancier(!stakeAsFinancier)}
+                          disabled={isTransacting}
+                        >
+                          <View
+                            style={[
+                              styles.checkbox,
+                              stakeAsFinancier && styles.checkboxChecked,
                             ]}
                           >
-                            {isTransacting && pendingTx?.type === "unstake"
-                              ? "Unstaking..."
-                              : stakeInfo?.timeUntilUnlock &&
-                                stakeInfo.timeUntilUnlock > 0
-                              ? "Locked"
-                              : "Unstake"}
-                          </Text>
+                            {stakeAsFinancier && (
+                              <MaterialCommunityIcons
+                                name="check"
+                                size={16}
+                                color="white"
+                              />
+                            )}
+                          </View>
+                          <View style={styles.checkboxLabel}>
+                            <Text style={styles.checkboxText}>
+                              Stake as Financier
+                            </Text>
+                            <Text style={styles.checkboxSubtext}>
+                              Grant voting rights and governance access (minimum{" "}
+                              {stakingConfig?.minimumFinancierStake || "0"}{" "}
+                              USDC)
+                            </Text>
+                          </View>
                         </TouchableOpacity>
 
+                        {stakingConfig &&
+                          stakeAmount &&
+                          parseFloat(stakeAmount) > 0 && (
+                            <Text style={styles.stakingInfo}>
+                              Min stake:{" "}
+                              {stakeAsFinancier
+                                ? stakingConfig.minimumFinancierStake
+                                : stakingConfig.minimumStake}{" "}
+                              USDC • Lock period:{" "}
+                              {Math.floor(
+                                (stakeAsFinancier
+                                  ? stakingConfig.minFinancierLockDuration
+                                  : stakingConfig.minNormalStakerLockDuration) /
+                                  86400
+                              )}{" "}
+                              days
+                            </Text>
+                          )}
+                      </View>
+
+                      {/* Action Buttons */}
+                      <View style={styles.actionButtons}>
                         <TouchableOpacity
                           style={[
-                            styles.emergencyButton,
+                            styles.stakeButtonFull,
                             (isTransacting ||
-                              !stakeInfo?.active ||
-                              parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                              !stakeAmount ||
+                              parseFloat(stakeAmount) <= 0) &&
                               styles.buttonDisabled,
                           ]}
-                          onPress={handleEmergencyWithdraw}
+                          onPress={handleStakeUSDC}
                           disabled={
                             isTransacting ||
-                            !stakeInfo?.active ||
-                            parseFloat(stakeInfo?.amount || "0") <= 0
+                            !stakeAmount ||
+                            parseFloat(stakeAmount) <= 0
                           }
                         >
-                          {isTransacting && pendingTx?.type === "emergency" ? (
-                            <ActivityIndicator
-                              size="small"
-                              color={colors.error}
-                            />
+                          {isTransacting ? (
+                            <>
+                              <ActivityIndicator size="small" color="white" />
+                              <Text style={styles.stakeButtonText}>
+                                {stakingProgress || "Processing..."}
+                              </Text>
+                            </>
                           ) : (
-                            <MaterialCommunityIcons
-                              name="alert-circle"
-                              size={20}
-                              color={
-                                !stakeInfo?.active ||
-                                parseFloat(stakeInfo?.amount || "0") <= 0
-                                  ? colors.textSecondary
-                                  : colors.error
-                              }
-                            />
+                            <>
+                              <MaterialCommunityIcons
+                                name="plus-circle"
+                                size={20}
+                                color="white"
+                              />
+                              <Text style={styles.stakeButtonText}>
+                                Stake{" "}
+                                {stakeAsFinancier ? "as Financier" : "USDC"}
+                              </Text>
+                            </>
                           )}
-                          <Text
-                            style={[
-                              styles.emergencyButtonText,
-                              (!stakeInfo?.active ||
-                                parseFloat(stakeInfo?.amount || "0") <= 0) &&
-                                styles.buttonTextDisabled,
-                            ]}
-                          >
-                            {isTransacting && pendingTx?.type === "emergency"
-                              ? "Processing..."
-                              : "Emergency"}
-                          </Text>
                         </TouchableOpacity>
                       </View>
-                    </View>
-                  )}
-                  </>
+
+                      {/* Unstake Section */}
+                      {stakeInfo?.active && (
+                        <View style={styles.unstakeSection}>
+                          <Text style={styles.inputLabel}>
+                            Unstake Amount (USDC)
+                          </Text>
+                          <View style={styles.inputContainer}>
+                            <TextInput
+                              style={[
+                                styles.amountInput,
+                                isTransacting && styles.inputDisabled,
+                              ]}
+                              value={unstakeAmount}
+                              onChangeText={setUnstakeAmount}
+                              placeholder="Enter amount to unstake"
+                              placeholderTextColor={colors.textSecondary}
+                              keyboardType="decimal-pad"
+                              editable={!isTransacting}
+                            />
+                            <TouchableOpacity
+                              style={[
+                                styles.maxButton,
+                                isTransacting && styles.maxButtonDisabled,
+                              ]}
+                              onPress={() => setUnstakeAmount(stakeInfo.amount)}
+                              disabled={isTransacting}
+                            >
+                              <Text style={styles.maxButtonText}>MAX</Text>
+                            </TouchableOpacity>
+                          </View>
+
+                          {stakeInfo.timeUntilUnlock &&
+                            stakeInfo.timeUntilUnlock > 0 && (
+                              <Text style={styles.lockWarning}>
+                                ⚠️ Locked for{" "}
+                                {Math.ceil(stakeInfo.timeUntilUnlock / 86400)}{" "}
+                                more days
+                              </Text>
+                            )}
+
+                          <View style={styles.unstakeButtons}>
+                            <TouchableOpacity
+                              style={[
+                                styles.unstakeButton,
+                                isTransacting ||
+                                !unstakeAmount ||
+                                parseFloat(unstakeAmount) <= 0 ||
+                                Boolean(
+                                  stakeInfo?.timeUntilUnlock &&
+                                    stakeInfo.timeUntilUnlock > 0
+                                )
+                                  ? styles.buttonDisabled
+                                  : null,
+                              ]}
+                              onPress={handleUnstake}
+                              disabled={
+                                isTransacting ||
+                                !unstakeAmount ||
+                                parseFloat(unstakeAmount) <= 0 ||
+                                Boolean(
+                                  stakeInfo?.timeUntilUnlock &&
+                                    stakeInfo.timeUntilUnlock > 0
+                                )
+                              }
+                            >
+                              {isTransacting &&
+                              pendingTx?.type === "unstake" ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color={colors.warning}
+                                />
+                              ) : (
+                                <MaterialCommunityIcons
+                                  name="minus-circle"
+                                  size={20}
+                                  color={
+                                    stakeInfo?.timeUntilUnlock &&
+                                    stakeInfo.timeUntilUnlock > 0
+                                      ? colors.textSecondary
+                                      : colors.warning
+                                  }
+                                />
+                              )}
+                              <Text
+                                style={[
+                                  styles.unstakeButtonText,
+                                  Boolean(
+                                    stakeInfo?.timeUntilUnlock &&
+                                      stakeInfo.timeUntilUnlock > 0
+                                  )
+                                    ? styles.buttonTextDisabled
+                                    : null,
+                                ]}
+                              >
+                                {isTransacting && pendingTx?.type === "unstake"
+                                  ? "Unstaking..."
+                                  : stakeInfo?.timeUntilUnlock &&
+                                    stakeInfo.timeUntilUnlock > 0
+                                  ? "Locked"
+                                  : "Unstake"}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.emergencyButton,
+                                (isTransacting ||
+                                  !stakeInfo?.active ||
+                                  parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                                  styles.buttonDisabled,
+                              ]}
+                              onPress={handleEmergencyWithdraw}
+                              disabled={
+                                isTransacting ||
+                                !stakeInfo?.active ||
+                                parseFloat(stakeInfo?.amount || "0") <= 0
+                              }
+                            >
+                              {isTransacting &&
+                              pendingTx?.type === "emergency" ? (
+                                <ActivityIndicator
+                                  size="small"
+                                  color={colors.error}
+                                />
+                              ) : (
+                                <MaterialCommunityIcons
+                                  name="alert-circle"
+                                  size={20}
+                                  color={
+                                    !stakeInfo?.active ||
+                                    parseFloat(stakeInfo?.amount || "0") <= 0
+                                      ? colors.textSecondary
+                                      : colors.error
+                                  }
+                                />
+                              )}
+                              <Text
+                                style={[
+                                  styles.emergencyButtonText,
+                                  (!stakeInfo?.active ||
+                                    parseFloat(stakeInfo?.amount || "0") <=
+                                      0) &&
+                                    styles.buttonTextDisabled,
+                                ]}
+                              >
+                                {isTransacting &&
+                                pendingTx?.type === "emergency"
+                                  ? "Processing..."
+                                  : "Emergency"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+                    </>
                   )}
                 </>
               )}
             </View>
-
-            {/* Earnings Section */}
-            {isUnlocked && selectedNetwork.chainId === 4202 && (
-              <View style={styles.section}>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Treasury Earnings</Text>
-                  <TouchableOpacity
-                    onPress={loadStakingData}
-                    disabled={isLoading}
-                  >
-                    <MaterialCommunityIcons
-                      name="refresh"
-                      size={20}
-                      color={colors.primary}
-                    />
-                  </TouchableOpacity>
-                </View>
-                
-                {isLoading ? (
-                  <SkeletonCard />
-                ) : (
-                <View style={styles.earningsCard}>
-                  <View style={styles.earningsRow}>
-                    <View style={styles.earningsItem}>
-                      <Text style={styles.earningsLabel}>Pending Rewards</Text>
-                      <Text style={styles.earningsValue}>
-                        {stakeInfo?.pendingRewards
-                          ? parseFloat(stakeInfo.pendingRewards).toFixed(4)
-                          : "0.0000"}{" "}
-                        USDC
-                      </Text>
-                    </View>
-                    <View style={styles.earningsItem}>
-                      <Text style={styles.earningsLabel}>Stake Duration</Text>
-                      <Text style={styles.earningsValue}>
-                        {stakeInfo?.timestamp
-                          ? Math.floor(
-                              (Date.now() / 1000 - stakeInfo.timestamp) / 86400
-                            )
-                          : "0"}{" "}
-                        days
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Pool Statistics */}
-                  {poolStats && (
-                    <View style={styles.poolStatsRow}>
-                      <View style={styles.poolStatItem}>
-                        <Text style={styles.poolStatLabel}>Total Stakers</Text>
-                        <Text style={styles.statValue}>
-                          {poolStats.totalLiquidityProviders}
-                        </Text>
-                      </View>
-                      <View style={styles.poolStatItem}>
-                        <Text style={styles.poolStatLabel}>Pool Balance</Text>
-                        <Text style={styles.statValue}>
-                          {parseFloat(poolStats.contractBalance).toFixed(0)}{" "}
-                          USDC
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  <TouchableOpacity
-                    style={[
-                      styles.claimButton,
-                      (!stakeInfo?.pendingRewards ||
-                        parseFloat(stakeInfo.pendingRewards) <= 0 ||
-                        isTransacting) &&
-                        styles.claimButtonDisabled,
-                    ]}
-                    onPress={handleClaimRewards}
-                    disabled={
-                      !stakeInfo?.pendingRewards ||
-                      parseFloat(stakeInfo.pendingRewards) <= 0 ||
-                      isTransacting
-                    }
-                  >
-                    {isTransacting ? (
-                      <ActivityIndicator
-                        size="small"
-                        color={colors.textSecondary}
-                      />
-                    ) : (
-                      <MaterialCommunityIcons
-                        name="cash"
-                        size={20}
-                        color={
-                          stakeInfo?.pendingRewards &&
-                          parseFloat(stakeInfo.pendingRewards) > 0
-                            ? "white"
-                            : colors.textSecondary
-                        }
-                      />
-                    )}
-                    <Text
-                      style={[
-                        styles.claimButtonText,
-                        (!stakeInfo?.pendingRewards ||
-                          parseFloat(stakeInfo.pendingRewards) <= 0 ||
-                          isTransacting) &&
-                          styles.claimButtonTextDisabled,
-                      ]}
-                    >
-                      {isTransacting ? "Processing..." : "Claim Rewards"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                )}
-              </View>
-            )}
           </>
         )}
 
@@ -2499,53 +2898,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "500",
   },
-  earningsCard: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: spacing.lg,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  earningsRow: {
-    flexDirection: "row",
-    marginBottom: spacing.lg,
-  },
-  earningsItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  earningsLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  earningsValue: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: colors.primary,
-  },
-  claimButton: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    padding: spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  claimButtonDisabled: {
-    backgroundColor: colors.surface,
-  },
-  claimButtonText: {
-    color: "white",
-    fontWeight: "600",
-    marginLeft: spacing.sm,
-  },
-  claimButtonTextDisabled: {
-    color: colors.textSecondary,
-  },
   proposalCard: {
     backgroundColor: "white",
     borderRadius: 12,
@@ -3328,5 +3680,388 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: "center",
     lineHeight: 20,
+  },
+  // Token Selector Styles
+  tokenSelectorButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  selectedTokenInfo: {
+    flex: 1,
+  },
+  tokenSymbol: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  tokenBalance: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  tokenDropdown: {
+    marginTop: spacing.sm,
+    backgroundColor: "white",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tokenOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tokenOptionSelected: {
+    backgroundColor: colors.primary + "10",
+  },
+  tokenOptionInfo: {
+    flex: 1,
+  },
+  tokenOptionSymbol: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  tokenOptionName: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  tokenOptionBalance: {
+    alignItems: "flex-end",
+  },
+  tokenOptionBalanceText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  // Multi-Token Pool Breakdown Styles
+  multiTokenPoolSection: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  poolSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  poolSectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginLeft: spacing.sm,
+  },
+  totalPoolCard: {
+    backgroundColor: colors.primary + "15",
+    borderRadius: 12,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.primary + "30",
+  },
+  totalPoolLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  totalPoolValue: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: colors.primary,
+  },
+  tokenBreakdownList: {
+    gap: spacing.md,
+  },
+  tokenBreakdownCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tokenBreakdownHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: spacing.sm,
+  },
+  tokenBreakdownInfo: {
+    flex: 1,
+  },
+  tokenBreakdownSymbol: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  tokenBreakdownName: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  tokenBreakdownStats: {
+    alignItems: "flex-end",
+  },
+  tokenBreakdownAmount: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  tokenBreakdownUSD: {
+    fontSize: 14,
+    color: colors.success,
+    fontWeight: "500",
+  },
+  tokenProgressBar: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    overflow: "hidden",
+    marginVertical: spacing.sm,
+  },
+  tokenProgressFill: {
+    height: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: 3,
+  },
+  tokenPercentage: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: "right",
+  },
+  // Treasury Overview Styles
+  treasuryOverview: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  overviewTitle: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  overviewMainValue: {
+    fontSize: 36,
+    fontWeight: "700",
+    color: colors.primary,
+    marginBottom: spacing.lg,
+  },
+  networkBreakdown: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.primary,
+  },
+  networkName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.sm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  tokenRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border + "30",
+  },
+  tokenRowSymbol: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.primary,
+    flex: 1,
+  },
+  tokenAmount: {
+    fontSize: 13,
+    color: colors.text,
+    flex: 2,
+    textAlign: "center",
+  },
+  tokenUSD: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.success,
+    flex: 1,
+    textAlign: "right",
+  },
+  networkTotal: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.primary,
+    marginTop: spacing.sm,
+    textAlign: "right",
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  // Hero Card Styles (Portfolio Value)
+  heroCard: {
+    backgroundColor: "white",
+    borderRadius: 16,
+    padding: spacing.xl,
+    margin: spacing.lg,
+    marginTop: 0,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  heroHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  heroTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.textSecondary,
+  },
+  heroAmount: {
+    fontSize: 42,
+    fontWeight: "700",
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  heroSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  // Network Breakdown Styles
+  breakdownSection: {
+    margin: spacing.lg,
+    marginTop: spacing.md,
+  },
+  networkCard: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  networkCardHeader: {
+    marginBottom: spacing.md,
+  },
+  networkTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  networkCardTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  networkCardTotal: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.primary,
+    marginTop: spacing.xs,
+  },
+  // Token Stake Row Styles
+  tokenStakeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface,
+  },
+  tokenStakeLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    gap: spacing.md,
+  },
+  tokenIconPlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primary + "20",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tokenIconText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.primary,
+  },
+  tokenStakeName: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  tokenStakeAmount: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  tokenStakeValue: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  // Quick Stats Grid Styles
+  quickStatsGrid: {
+    flexDirection: "row",
+    gap: spacing.md,
+    margin: spacing.lg,
+    marginTop: spacing.md,
+  },
+  quickStatCard: {
+    flex: 1,
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.lg,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  quickStatValue: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.primary,
+    marginBottom: spacing.xs,
+  },
+  quickStatLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: "center",
   },
 });
