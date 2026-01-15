@@ -44,3 +44,5 @@ app-example
 /ios
 /android
 pnpm-lock.yaml
+.qodo
+.idea
