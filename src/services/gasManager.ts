@@ -9,7 +9,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
  * Implements tiered gas payment strategy:
  * 1. Sponsored (gasless) - for small transactions within daily limit
  * 2. ERC-20 payment - pay gas with the token being transacted
- * 3. Native payment - fallback to native ETH/BNB/MATIC
+ * 3. Native payment - fallback to native ETH/BNB
  */
 
 export interface GasSponsorshipPolicy {
@@ -423,7 +423,6 @@ class GasManagerService {
     const networkTokens: Record<string, string[]> = {
       'ethereum-mainnet': [...commonGasTokens],
       'ethereum-sepolia': [...commonGasTokens],
-      'polygon-mainnet': [...commonGasTokens],
       'base-mainnet': [...commonGasTokens],
       'base-sepolia': [...commonGasTokens],
       'bsc-mainnet': [...commonGasTokens, 'BUSD'],

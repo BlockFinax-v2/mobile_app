@@ -580,7 +580,6 @@ Status: AWAITING SELLER APPROVAL`,
       feeRecipient: "0x1234567890123456789012345678901234567890", // Platform fee address
       applicationId: application.id,
       preferredToken: "USDC",
-      preferredNetwork: "polygon",
     });
   };
 
@@ -594,7 +593,6 @@ Status: AWAITING SELLER APPROVAL`,
       supplierAddress: selectedApplication.seller.walletAddress,
       invoiceId: selectedApplication.id,
       preferredToken: "USDC",
-      preferredNetwork: "polygon",
     });
   };
 
@@ -610,7 +608,6 @@ Status: AWAITING SELLER APPROVAL`,
       settlementAmount: remainingAmount,
       settlementAddress: application.seller.walletAddress,
       preferredToken: "USDC",
-      preferredNetwork: "polygon",
     });
   };
 
@@ -791,7 +788,6 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
             />
             <View style={styles.treasuryHeaderText}>
               <Text style={styles.treasuryTitle}>Treasury Pool</Text>
-              <Text style={styles.treasuryNetwork}>Polygon Network</Text>
             </View>
           </View>
           <MaterialCommunityIcons

@@ -17,9 +17,7 @@ export type AppTabParamList = {
 };
 
 export type AuthStackParamList = {
-  Welcome: undefined;
-  CreateWallet: undefined;
-  ImportWallet: undefined;
+  SocialAuth: undefined;
   UnlockWallet: undefined;
 };
 

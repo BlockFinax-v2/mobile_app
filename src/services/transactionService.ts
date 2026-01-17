@@ -2,18 +2,24 @@
  * Transaction Service
  * 
  * Handles all blockchain transaction operations including:
- * - Native token transfers (ETH, MATIC, BNB)
+ * - Native token transfers (ETH, BNB)
  * - ERC-20 token transfers (USDT, USDC, DAI, etc.)
  * - Gas estimation and management
  * - Transaction broadcasting and monitoring
+ * - Account Abstraction (AA) integration with automatic routing
  * 
  * Based on ethers.js v5 for maximum compatibility with React Native + Expo
+ * Enhanced with Alchemy Account Abstraction for gasless transactions
  */
 
 import { WalletNetwork } from "@/contexts/WalletContext";
 import { secureStorage } from "@/utils/secureStorage";
 import { ERC20_ABI, isValidAddress } from "@/utils/tokenUtils";
 import { ethers } from "ethers";
+import { FEATURE_FLAGS } from "@/config/featureFlags";
+import { isAlchemyNetworkSupported, getStablecoinAddress } from "@/config/alchemyAccount";
+import { AlchemyAccountService } from "./alchemyAccountService";
+import type { Hex } from "viem";
 
 const MNEMONIC_KEY = "blockfinax.mnemonic";
 const PRIVATE_KEY = "blockfinax.privateKey";
@@ -27,6 +33,10 @@ export interface TransactionParams {
   gasLimit?: string;
   maxFeePerGas?: string; // For EIP-1559 transactions
   maxPriorityFeePerGas?: string; // For EIP-1559 transactions
+  // AA-specific options
+  useAccountAbstraction?: boolean; // Force AA or EOA (auto-detect if undefined)
+  gasless?: boolean; // Use paymaster for gas sponsorship
+  smartAccountAddress?: string; // Override smart account address
 }
 
 export interface GasEstimate {
@@ -122,6 +132,165 @@ class TransactionService {
     } catch (error) {
       console.error("Error getting signer:", error);
       throw new Error("Failed to access wallet credentials");
+    }
+  }
+
+  /**
+   * Check if Account Abstraction should be used for this transaction
+   */
+  private shouldUseAA(params: TransactionParams): boolean {
+    // Explicit override
+    if (params.useAccountAbstraction !== undefined) {
+      return params.useAccountAbstraction;
+    }
+
+    // Check feature flag
+    if (!FEATURE_FLAGS.USE_ALCHEMY_AA) {
+      return false;
+    }
+
+    // Check if network is supported
+    if (!isAlchemyNetworkSupported(params.network.id)) {
+      console.log(`[TransactionService] AA not supported on ${params.network.name}`);
+      return false;
+    }
+
+    // Check if gas policy is configured (required for smart account deployment)
+    // Without gas sponsorship, the smart account needs to have funds to deploy itself
+    const gasPolicyId = process.env.EXPO_PUBLIC_ALCHEMY_GAS_POLICY_ID;
+    if (!gasPolicyId || gasPolicyId === 'your_gas_policy_id_here') {
+      console.log(`[TransactionService] AA disabled - no gas policy configured. Set EXPO_PUBLIC_ALCHEMY_GAS_POLICY_ID in .env to enable gasless transactions.`);
+      return false;
+    }
+
+    // Use AA by default if available
+    return true;
+  }
+
+  /**
+   * Send transaction via Account Abstraction (Alchemy)
+   */
+  private async sendViaAA(params: TransactionParams): Promise<TransactionResult> {
+    console.log('[TransactionService] Sending transaction via Account Abstraction');
+
+    try {
+      // Get private key for AA initialization
+      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      if (!privateKey) {
+        throw new Error("No private key found for AA");
+      }
+
+      // Initialize Alchemy Account Service
+      const alchemyService = new AlchemyAccountService(params.network.id);
+      await alchemyService.initializeSmartAccount(privateKey);
+
+      const accountAddress = alchemyService.getAccountAddress();
+      if (!accountAddress) {
+        throw new Error("Failed to get smart account address");
+      }
+
+      let txHash: Hex;
+
+      if (!params.tokenAddress) {
+        // Native token transfer
+        const amountInWei = ethers.utils.parseEther(params.amount);
+        const result = await alchemyService.sendNativeToken(
+          params.recipientAddress as Hex,
+          BigInt(amountInWei.toString())
+        );
+        txHash = result.hash;
+      } else {
+        // ERC-20 token transfer
+        const decimals = params.tokenDecimals || 18;
+        const amountInUnits = ethers.utils.parseUnits(params.amount, decimals);
+        const result = await alchemyService.sendERC20Token(
+          params.tokenAddress as Hex,
+          params.recipientAddress as Hex,
+          BigInt(amountInUnits.toString())
+        );
+        txHash = result.hash;
+      }
+
+      // Build explorer URL
+      const explorerUrl = params.network.explorerUrl
+        ? `${params.network.explorerUrl}/tx/${txHash}`
+        : undefined;
+
+      console.log(`[TransactionService] AA transaction sent: ${txHash}`);
+
+      return {
+        hash: txHash,
+        from: accountAddress,
+        to: params.recipientAddress,
+        value: params.amount,
+        status: "pending",
+        timestamp: Date.now(),
+        explorerUrl,
+      };
+    } catch (error: any) {
+      console.error("[TransactionService] AA transaction failed:", error);
+      
+      // Fallback to EOA if AA fails
+      console.log("[TransactionService] Falling back to EOA transaction");
+      return this.sendViaEOA(params);
+    }
+  }
+
+  /**
+   * Send transaction via traditional EOA (ethers.js)
+   */
+  private async sendViaEOA(params: TransactionParams): Promise<TransactionResult> {
+    console.log('[TransactionService] Sending transaction via EOA');
+
+    this.validateTransactionParams(params);
+
+    try {
+      const signer = await this.getSigner(params.network);
+
+      // Estimate gas first
+      const gasEstimate = await this.estimateGas(params);
+
+      // Check balance
+      await this.checkSufficientBalance(params, signer, gasEstimate);
+
+      // Send transaction
+      let txResponse: ethers.providers.TransactionResponse;
+
+      if (!params.tokenAddress) {
+        txResponse = await this.sendNativeToken(params, signer, gasEstimate);
+      } else {
+        txResponse = await this.sendERC20Token(params, signer, gasEstimate);
+      }
+
+      // Build explorer URL
+      const explorerUrl = params.network.explorerUrl
+        ? `${params.network.explorerUrl}/tx/${txResponse.hash}`
+        : undefined;
+
+      return {
+        hash: txResponse.hash,
+        from: txResponse.from,
+        to: txResponse.to || params.recipientAddress,
+        value: params.amount,
+        status: "pending",
+        timestamp: Date.now(),
+        explorerUrl,
+      };
+    } catch (error: any) {
+      console.error("Error sending EOA transaction:", error);
+
+      // Parse common errors
+      if (error.code === "INSUFFICIENT_FUNDS") {
+        throw new Error("Insufficient funds to complete this transaction");
+      } else if (error.code === "NONCE_EXPIRED") {
+        throw new Error("Transaction nonce expired. Please try again");
+      } else if (error.code === "REPLACEMENT_UNDERPRICED") {
+        throw new Error("Gas price too low. Please increase gas price");
+      } else if (error.message?.includes("user rejected")) {
+        throw new Error("Transaction was rejected");
+      }
+
+      throw new Error(error.message || "Failed to send transaction");
     }
   }
 
@@ -258,7 +427,7 @@ class TransactionService {
   }
 
   /**
-   * Send native token (ETH, MATIC, BNB, etc.)
+   * Send native token (ETH, BNB, etc.)
    */
   private async sendNativeToken(
     params: TransactionParams,
@@ -368,59 +537,24 @@ class TransactionService {
 
   /**
    * Send transaction (main entry point)
+   * Routes between Account Abstraction and traditional EOA based on availability
    */
   public async sendTransaction(
     params: TransactionParams
   ): Promise<TransactionResult> {
     this.validateTransactionParams(params);
 
-    try {
-      const signer = await this.getSigner(params.network);
+    // Determine transaction method
+    const useAA = this.shouldUseAA(params);
 
-      // Estimate gas first
-      const gasEstimate = await this.estimateGas(params);
+    console.log(`[TransactionService] Sending transaction via ${useAA ? 'Account Abstraction' : 'EOA'}`);
+    console.log(`[TransactionService] Network: ${params.network.name}, Token: ${params.tokenAddress || 'Native'}, Amount: ${params.amount}`);
 
-      // Check balance
-      await this.checkSufficientBalance(params, signer, gasEstimate);
-
-      // Send transaction
-      let txResponse: ethers.providers.TransactionResponse;
-
-      if (!params.tokenAddress) {
-        txResponse = await this.sendNativeToken(params, signer, gasEstimate);
-      } else {
-        txResponse = await this.sendERC20Token(params, signer, gasEstimate);
-      }
-
-      // Build explorer URL
-      const explorerUrl = params.network.explorerUrl
-        ? `${params.network.explorerUrl}/tx/${txResponse.hash}`
-        : undefined;
-
-      return {
-        hash: txResponse.hash,
-        from: txResponse.from,
-        to: txResponse.to || params.recipientAddress,
-        value: params.amount,
-        status: "pending",
-        timestamp: Date.now(),
-        explorerUrl,
-      };
-    } catch (error: any) {
-      console.error("Error sending transaction:", error);
-
-      // Parse common errors
-      if (error.code === "INSUFFICIENT_FUNDS") {
-        throw new Error("Insufficient funds to complete this transaction");
-      } else if (error.code === "NONCE_EXPIRED") {
-        throw new Error("Transaction nonce expired. Please try again");
-      } else if (error.code === "REPLACEMENT_UNDERPRICED") {
-        throw new Error("Gas price too low. Please increase gas price");
-      } else if (error.message?.includes("user rejected")) {
-        throw new Error("Transaction was rejected");
-      }
-
-      throw new Error(error.message || "Failed to send transaction");
+    // Route to appropriate handler
+    if (useAA) {
+      return this.sendViaAA(params);
+    } else {
+      return this.sendViaEOA(params);
     }
   }
 

@@ -496,9 +496,6 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                 autoCapitalize="none"
                 placeholderTextColor={colors.textSecondary}
               />
-              <Text style={styles.fieldHint}>
-                Polygon network wallet address
-              </Text>
             </View>
 
             <View style={styles.formField}>

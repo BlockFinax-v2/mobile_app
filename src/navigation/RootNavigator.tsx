@@ -1,15 +1,12 @@
 import { useWallet } from "@/contexts/WalletContext";
 import { BiometricSetupScreen } from "@/screens/auth/BiometricSetupScreen";
-import { CreateWalletFlowScreen } from "@/screens/auth/CreateWalletFlowScreen";
-import { ImportWalletScreen } from "@/screens/auth/ImportWalletScreen";
 import { SplashScreen as IntroSplashScreen } from "@/screens/auth/SplashScreen";
 import { UnlockWalletScreen } from "@/screens/auth/UnlockWalletScreen";
-import { WelcomeScreen } from "@/screens/auth/WelcomeScreen";
+import { SocialAuthScreen } from "@/screens/auth/SocialAuthScreen";
 import { StackActions } from "@react-navigation/native";
 import {
   createStackNavigator,
   StackNavigationProp,
-  StackScreenProps,
 } from "@react-navigation/stack";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AppNavigator } from "./AppNavigator";
@@ -37,7 +34,7 @@ const SplashGate: React.FC<SplashGateProps> = ({ navigation }) => {
     if (!hasWallet) {
       navigation.dispatch(
         StackActions.replace("Auth", {
-          screen: "Welcome",
+          screen: "SocialAuth",
         } as never)
       );
       return;
@@ -65,8 +62,6 @@ const AuthNavigator: React.FC = () => {
     [hasWallet]
   );
 
-  type WelcomeProps = StackScreenProps<AuthStackParamList, "Welcome">;
-
   return (
     <AuthStack.Navigator
       key={navigatorKey}
@@ -75,26 +70,12 @@ const AuthNavigator: React.FC = () => {
         headerTintColor: "#FFFFFF",
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },
       }}
-      initialRouteName={hasWallet ? "UnlockWallet" : "Welcome"}
+      initialRouteName={hasWallet ? "UnlockWallet" : "SocialAuth"}
     >
-      <AuthStack.Screen name="Welcome" options={{ headerShown: false }}>
-        {(props: WelcomeProps) => (
-          <WelcomeScreen
-            onCreateWallet={() => props.navigation.navigate("CreateWallet")}
-            onImportWallet={() => props.navigation.navigate("ImportWallet")}
-            onUnlockWallet={() => props.navigation.navigate("UnlockWallet")}
-          />
-        )}
-      </AuthStack.Screen>
-      <AuthStack.Screen
-        name="CreateWallet"
-        component={CreateWalletFlowScreen}
-        options={{ title: "Create Wallet" }}
-      />
-      <AuthStack.Screen
-        name="ImportWallet"
-        component={ImportWalletScreen}
-        options={{ title: "Import Wallet" }}
+      <AuthStack.Screen 
+        name="SocialAuth" 
+        component={SocialAuthScreen}
+        options={{ headerShown: false }}
       />
       <AuthStack.Screen
         name="UnlockWallet"

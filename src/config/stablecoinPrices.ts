@@ -159,59 +159,6 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
     },
   ],
 
-  // Polygon Mainnet
-  137: [
-    {
-      symbol: 'USDC',
-      name: 'USD Coin (PoS)',
-      address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-      decimals: 6,
-      priceFeedAddress: '0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7',
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'USDT',
-      name: 'Tether USD (PoS)',
-      address: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-      decimals: 6,
-      priceFeedAddress: '0x0A6513e40db6EB1b165753AD52E80663aeA50545',
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin (PoS)',
-      address: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063',
-      decimals: 18,
-      priceFeedAddress: '0x4746DeC9e833A82EC7C2C1356372CcF2cfcD2F3D',
-      targetPeg: 1.0,
-    },
-  ],
-
-  // Polygon Amoy (Testnet - replacement for Mumbai)
-  80002: [
-    {
-      symbol: 'USDC',
-      name: 'USD Coin',
-      address: '0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582', // Amoy USDC
-      decimals: 6,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'USDT',
-      name: 'Tether USD',
-      address: '0xE8F26D237b4bA7c22b7Dd95aC59AF90ef8f1D67a', // Amoy USDT
-      decimals: 6,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin',
-      address: '0x001B3B4d0F3714Ca98ba10F6042DaEbF0B1B7b6F', // Amoy DAI
-      decimals: 18,
-      targetPeg: 1.0,
-    },
-  ],
-
   // BSC Mainnet
   56: [
     {

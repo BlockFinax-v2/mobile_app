@@ -38,10 +38,8 @@ export type SupportedNetworkId =
   | "ethereum-mainnet"
   | "base-mainnet"
   | "lisk-mainnet"
-  | "polygon-mainnet"
   | "bsc-mainnet"
   // Testnets
-  | "polygon-mumbai"
   | "ethereum-sepolia"
   | "bsc-testnet"
   | "base-sepolia"
@@ -146,35 +144,6 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
       },
     ],
   },
-  "polygon-mainnet": {
-    id: "polygon-mainnet",
-    name: "Polygon",
-    chainId: 137,
-    rpcUrl: "https://polygon-rpc.com",
-    explorerUrl: "https://polygonscan.com",
-    primaryCurrency: "MATIC",
-    isTestnet: false,
-    stablecoins: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-        decimals: 6,
-      },
-      {
-        symbol: "USDT",
-        name: "Tether USD",
-        address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
-        decimals: 6,
-      },
-      {
-        symbol: "DAI",
-        name: "Dai Stablecoin",
-        address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
-        decimals: 18,
-      },
-    ],
-  },
   "bsc-mainnet": {
     id: "bsc-mainnet",
     name: "BNB Smart Chain",
@@ -206,34 +175,6 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
   },
 
   // ========== TESTNETS ==========
-  "polygon-mumbai": {
-    id: "polygon-mumbai",
-    name: "Polygon Mumbai Testnet",
-    chainId: 80001,
-    rpcUrl: "https://polygon-mumbai-bor.publicnode.com",
-    rpcFallbacks: [
-      "https://rpc-mumbai.maticvigil.com",
-      "https://rpc.ankr.com/polygon_mumbai",
-      "https://polygon-mumbai.blockpi.network/v1/rpc/public",
-    ],
-    explorerUrl: "https://mumbai.polygonscan.com",
-    primaryCurrency: "MATIC",
-    isTestnet: true,
-    stablecoins: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x0FA8781a83E46826621b3BC094Ea2A0212e71B23",
-        decimals: 6,
-      },
-      {
-        symbol: "USDT",
-        name: "Tether USD",
-        address: "0x3813e82e6f7098b9583FC0F33a962D02018B6803",
-        decimals: 6,
-      },
-    ],
-  },
   "ethereum-sepolia": {
     id: "ethereum-sepolia",
     name: "Ethereum Sepolia",
@@ -368,6 +309,11 @@ interface WalletContextValue {
   // Biometric authentication properties
   isBiometricAvailable: boolean;
   isBiometricEnabled: boolean;
+  // Smart Account (AA) properties
+  smartAccountAddress?: string;
+  isSmartAccountEnabled: boolean;
+  isSmartAccountDeployed: boolean;
+  isInitializingSmartAccount: boolean;
   createWallet: () => Promise<void>;
   importWallet: (options: {
     mnemonic?: string;
@@ -388,6 +334,10 @@ interface WalletContextValue {
   switchToken: (tokenAddress?: string) => Promise<void>;
   updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
   resetWalletData: () => Promise<void>;
+  // Smart Account methods
+  initializeSmartAccount: () => Promise<void>;
+  setSmartAccountInfo: (address: string, isDeployed: boolean) => void;
+  clearSmartAccountInfo: () => void;
 }
 
 const WalletContext = createContext<WalletContextValue | undefined>(undefined);
@@ -419,7 +369,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     Date | undefined
   >();
   const [selectedNetwork, setSelectedNetwork] = useState<WalletNetwork>(
-    NETWORKS["polygon-mumbai"]
+    NETWORKS["base-sepolia"]
   );
   const [transactions, setTransactions] = useState<RealTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
@@ -431,6 +381,12 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   // Biometric authentication state
   const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
+
+  // Smart Account (AA) state
+  const [smartAccountAddress, setSmartAccountAddress] = useState<string | undefined>();
+  const [isSmartAccountEnabled, setIsSmartAccountEnabled] = useState(true); // Enabled by default
+  const [isSmartAccountDeployed, setIsSmartAccountDeployed] = useState(false);
+  const [isInitializingSmartAccount, setIsInitializingSmartAccount] = useState(false);
 
   const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
   const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
@@ -445,6 +401,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     setIsUnlocked(false);
     setAddress(undefined);
     setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
+    // Clear smart account info on lock
+    setSmartAccountAddress(undefined);
+    setIsSmartAccountDeployed(false);
+    setIsInitializingSmartAccount(false);
   }, []);
 
   const persistSettings = useCallback(
@@ -743,22 +703,34 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
   const hydrateWallet = useCallback(async () => {
     try {
+      // Try to load from mnemonic first
       const mnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      if (!mnemonic) {
-        console.log("No mnemonic found, wallet cannot be hydrated");
-        setIsUnlocked(false);
-        return false;
+      
+      if (mnemonic) {
+        const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+        setAddress(wallet.address);
+        setIsUnlocked(true);
+        console.log(`Wallet hydrated from mnemonic: ${wallet.address}`);
+        await refreshBalance();
+        return true;
+      }
+      
+      // If no mnemonic, try private key (for social auth/instant wallets)
+      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      
+      if (privateKey) {
+        const wallet = new ethers.Wallet(privateKey);
+        setAddress(wallet.address);
+        setIsUnlocked(true);
+        console.log(`Wallet hydrated from private key: ${wallet.address}`);
+        await refreshBalance();
+        return true;
       }
 
-      const wallet = ethers.Wallet.fromMnemonic(mnemonic);
-      setAddress(wallet.address);
-      setIsUnlocked(true);
-
-      console.log(`Wallet hydrated successfully: ${wallet.address}`);
-
-      // Refresh balance after hydrating
-      await refreshBalance();
-      return true;
+      // No wallet found
+      console.log("No mnemonic or private key found, wallet cannot be hydrated");
+      setIsUnlocked(false);
+      return false;
     } catch (error) {
       console.warn("Unable to hydrate wallet", error);
       setIsUnlocked(false);
@@ -794,9 +766,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         setSelectedNetwork(NETWORKS[savedNetworkId as SupportedNetworkId]);
       }
 
-      // Check if we have a wallet
+      // Check if we have a wallet (either mnemonic or private key)
       const existingMnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      setHasWallet(Boolean(existingMnemonic));
+      const existingPrivateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      setHasWallet(Boolean(existingMnemonic || existingPrivateKey));
 
       // Initialize biometric capability and settings
       const biometricAvailable = await biometricService.isBiometricAvailable();
@@ -1057,15 +1030,52 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       setHasWallet(false);
       setAddress(undefined);
       setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
-      setSelectedNetwork(NETWORKS["polygon-mumbai"]);
+      setSelectedNetwork(NETWORKS["base-sepolia"]);
       setSettings({ ...defaultSettings });
       setIsBiometricEnabled(false);
+      // Clear smart account info
+      setSmartAccountAddress(undefined);
+      setIsSmartAccountDeployed(false);
+      setIsInitializingSmartAccount(false);
     } catch (error) {
       console.error("Failed to reset wallet data", error);
       throw error;
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  /**
+   * Initialize smart account for the current EOA
+   * This is called automatically after wallet unlock
+   */
+  const initializeSmartAccount = useCallback(async () => {
+    // This will be called by AlchemySmartAccountContext
+    // We just expose this method for manual initialization if needed
+    console.log('[WalletContext] Smart account initialization requested');
+    setIsInitializingSmartAccount(true);
+    // The actual initialization happens in AlchemySmartAccountContext
+    // which will call setSmartAccountInfo when ready
+  }, []);
+
+  /**
+   * Set smart account information from AlchemySmartAccountContext
+   */
+  const setSmartAccountInfo = useCallback((address: string, isDeployed: boolean) => {
+    console.log('[WalletContext] Setting smart account info:', { address, isDeployed });
+    setSmartAccountAddress(address);
+    setIsSmartAccountDeployed(isDeployed);
+    setIsInitializingSmartAccount(false);
+  }, []);
+
+  /**
+   * Clear smart account information
+   */
+  const clearSmartAccountInfo = useCallback(() => {
+    console.log('[WalletContext] Clearing smart account info');
+    setSmartAccountAddress(undefined);
+    setIsSmartAccountDeployed(false);
+    setIsInitializingSmartAccount(false);
   }, []);
 
   // Initialize wallet data on app start
@@ -1102,6 +1112,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       switchToken,
       updateSettings,
       resetWalletData,
+      initializeSmartAccount,
+      setSmartAccountInfo,
+      clearSmartAccountInfo,
     }),
     [
       createWallet,
@@ -1120,6 +1133,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       switchToken,
       updateSettings,
       resetWalletData,
+      initializeSmartAccount,
+      setSmartAccountInfo,
+      clearSmartAccountInfo,
     ]
   );
 
@@ -1140,6 +1156,11 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       settings,
       isBiometricAvailable,
       isBiometricEnabled,
+      // Smart Account fields
+      smartAccountAddress,
+      isSmartAccountEnabled,
+      isSmartAccountDeployed,
+      isInitializingSmartAccount,
       // Spread optimized objects
       ...networkHelpers,
       ...walletActions,
@@ -1161,6 +1182,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       settings,
       isBiometricAvailable,
       isBiometricEnabled,
+      smartAccountAddress,
+      isSmartAccountEnabled,
+      isSmartAccountDeployed,
+      isInitializingSmartAccount,
       // Pre-memoized stable objects
       networkHelpers,
       walletActions,

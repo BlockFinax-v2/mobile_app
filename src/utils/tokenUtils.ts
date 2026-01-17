@@ -45,7 +45,7 @@ export async function getTokenBalance(
 ): Promise<string> {
   try {
     if (tokenAddress === "0x0000000000000000000000000000000000000000") {
-      // Native token (ETH, MATIC, BNB, etc.)
+      // Native token (ETH, BNB, etc.)
       const balance = await provider.getBalance(walletAddress);
       return ethers.utils.formatEther(balance);
     } else {

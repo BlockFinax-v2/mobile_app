@@ -38,7 +38,6 @@ const getNetworkIcon = (networkId: SupportedNetworkId): string => {
   if (networkId.includes("ethereum")) return "ethereum";
   if (networkId.includes("base")) return "alpha-b-circle-outline";
   if (networkId.includes("lisk")) return "alpha-l-circle";
-  if (networkId.includes("polygon")) return "triangle";
   if (networkId.includes("bsc") || networkId.includes("bnb"))
     return "alpha-b-circle";
   return "earth";
@@ -49,7 +48,6 @@ const getNetworkColor = (networkId: SupportedNetworkId): string => {
   if (networkId.includes("ethereum")) return "#627EEA";
   if (networkId.includes("base")) return "#0052FF";
   if (networkId.includes("lisk")) return "#4070F4";
-  if (networkId.includes("polygon")) return "#8247E5";
   if (networkId.includes("bsc") || networkId.includes("bnb")) return "#F3BA2F";
   return palette.primaryBlue;
 };

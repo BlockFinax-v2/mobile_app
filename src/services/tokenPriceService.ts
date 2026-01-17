@@ -22,7 +22,6 @@ const PRICE_ESTIMATES: Record<string, number> = {
   'ETH': 3500,
   'BTC': 42000,
   'BNB': 300,
-  'MATIC': 0.8,
   'LSK': 1.2,
   
   // Default for unknown tokens

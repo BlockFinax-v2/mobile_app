@@ -448,9 +448,7 @@ Tokens: ${debugInfo.balances.tokens.length}
             <Text style={styles.infoLabel}>Primary Balance:</Text>
             <Text style={styles.infoValue}>
               {debugInfo.balances.primary.toFixed(6)}{" "}
-              {debugInfo.selectedNetwork.includes("Polygon")
-                ? "MATIC"
-                : debugInfo.selectedNetwork.includes("BSC")
+              {debugInfo.selectedNetwork.includes("BSC")
                 ? "BNB"
                 : "ETH"}
             </Text>

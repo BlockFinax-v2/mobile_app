@@ -25,7 +25,6 @@ export const DIAMOND_ADDRESSES: Record<number, string> = {
   // Mainnet deployments (coming soon)
   // 1: "0x...", // Ethereum Mainnet
   // 8453: "0x...", // Base Mainnet
-  // 137: "0x...", // Polygon Mainnet
   // 56: "0x...", // BSC Mainnet
 };
 
