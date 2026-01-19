@@ -171,6 +171,7 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     isRefreshingBalance,
     forceRefreshBalance,
     smartAccountAddress,
+    addPendingTransaction,
   } = useWallet();
 
   // Initialize state
@@ -530,6 +531,7 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
         const useAA = params?.preferGasless || params?.forceAccountAbstraction;
         const gasless = useAA && state.isGasless; // Only gasless if AA is enabled and available
 
+        console.log('[usePayment] 🚀 About to send transaction...');
         const result = await transactionService.sendTransaction({
           recipientAddress: state.recipientAddress,
           amount: state.amount,
@@ -542,6 +544,36 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
           gasless: gasless,
           smartAccountAddress: smartAccountAddress,
         });
+
+        console.log('[usePayment] ✅ Transaction result received:', result.hash);
+
+        // ✅ Immediately add transaction to UI (optimistic update)
+        try {
+          console.log('═══════════════════════════════════════════════');
+          console.log('📋 [usePayment] Adding pending transaction to dashboard...');
+          console.log('addPendingTransaction function exists:', typeof addPendingTransaction);
+          
+          addPendingTransaction({
+            hash: result.hash,
+            from: result.from,
+            to: state.recipientAddress,
+            value: state.amount,
+            tokenSymbol: state.selectedToken!.symbol,
+            tokenAddress: state.selectedToken!.address === "0x0000000000000000000000000000000000000000"
+              ? undefined
+              : state.selectedToken!.address,
+            type: 'send',
+            status: 'pending',
+            timestamp: new Date(),
+            description: `Sent ${state.selectedToken!.symbol}`,
+            amount: `-${state.amount} ${state.selectedToken!.symbol}`,
+          });
+          
+          console.log('✅ [usePayment] Transaction added to dashboard!');
+          console.log('═══════════════════════════════════════════════');
+        } catch (error) {
+          console.error('❌ [usePayment] Failed to add pending transaction:', error);
+        }
 
         setState(prev => ({ ...prev, isSubmitting: false }));
 

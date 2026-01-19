@@ -39,7 +39,7 @@ interface TransactionStatus {
 export const SendPaymentReviewScreen: React.FC = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProps>();
-  const { selectedNetwork, refreshBalance, forceRefreshBalance, refreshTransactionsInstant } = useWallet();
+  const { selectedNetwork, refreshBalance, forceRefreshBalance, refreshTransactionsInstant, addPendingTransaction } = useWallet();
 
   // Transaction states
   const [isProcessing, setIsProcessing] = useState(false);
@@ -218,6 +218,7 @@ export const SendPaymentReviewScreen: React.FC = () => {
     });
 
     try {
+      console.log('[SendPaymentReview] 🚀 About to send transaction...');
       const result = await transactionService.sendTransaction({
         recipientAddress: details.recipient,
         amount: details.amount,
@@ -229,9 +230,49 @@ export const SendPaymentReviewScreen: React.FC = () => {
         network: selectedNetwork,
       });
 
+      console.log('[SendPaymentReview] ✅ Transaction result received:', result);
+      console.log('[SendPaymentReview] Result hash:', result.hash);
+      console.log('[SendPaymentReview] Result from:', result.from);
+      console.log('[SendPaymentReview] Result to:', result.to);
+
       setTransactionHash(result.hash);
       if (result.explorerUrl) {
         setExplorerUrl(result.explorerUrl);
+      }
+
+      // ✅ Immediately add transaction to UI (optimistic update)
+      try {
+        console.log('═══════════════════════════════════════════════');
+        console.log('📋 [SendPaymentReview] Adding pending transaction to dashboard...');
+        console.log('addPendingTransaction function exists:', typeof addPendingTransaction);
+        console.log('Transaction data to add:', {
+          hash: result.hash,
+          from: result.from,
+          to: details.recipient,
+          value: details.amount,
+          tokenSymbol: details.currency,
+        });
+        
+        addPendingTransaction({
+          hash: result.hash,
+          from: result.from,
+          to: details.recipient,
+          value: details.amount,
+          tokenSymbol: details.currency,
+          tokenAddress: details.tokenAddress === "0x0000000000000000000000000000000000000000" 
+            ? undefined 
+            : details.tokenAddress,
+          type: 'send',
+          status: 'pending',
+          timestamp: new Date(),
+          description: `Sent ${details.currency}`,
+          amount: `-${details.amount} ${details.currency}`,
+        });
+        
+        console.log('✅ [SendPaymentReview] Transaction added to dashboard!');
+        console.log('═══════════════════════════════════════════════');
+      } catch (error) {
+        console.error('❌ [SendPaymentReview] Failed to add pending transaction:', error);
       }
 
       setIsProcessing(false);

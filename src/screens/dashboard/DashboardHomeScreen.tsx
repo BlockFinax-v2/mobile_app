@@ -142,6 +142,17 @@ export default function DashboardHomeScreen() {
   // Debug logging for balances
   console.log("Current balances:", balances);
   console.log("Selected network:", selectedNetwork);
+  console.log("═══════════════════════════════════════════════");
+  console.log("📊 DASHBOARD TRANSACTIONS DEBUG");
+  console.log("═══════════════════════════════════════════════");
+  console.log("Transactions count:", transactions.length);
+  console.log("Is loading transactions:", isLoadingTransactions);
+  console.log("Is refreshing transactions:", isRefreshingTransactions);
+  console.log("Last transaction update:", lastTransactionUpdate);
+  if (transactions.length > 0) {
+    console.log("First transaction:", JSON.stringify(transactions[0], null, 2));
+  }
+  console.log("═══════════════════════════════════════════════");
 
   // Refresh balance and transactions when component mounts or network changes
   // But not on every render - only when truly necessary

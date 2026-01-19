@@ -3,15 +3,16 @@ import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { useWallet } from "@/contexts/WalletContext";
 import { DashboardStackParamList } from "@/navigation/types";
-import { realTransactionService } from "@/services/realTransactionService";
+import { realTransactionService, RealTransaction } from "@/services/realTransactionService";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
-import { RouteProp, useRoute } from "@react-navigation/native";
-import React, { useEffect, useState } from "react";
+import { RouteProp, useRoute, useNavigation } from "@react-navigation/native";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
   Linking,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   View,
@@ -22,7 +23,12 @@ const statusIconMap: Record<string, string> = {
   Completed: "check-circle-outline",
   Pending: "progress-clock",
   Failed: "close-circle-outline",
+  confirmed: "check-circle-outline",
+  pending: "progress-clock",
+  failed: "close-circle-outline",
 };
+
+type TransactionFilter = 'all' | 'send' | 'receive' | 'contract';
 
 interface TransactionDetails {
   hash: string;
@@ -39,17 +45,47 @@ interface TransactionDetails {
 }
 
 export const TransactionDetailsScreen: React.FC = () => {
-  const route =
-    useRoute<RouteProp<DashboardStackParamList, "TransactionDetails">>();
-  const { selectedNetwork } = useWallet();
+  const route = useRoute<RouteProp<DashboardStackParamList, "TransactionDetails">>();
+  const navigation = useNavigation();
+  const { selectedNetwork, transactions } = useWallet();
   const [details, setDetails] = useState<TransactionDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<TransactionFilter>('all');
 
   const transactionHash = route.params?.id;
+  const isListView = transactionHash === 'all';
+
+  // Filter transactions based on selected filter
+  const filteredTransactions = useMemo(() => {
+    if (filter === 'all') return transactions;
+    return transactions.filter(tx => tx.type === filter);
+  }, [transactions, filter]);
+
+  // Transaction stats
+  const stats = useMemo(() => {
+    return {
+      all: transactions.length,
+      send: transactions.filter(tx => tx.type === 'send').length,
+      receive: transactions.filter(tx => tx.type === 'receive').length,
+      contract: transactions.filter(tx => tx.type === 'contract').length,
+    };
+  }, [transactions]);
 
   useEffect(() => {
+    // Skip loading for list view
+    if (isListView) {
+      setLoading(false);
+      return;
+    }
+
+    // Skip if no valid transaction hash
+    if (!transactionHash || transactionHash === 'all') {
+      setLoading(false);
+      return;
+    }
+
     const loadTransactionDetails = async () => {
-      if (!transactionHash || transactionHash === "portfolio") {
+      if (transactionHash === "portfolio") {
         // Handle portfolio view case
         setDetails({
           hash: "Portfolio Overview",
@@ -152,7 +188,117 @@ export const TransactionDetailsScreen: React.FC = () => {
     };
 
     loadTransactionDetails();
-  }, [transactionHash, selectedNetwork]);
+  }, [transactionHash, selectedNetwork, isListView]);
+
+  // List View - All Transactions with Filters
+  if (isListView) {
+    return (
+      <Screen>
+        <View style={styles.listContainer}>
+          {/* Filter Tabs */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterScroll}
+            contentContainerStyle={styles.filterContainer}
+          >
+            <Pressable
+              style={[styles.filterButton, filter === 'all' && styles.filterButtonActive]}
+              onPress={() => setFilter('all')}
+            >
+              <Text style={[styles.filterText, filter === 'all' && styles.filterTextActive]}>
+                All ({stats.all})
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.filterButton, filter === 'send' && styles.filterButtonActive]}
+              onPress={() => setFilter('send')}
+            >
+              <Text style={[styles.filterText, filter === 'send' && styles.filterTextActive]}>
+                Sent ({stats.send})
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.filterButton, filter === 'receive' && styles.filterButtonActive]}
+              onPress={() => setFilter('receive')}
+            >
+              <Text style={[styles.filterText, filter === 'receive' && styles.filterTextActive]}>
+                Received ({stats.receive})
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.filterButton, filter === 'contract' && styles.filterButtonActive]}
+              onPress={() => setFilter('contract')}
+            >
+              <Text style={[styles.filterText, filter === 'contract' && styles.filterTextActive]}>
+                Contract ({stats.contract})
+              </Text>
+            </Pressable>
+          </ScrollView>
+
+          {/* Transactions List */}
+          <ScrollView 
+            contentContainerStyle={styles.listContentContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {filteredTransactions.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialCommunityIcons 
+                  name="history" 
+                  size={64} 
+                  color={palette.neutralMid} 
+                />
+                <Text style={styles.emptyTitle}>No Transactions</Text>
+                <Text style={styles.emptySubtitle}>
+                  {filter === 'all' 
+                    ? 'Your transaction history will appear here'
+                    : `No ${filter} transactions found`}
+                </Text>
+              </View>
+            ) : (
+              filteredTransactions.map((transaction) => {
+                const formatted = realTransactionService.formatTransactionForDisplay(transaction);
+                return (
+                  <Pressable
+                    key={transaction.id}
+                    style={styles.transactionCard}
+                    onPress={() => navigation.navigate('TransactionDetails' as never, { id: transaction.hash } as never)}
+                  >
+                    <View style={[styles.transactionIcon, { backgroundColor: formatted.color + '20' }]}>
+                      <MaterialCommunityIcons
+                        name={formatted.icon as any}
+                        color={formatted.color}
+                        size={24}
+                      />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionTitle}>{formatted.title}</Text>
+                      <Text style={styles.transactionSubtitle}>{formatted.subtitle}</Text>
+                      <Text style={styles.transactionDate}>
+                        {formatted.date} • {transaction.status}
+                      </Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Text style={[styles.transactionAmount, { color: formatted.color }]}>
+                        {formatted.amount}
+                      </Text>
+                      <MaterialCommunityIcons
+                        name="chevron-right"
+                        size={20}
+                        color={palette.neutralMid}
+                      />
+                    </View>
+                  </Pressable>
+                );
+              })
+            )}
+          </ScrollView>
+        </View>
+      </Screen>
+    );
+  }
+
+  // Detail View (existing code)
 
   if (loading) {
     return (
@@ -293,6 +439,107 @@ export const TransactionDetailsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  // List View Styles
+  listContainer: {
+    flex: 1,
+    backgroundColor: palette.background,
+  },
+  filterScroll: {
+    maxHeight: 60,
+    flexGrow: 0,
+  },
+  filterContainer: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  filterButton: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  filterButtonActive: {
+    backgroundColor: palette.primaryBlue,
+    borderColor: palette.primaryBlue,
+  },
+  filterText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: palette.neutralDark,
+  },
+  filterTextActive: {
+    color: palette.white,
+  },
+  listContentContainer: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xxl,
+    gap: spacing.sm,
+  },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxxl * 2,
+    gap: spacing.md,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: palette.neutralDark,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: palette.neutralMid,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  transactionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: palette.white,
+    borderRadius: 16,
+    padding: spacing.md,
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  transactionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transactionInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  transactionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: palette.neutralDark,
+  },
+  transactionSubtitle: {
+    fontSize: 13,
+    color: palette.neutralMid,
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: palette.neutralMid,
+  },
+  transactionRight: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  
+  // Detail View Styles (existing)
   container: {
     paddingBottom: spacing.xxl,
     gap: spacing.lg,

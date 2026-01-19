@@ -171,7 +171,14 @@ class TransactionService {
    * Send transaction via Account Abstraction (Alchemy)
    */
   private async sendViaAA(params: TransactionParams): Promise<TransactionResult> {
-    console.log('[TransactionService] Sending transaction via Account Abstraction');
+    console.log('[TransactionService] ═══════════════════════════════════════');
+    console.log('[TransactionService] 🚀 STARTING AA TRANSACTION');
+    console.log('[TransactionService] ═══════════════════════════════════════');
+    console.log('[TransactionService] 📍 Recipient Address:', params.recipientAddress);
+    console.log('[TransactionService] 💰 Amount:', params.amount);
+    console.log('[TransactionService] 🪙 Token Address:', params.tokenAddress || 'NATIVE TOKEN');
+    console.log('[TransactionService] 🌐 Network:', params.network.name, `(Chain ID: ${params.network.chainId})`);
+    console.log('[TransactionService] ═══════════════════════════════════════');
 
     try {
       // Get private key for AA initialization
@@ -189,26 +196,46 @@ class TransactionService {
         throw new Error("Failed to get smart account address");
       }
 
+      console.log('[TransactionService] 🏦 Smart Account Address:', accountAddress);
+
       let txHash: Hex;
 
       if (!params.tokenAddress) {
         // Native token transfer
+        console.log('[TransactionService] 📤 Preparing NATIVE TOKEN transfer');
         const amountInWei = ethers.utils.parseEther(params.amount);
+        console.log('[TransactionService]   - Amount in Wei:', amountInWei.toString());
+        console.log('[TransactionService]   - Recipient:', params.recipientAddress);
+        console.log('[TransactionService]   - Calling sendNativeToken...');
+        
         const result = await alchemyService.sendNativeToken(
           params.recipientAddress as Hex,
           BigInt(amountInWei.toString())
         );
         txHash = result.hash;
+        
+        console.log('[TransactionService] ✅ Native token transfer successful');
+        console.log('[TransactionService]   - Transaction Hash:', txHash);
       } else {
         // ERC-20 token transfer
+        console.log('[TransactionService] 📤 Preparing ERC-20 TOKEN transfer');
         const decimals = params.tokenDecimals || 18;
         const amountInUnits = ethers.utils.parseUnits(params.amount, decimals);
+        console.log('[TransactionService]   - Token Address:', params.tokenAddress);
+        console.log('[TransactionService]   - Amount in Units:', amountInUnits.toString());
+        console.log('[TransactionService]   - Decimals:', decimals);
+        console.log('[TransactionService]   - Recipient:', params.recipientAddress);
+        console.log('[TransactionService]   - Calling sendERC20Token...');
+        
         const result = await alchemyService.sendERC20Token(
           params.tokenAddress as Hex,
           params.recipientAddress as Hex,
           BigInt(amountInUnits.toString())
         );
         txHash = result.hash;
+        
+        console.log('[TransactionService] ✅ ERC-20 token transfer successful');
+        console.log('[TransactionService]   - Transaction Hash:', txHash);
       }
 
       // Build explorer URL
@@ -216,7 +243,19 @@ class TransactionService {
         ? `${params.network.explorerUrl}/tx/${txHash}`
         : undefined;
 
-      console.log(`[TransactionService] AA transaction sent: ${txHash}`);
+      console.log('[TransactionService] ═══════════════════════════════════════');
+      console.log('[TransactionService] ✅ AA TRANSACTION COMPLETE');
+      console.log('[TransactionService] ═══════════════════════════════════════');
+      console.log('[TransactionService] 📋 Transaction Hash:', txHash);
+      console.log('[TransactionService] 📤 From (Smart Account):', accountAddress);
+      console.log('[TransactionService] 📥 To (Recipient):', params.recipientAddress);
+      console.log('[TransactionService] 💰 Amount:', params.amount);
+      console.log('[TransactionService] 🔗 Explorer:', explorerUrl || 'N/A');
+      console.log('[TransactionService] ═══════════════════════════════════════');
+      console.log('[TransactionService] ⚠️  VERIFY ON BLOCK EXPLORER:');
+      console.log('[TransactionService] Check that funds are being sent TO:', params.recipientAddress);
+      console.log('[TransactionService] And NOT to some other address!');
+      console.log('[TransactionService] ═══════════════════════════════════════');
 
       return {
         hash: txHash,

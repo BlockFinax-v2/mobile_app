@@ -330,6 +330,7 @@ interface WalletContextValue {
   refreshBalanceInstant: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   refreshTransactionsInstant: () => Promise<void>;
+  addPendingTransaction: (tx: Partial<RealTransaction>) => void;
   switchNetwork: (networkId: SupportedNetworkId) => Promise<void>;
   switchToken: (tokenAddress?: string) => Promise<void>;
   updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
@@ -775,6 +776,53 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     }, 50);
   }, [refreshTransactions]);
 
+  // Add pending transaction immediately to UI (optimistic update)
+  const addPendingTransaction = useCallback((tx: Partial<RealTransaction>) => {
+    console.log('═══════════════════════════════════════════════');
+    console.log('💫 addPendingTransaction CALLED');
+    console.log('═══════════════════════════════════════════════');
+    console.log('📥 Input transaction:', JSON.stringify(tx, null, 2));
+    console.log('Current transactions count:', transactions.length);
+    
+    const newTransaction: RealTransaction = {
+      id: tx.id || tx.hash || `pending-${Date.now()}`,
+      hash: tx.hash || '',
+      from: tx.from || address || '',
+      to: tx.to || '',
+      value: tx.value || '0',
+      tokenSymbol: tx.tokenSymbol || selectedNetwork.primaryCurrency,
+      tokenAddress: tx.tokenAddress,
+      type: tx.type || 'send',
+      status: tx.status || 'pending',
+      timestamp: tx.timestamp || new Date(),
+      blockNumber: tx.blockNumber,
+      gasUsed: tx.gasUsed,
+      gasPrice: tx.gasPrice,
+      description: tx.description || `${tx.type === 'send' ? 'Sent' : 'Received'} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
+      amount: tx.amount || `${tx.type === 'send' ? '-' : '+'}${tx.value} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
+    };
+
+    console.log('🔧 Constructed transaction:', JSON.stringify(newTransaction, null, 2));
+
+    // Add to the beginning of transactions array (most recent first)
+    setTransactions(prevTxs => {
+      console.log('📊 Previous transactions count:', prevTxs.length);
+      
+      // Check if transaction already exists
+      const exists = prevTxs.some(t => t.hash === newTransaction.hash || t.id === newTransaction.id);
+      if (exists) {
+        console.log('⚠️ Transaction already exists in list, skipping add');
+        return prevTxs;
+      }
+      
+      const newTxs = [newTransaction, ...prevTxs];
+      console.log('✅ Added pending transaction to list!');
+      console.log('📊 New transactions count:', newTxs.length);
+      console.log('═══════════════════════════════════════════════');
+      return newTxs;
+    });
+  }, [address, selectedNetwork, transactions.length]);
+
   // Simple initialization function for app startup
   const initializeWalletData = useCallback(async () => {
     console.log("🚀 Initializing wallet data...");
@@ -1128,6 +1176,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       refreshBalanceInstant,
       refreshTransactions,
       refreshTransactionsInstant,
+      addPendingTransaction,
       switchNetwork,
       switchToken,
       updateSettings,
@@ -1149,6 +1198,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       refreshBalanceInstant,
       refreshTransactions,
       refreshTransactionsInstant,
+      addPendingTransaction,
       switchNetwork,
       switchToken,
       updateSettings,

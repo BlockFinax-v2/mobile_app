@@ -257,25 +257,49 @@ export class AlchemyAccountService {
         account: this.client.account!,
       };
       
-      console.log('[AlchemyAccountService] 🔍 User operation structure:');
-      console.log('[AlchemyAccountService]   - Has uo wrapper:', !!userOp.uo);
-      console.log('[AlchemyAccountService]   - uo.target:', userOp.uo.target);
-      console.log('[AlchemyAccountService]   - uo.value type:', typeof userOp.uo.value);
-      console.log('[AlchemyAccountService]   - uo.data type:', typeof userOp.uo.data);
-      console.log('[AlchemyAccountService]   - Has account:', !!userOp.account);
-      console.log('[AlchemyAccountService]   - Account address:', userOp.account?.address);
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] 🔍 FINAL USER OPERATION STRUCTURE');
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService]   ✅ Has uo wrapper:', !!userOp.uo);
+      console.log('[AlchemyAccountService]   📍 uo.target (RECIPIENT or TOKEN):', userOp.uo.target);
+      console.log('[AlchemyAccountService]   💰 uo.value (WEI):', userOp.uo.value.toString());
+      console.log('[AlchemyAccountService]   📦 uo.data:', userOp.uo.data);
+      console.log('[AlchemyAccountService]   🔧 uo.data length:', userOp.uo.data.length, 'bytes');
+      console.log('[AlchemyAccountService]   ✅ Has account:', !!userOp.account);
+      console.log('[AlchemyAccountService]   🏦 Account address (FROM):', userOp.account?.address);
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] ⚠️  CRITICAL: Verify target matches recipient!');
+      if (userOp.uo.data === '0x' || userOp.uo.data.length <= 2) {
+        console.log('[AlchemyAccountService] 📍 NATIVE TRANSFER: target IS the recipient');
+      } else {
+        console.log('[AlchemyAccountService] 🪙 TOKEN TRANSFER: target is token contract');
+        console.log('[AlchemyAccountService] Recipient is encoded in data field');
+      }
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       console.log('[AlchemyAccountService] 📞 Calling client.sendUserOperation...');
       const result = await this.client.sendUserOperation(userOp);
 
-      console.log('[AlchemyAccountService] User operation sent:', result.hash);
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] ✅ User operation sent successfully!');
+      console.log('[AlchemyAccountService]   - UserOp Hash:', result.hash);
+      console.log('[AlchemyAccountService] ⏳ Waiting for transaction to be mined...');
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // Wait for the transaction to be mined
       const txHash = await this.client.waitForUserOperationTransaction({
         hash: result.hash,
       });
 
-      console.log('[AlchemyAccountService] Transaction mined:', txHash);
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] ⛏️  TRANSACTION MINED!');
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] 📋 Transaction Hash:', txHash);
+      console.log('[AlchemyAccountService] 🔗 Check on Explorer:');
+      console.log('[AlchemyAccountService]    https://sepolia.etherscan.io/tx/' + txHash);
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] ⚠️  VERIFY: Check the TO field matches your intended recipient!');
+      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       return {
         hash: txHash,
@@ -374,11 +398,26 @@ export class AlchemyAccountService {
       gasSponsored?: boolean;
     }
   ): Promise<UserOperationResult> {
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[AlchemyAccountService] 💸 sendNativeToken called');
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[AlchemyAccountService] 📍 TO (Recipient):', to);
+    console.log('[AlchemyAccountService] 💰 AMOUNT (Wei):', amount.toString());
+    console.log('[AlchemyAccountService] 💰 AMOUNT (ETH):', (Number(amount) / 1e18).toFixed(6));
+    console.log('[AlchemyAccountService] 📦 Data:', '0x (empty - native transfer)');
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     const call: TransactionCall = {
       target: to,
       data: '0x' as Hex,
       value: amount,
     };
+
+    console.log('[AlchemyAccountService] 🔧 TransactionCall constructed:');
+    console.log('[AlchemyAccountService]   - target:', call.target);
+    console.log('[AlchemyAccountService]   - data:', call.data);
+    console.log('[AlchemyAccountService]   - value:', call.value?.toString() || '0');
+    console.log('[AlchemyAccountService] 📤 Sending to sendUserOperation...');
 
     return this.sendUserOperation(call, options);
   }
@@ -398,6 +437,14 @@ export class AlchemyAccountService {
       gasSponsored?: boolean;
     }
   ): Promise<UserOperationResult> {
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[AlchemyAccountService] 🪙 sendERC20Token called');
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[AlchemyAccountService] 📍 Token Contract:', tokenAddress);
+    console.log('[AlchemyAccountService] 📍 TO (Recipient):', to);
+    console.log('[AlchemyAccountService] 💰 AMOUNT (Units):', amount.toString());
+    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     // Encode ERC-20 transfer function call
     const data = encodeFunctionData({
       abi: [
@@ -416,11 +463,23 @@ export class AlchemyAccountService {
       args: [to, amount],
     });
 
+    console.log('[AlchemyAccountService] 🔧 ERC-20 transfer data encoded');
+    console.log('[AlchemyAccountService]   - Function: transfer(address,uint256)');
+    console.log('[AlchemyAccountService]   - Arg[0] to:', to);
+    console.log('[AlchemyAccountService]   - Arg[1] amount:', amount.toString());
+    console.log('[AlchemyAccountService]   - Encoded data:', data);
+
     const call: TransactionCall = {
       target: tokenAddress,
       data,
       value: 0n,
     };
+
+    console.log('[AlchemyAccountService] 🔧 TransactionCall constructed:');
+    console.log('[AlchemyAccountService]   - target (token contract):', call.target);
+    console.log('[AlchemyAccountService]   - data (transfer call):', call.data);
+    console.log('[AlchemyAccountService]   - value:', call.value?.toString() || '0');
+    console.log('[AlchemyAccountService] 📤 Sending to sendUserOperation...');
 
     return this.sendUserOperation(call, options);
   }
