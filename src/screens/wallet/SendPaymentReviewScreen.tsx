@@ -39,7 +39,7 @@ interface TransactionStatus {
 export const SendPaymentReviewScreen: React.FC = () => {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProps>();
-  const { selectedNetwork, refreshBalance, forceRefreshBalance } = useWallet();
+  const { selectedNetwork, refreshBalance, forceRefreshBalance, refreshTransactionsInstant } = useWallet();
 
   // Transaction states
   const [isProcessing, setIsProcessing] = useState(false);
@@ -142,6 +142,9 @@ export const SendPaymentReviewScreen: React.FC = () => {
 
               // Refresh balance after confirmation - force refresh to get updated balance immediately
               await forceRefreshBalance();
+              
+              // Also refresh transactions to show the new transaction
+              await refreshTransactionsInstant();
 
               // Auto navigate back after 3 seconds
               setTimeout(() => {

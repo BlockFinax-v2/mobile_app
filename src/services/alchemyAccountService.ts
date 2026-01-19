@@ -85,17 +85,27 @@ export class AlchemyAccountService {
       const gasPolicyId = options?.gasPolicyId ?? getAlchemyGasPolicyId();
       const chain = getAlchemyChain(this.network);
 
-      console.log('[AlchemyAccountService] Creating client with chain:', chain.name);
-      console.log('[AlchemyAccountService] Chain ID:', chain.id);
+      console.log('[AlchemyAccountService] 🔍 API Configuration:');
+      console.log('[AlchemyAccountService]   - API Key:', apiKey.substring(0, 10) + '...');
+      console.log('[AlchemyAccountService]   - Gas Policy ID:', gasPolicyId || 'NONE');
+      console.log('[AlchemyAccountService]   - Network:', this.network);
+      console.log('[AlchemyAccountService]   - Chain Name:', chain.name);
+      console.log('[AlchemyAccountService]   - Chain ID:', chain.id);
+
+      // Create transport
+      console.log('[AlchemyAccountService] 🔧 Creating Alchemy transport...');
+      const transport = alchemy({ apiKey });
+      console.log('[AlchemyAccountService] ✅ Transport created successfully');
 
       // Create smart account client configuration
+      console.log('[AlchemyAccountService] 🔧 Building client configuration...');
       const clientConfig: any = {
         apiKey,
         chain,
         signer,
-        // Explicitly set the transport to use Alchemy
-        transport: alchemy({ apiKey }),
+        transport,
       };
+      console.log('[AlchemyAccountService] ✅ Base config created with keys:', Object.keys(clientConfig));
 
       // Add optional salt
       if (options?.salt !== undefined) {
@@ -104,27 +114,62 @@ export class AlchemyAccountService {
 
       // Add gas manager config if policy ID is provided
       if (gasPolicyId) {
-        console.log('[AlchemyAccountService] Gas sponsorship enabled with policy:', gasPolicyId);
+        console.log('[AlchemyAccountService] 💰 Gas sponsorship configuration:');
+        console.log('[AlchemyAccountService]   - Policy ID:', gasPolicyId);
+        console.log('[AlchemyAccountService]   - Format check:', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gasPolicyId) ? 'VALID UUID' : 'INVALID FORMAT');
+        
         clientConfig.gasManagerConfig = {
           policyId: gasPolicyId,
         };
+        
+        console.log('[AlchemyAccountService] ✅ Gas manager config added to client config');
+        console.log('[AlchemyAccountService] 📋 Final config keys:', Object.keys(clientConfig));
+        console.log('[AlchemyAccountService] 📋 Gas manager keys:', Object.keys(clientConfig.gasManagerConfig));
       } else {
-        console.log('[AlchemyAccountService] No gas policy configured - transactions will not be sponsored');
+        console.log('[AlchemyAccountService] ⚠️  WARNING: No gas policy configured!');
+        console.log('[AlchemyAccountService] ⚠️  Transactions will NOT be sponsored!');
+        console.log('[AlchemyAccountService] ⚠️  User will need ETH in smart account for gas');
       }
 
       // Create smart account client
-      console.log('[AlchemyAccountService] Creating modular account client...');
-      this.client = await createModularAccountAlchemyClient(clientConfig);
+      console.log('[AlchemyAccountService] 🚀 Creating modular account client...');
+      console.log('[AlchemyAccountService] 🔍 Pre-flight checks:');
+      console.log('[AlchemyAccountService]   - API Key type:', typeof apiKey, '| Length:', apiKey?.length);
+      console.log('[AlchemyAccountService]   - Chain type:', typeof chain, '| Has id:', !!chain?.id);
+      console.log('[AlchemyAccountService]   - Signer type:', typeof signer, '| Constructor:', signer?.constructor?.name);
+      console.log('[AlchemyAccountService]   - Transport type:', typeof transport, '| Is function:', typeof transport === 'function');
+      console.log('[AlchemyAccountService]   - Config has gasManagerConfig:', !!clientConfig.gasManagerConfig);
+      
+      try {
+        console.log('[AlchemyAccountService] 📞 Calling createModularAccountAlchemyClient...');
+        this.client = await createModularAccountAlchemyClient(clientConfig);
+        console.log('[AlchemyAccountService] ✅ Client created successfully!');
+      } catch (clientError: any) {
+        console.error('[AlchemyAccountService] ❌ Client creation failed!');
+        console.error('[AlchemyAccountService] Error name:', clientError?.name);
+        console.error('[AlchemyAccountService] Error message:', clientError?.message);
+        console.error('[AlchemyAccountService] Error stack:', clientError?.stack);
+        throw clientError;
+      }
 
       // Get and store account address
+      console.log('[AlchemyAccountService] 🔍 Extracting account address...');
+      console.log('[AlchemyAccountService]   - Client exists:', !!this.client);
+      console.log('[AlchemyAccountService]   - Client.account exists:', !!this.client?.account);
+      console.log('[AlchemyAccountService]   - Client.account.address exists:', !!this.client?.account?.address);
+      
       this.accountAddress = this.client.account?.address ?? null;
 
       if (!this.accountAddress) {
+        console.error('[AlchemyAccountService] ❌ Failed to get smart account address!');
+        console.error('[AlchemyAccountService] Client keys:', Object.keys(this.client || {}));
+        console.error('[AlchemyAccountService] Account keys:', Object.keys(this.client?.account || {}));
         throw new Error('Failed to get smart account address');
       }
 
-      console.log('[AlchemyAccountService] Smart account initialized successfully!');
-      console.log('[AlchemyAccountService] Smart Account Address:', this.accountAddress);
+      console.log('[AlchemyAccountService] ✅ Smart account initialized successfully!');
+      console.log('[AlchemyAccountService] 📍 Smart Account Address:', this.accountAddress);
+      console.log('[AlchemyAccountService] 📍 EOA Owner Address:', account.address);
 
       return this.accountAddress;
     } catch (error) {
@@ -177,12 +222,18 @@ export class AlchemyAccountService {
     }
 
     try {
-      console.log('[AlchemyAccountService] Sending user operation...');
-      console.log('[AlchemyAccountService] Target:', call.target);
-      console.log('[AlchemyAccountService] Value:', call.value?.toString() || '0');
+      console.log('[AlchemyAccountService] 🚀 Sending user operation...');
+      console.log('[AlchemyAccountService] 🔍 Transaction details:');
+      console.log('[AlchemyAccountService]   - Target:', call.target);
+      console.log('[AlchemyAccountService]   - Value:', call.value?.toString() || '0');
+      console.log('[AlchemyAccountService]   - Data length:', call.data?.length || 0);
+      console.log('[AlchemyAccountService]   - Client exists:', !!this.client);
+      console.log('[AlchemyAccountService]   - Account exists:', !!this.client?.account);
 
       // Check if account is deployed
+      console.log('[AlchemyAccountService] 🔍 Checking if smart account is deployed...');
       const isDeployed = await this.isAccountDeployed();
+      console.log('[AlchemyAccountService] Deployment status:', isDeployed ? '✅ DEPLOYED' : '❌ NOT DEPLOYED');
       
       if (!isDeployed) {
         console.warn('[AlchemyAccountService] ⚠️  Smart account not yet deployed!');
@@ -195,14 +246,27 @@ export class AlchemyAccountService {
       }
 
       // Send user operation using the client
-      const result = await this.client.sendUserOperation({
+      // Gas sponsorship is handled automatically via gasManagerConfig set during client initialization
+      console.log('[AlchemyAccountService] 📤 Preparing user operation...');
+      const userOp = {
         uo: {
           target: call.target,
           data: call.data,
           value: call.value || 0n,
         },
         account: this.client.account!,
-      });
+      };
+      
+      console.log('[AlchemyAccountService] 🔍 User operation structure:');
+      console.log('[AlchemyAccountService]   - Has uo wrapper:', !!userOp.uo);
+      console.log('[AlchemyAccountService]   - uo.target:', userOp.uo.target);
+      console.log('[AlchemyAccountService]   - uo.value type:', typeof userOp.uo.value);
+      console.log('[AlchemyAccountService]   - uo.data type:', typeof userOp.uo.data);
+      console.log('[AlchemyAccountService]   - Has account:', !!userOp.account);
+      console.log('[AlchemyAccountService]   - Account address:', userOp.account?.address);
+      
+      console.log('[AlchemyAccountService] 📞 Calling client.sendUserOperation...');
+      const result = await this.client.sendUserOperation(userOp);
 
       console.log('[AlchemyAccountService] User operation sent:', result.hash);
 
@@ -226,12 +290,16 @@ export class AlchemyAccountService {
         if (!isDeployed) {
           console.error('[AlchemyAccountService] ❌ Smart account deployment failed!');
           console.error('[AlchemyAccountService] 📍 Smart account address:', this.accountAddress);
+          console.error('[AlchemyAccountService] � CRITICAL: Check if paymasterAndData is empty in error above');
+          console.error('[AlchemyAccountService] 💡 If paymasterAndData is "0x", the gas policy is NOT sponsoring!');
           console.error('[AlchemyAccountService] 💡 Solutions:');
-          console.error('[AlchemyAccountService]   1. Verify gas policy at: https://dashboard.alchemy.com/gas-manager');
-          console.error('[AlchemyAccountService]   2. Ensure gas policy has sufficient funds');
-          console.error('[AlchemyAccountService]   3. Check policy allows smart account deployments');
-          console.error('[AlchemyAccountService]   4. OR send 0.01 ETH to the smart account address above');
-          console.error('[AlchemyAccountService]   5. After funding, try the transaction again');
+          console.error('[AlchemyAccountService]   1. MOST LIKELY: API key and gas policy are from DIFFERENT Alchemy apps!');
+          console.error('[AlchemyAccountService]      → Verify at: https://dashboard.alchemy.com/apps');
+          console.error('[AlchemyAccountService]      → And: https://dashboard.alchemy.com/gas-manager');
+          console.error('[AlchemyAccountService]      → Both must show the SAME app name');
+          console.error('[AlchemyAccountService]   2. OR create new gas policy for your current app');
+          console.error('[AlchemyAccountService]   3. OR send 0.01 ETH to:', this.accountAddress);
+          console.error('[AlchemyAccountService]   4. See VERIFY_ALCHEMY_CONFIG.md for detailed steps');
           
           throw new Error(
             `Smart account deployment failed. The gas policy may not be configured to sponsor deployments. ` +

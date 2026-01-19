@@ -228,7 +228,9 @@ class TransactionService {
         explorerUrl,
       };
     } catch (error: any) {
-      console.error("[TransactionService] AA transaction failed:", error);
+      console.error("[TransactionService] ❌ AA transaction failed!");
+      console.error("[TransactionService] Error type:", error?.constructor?.name);
+      console.error("[TransactionService] Error message:", error?.message);
       
       // Fallback to EOA if AA fails
       console.log("[TransactionService] Falling back to EOA transaction");

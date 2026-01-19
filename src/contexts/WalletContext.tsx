@@ -665,15 +665,35 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     try {
       console.log("🔄 Fetching REAL transaction history...");
 
-      const realTransactions =
-        await realTransactionService.getTransactionHistory(
-          address,
-          selectedNetwork,
-          { limit: 20 } // Get last 20 transactions
-        );
+      // Fetch transactions for both EOA and smart account addresses
+      const addresses = [address];
+      if (smartAccountAddress && smartAccountAddress !== address) {
+        addresses.push(smartAccountAddress);
+        console.log(`🔍 Fetching transactions for EOA (${address}) and Smart Account (${smartAccountAddress})`);
+      }
 
-      console.log("✅ Real transactions loaded:", realTransactions.length);
-      setTransactions(realTransactions);
+      // Fetch transactions for all addresses
+      const allTransactions: RealTransaction[] = [];
+      for (const addr of addresses) {
+        const txs = await realTransactionService.getTransactionHistory(
+          addr,
+          selectedNetwork,
+          { limit: 20 } // Get last 20 transactions per address
+        );
+        allTransactions.push(...txs);
+      }
+
+      // Remove duplicates and sort by timestamp
+      const uniqueTransactions = allTransactions.filter((tx, index, self) =>
+        index === self.findIndex((t) => t.hash === tx.hash)
+      );
+      uniqueTransactions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+      // Limit to 20 total transactions
+      const limitedTransactions = uniqueTransactions.slice(0, 20);
+
+      console.log(`✅ Real transactions loaded: ${limitedTransactions.length} (from ${addresses.length} address${addresses.length > 1 ? 'es' : ''})`);
+      setTransactions(limitedTransactions);
       setLastTransactionUpdate(now);
     } catch (error) {
       console.error("Failed to refresh transactions", error);
@@ -682,7 +702,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     } finally {
       setIsRefreshingTransactions(false);
     }
-  }, [address, selectedNetwork, lastTransactionUpdate]);
+  }, [address, smartAccountAddress, selectedNetwork, lastTransactionUpdate]);
 
   // Ensure secure RNG is available before any operation that depends on it
   const ensureCryptoRNG = useCallback(() => {
