@@ -42,13 +42,12 @@ export default function NetworkTestScreen() {
             },
           ],
         },
-        ethereumSepolia: {
-          name: "Ethereum Sepolia",
-          rpcUrl:
-            "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
-          chainId: 11155111,
-          nativeCurrency: { name: "Sepolia ETH", symbol: "SEP", decimals: 18 },
-          blockExplorerUrl: "https://sepolia.etherscan.io",
+        baseSepolia: {
+          name: "Base Sepolia",
+          rpcUrl: "https://sepolia.base.org",
+          chainId: 84532,
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          blockExplorerUrl: "https://sepolia.basescan.org",
           stablecoins: [
             {
               symbol: "USDC",
@@ -91,9 +90,9 @@ export default function NetworkTestScreen() {
             },
           ],
         },
-        baseSepolia: {
-          name: "Base Sepolia",
-          rpcUrl: "https://sepolia.base.org",
+        baseSepoliaAlt: {
+          name: "Base Sepolia (Alt)",
+          rpcUrl: "https://base-sepolia.blockpi.network/v1/rpc/public",
           chainId: 84532,
           nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
           blockExplorerUrl: "https://sepolia.basescan.org",

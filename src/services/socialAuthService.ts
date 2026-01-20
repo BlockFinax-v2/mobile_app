@@ -295,8 +295,8 @@ class SocialAuthService {
   async isAuthenticated(): Promise<boolean> {
     try {
       const authType = await secureStorage.getSecureItem(SOCIAL_AUTH_TYPE_KEY);
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
-      return !!(authType && privateKey);
+      const encryptedKey = await secureStorage.getSecureItem('blockfinax.encryptedPrivateKey');
+      return !!(authType && encryptedKey);
     } catch (error) {
       return false;
     }

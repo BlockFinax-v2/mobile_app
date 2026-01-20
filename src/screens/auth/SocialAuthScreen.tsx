@@ -381,7 +381,7 @@ export const SocialAuthScreen: React.FC = () => {
             />
 
           {/* Import Wallet */}
-          {/* <View style={styles.importSection}>
+          <View style={styles.importSection}>
             <Button
               label="Import Existing Wallet"
               onPress={handleImportWallet}
@@ -399,7 +399,7 @@ export const SocialAuthScreen: React.FC = () => {
             <Text variant="body" color={palette.neutralMid} style={styles.importHint}>
               Use your existing private key or seed phrase
             </Text>
-          </View> */}
+          </View>
 
           {/* Quick Create Option */}
           <View style={styles.quickCreateSection}>

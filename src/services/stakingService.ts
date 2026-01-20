@@ -277,8 +277,13 @@ class StakingService {
         return this.currentSigner;
       }
 
-      // Fallback to private key
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      // Fallback to encrypted private key
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      if (!password) {
+        throw new Error("Password not found in secure storage");
+      }
+
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         throw new Error("No wallet credentials found in secure storage");
       }
@@ -316,7 +321,12 @@ class StakingService {
    */
   private async initializeAA(): Promise<AlchemyAccountService | null> {
     try {
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      if (!password) {
+        throw new Error("Password not found for AA");
+      }
+
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         throw new Error("No private key found for AA");
       }
@@ -684,7 +694,7 @@ class StakingService {
     });
 
     // Execute batch transaction via AA
-    const result = await alchemyService.sendBatchUserOp([
+    const result = await alchemyService.sendBatchUserOperation([
       {
         target: usdcAddress as Hex,
         data: encodeFunctionData({

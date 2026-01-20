@@ -14,6 +14,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import {
   getAlchemyChain,
   isAlchemyNetworkSupported,
+  isOfficiallySupported,
   getAlchemyApiKey,
   getAlchemyGasPolicyId,
   type SupportedAlchemyNetwork,
@@ -47,10 +48,19 @@ export class AlchemyAccountService {
   private accountAddress: Hex | null = null;
 
   constructor(network: string) {
+    console.log('[AlchemyAccountService] Constructor received network ID:', network);
     if (!isAlchemyNetworkSupported(network)) {
       throw new Error(`Network ${network} is not supported by Alchemy Account Kit`);
     }
+    
+    // Warn about unofficial networks
+    if (!isOfficiallySupported(network)) {
+      console.warn(`[AlchemyAccountService] ⚠️ Network ${network} is not officially supported by Alchemy AA`);
+      console.warn('[AlchemyAccountService] Account Abstraction may not work. Will fallback to EOA if it fails.');
+    }
+    
     this.network = network;
+    console.log('[AlchemyAccountService] Network validated successfully:', this.network);
   }
 
   /**
@@ -67,15 +77,11 @@ export class AlchemyAccountService {
     }
   ): Promise<Hex> {
     try {
-      console.log('[AlchemyAccountService] Initializing smart account...');
-      console.log('[AlchemyAccountService] Network:', this.network);
-
       // Remove 0x prefix if present
       const cleanPrivateKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
       
       // Create viem account from private key
       const account = privateKeyToAccount(cleanPrivateKey as Hex);
-      console.log('[AlchemyAccountService] EOA Address:', account.address);
       
       // Create signer
       const signer = new LocalAccountSigner(account);
@@ -85,27 +91,23 @@ export class AlchemyAccountService {
       const gasPolicyId = options?.gasPolicyId ?? getAlchemyGasPolicyId();
       const chain = getAlchemyChain(this.network);
 
-      console.log('[AlchemyAccountService] 🔍 API Configuration:');
-      console.log('[AlchemyAccountService]   - API Key:', apiKey.substring(0, 10) + '...');
-      console.log('[AlchemyAccountService]   - Gas Policy ID:', gasPolicyId || 'NONE');
-      console.log('[AlchemyAccountService]   - Network:', this.network);
-      console.log('[AlchemyAccountService]   - Chain Name:', chain.name);
-      console.log('[AlchemyAccountService]   - Chain ID:', chain.id);
+      console.log('[AlchemyAccountService] Chain config:', {
+        networkId: this.network,
+        chainId: chain.id,
+        chainName: chain.name,
+        hasGasPolicy: !!gasPolicyId
+      });
 
-      // Create transport
-      console.log('[AlchemyAccountService] 🔧 Creating Alchemy transport...');
+      // Create transport (chain is inferred from client config)
       const transport = alchemy({ apiKey });
-      console.log('[AlchemyAccountService] ✅ Transport created successfully');
 
       // Create smart account client configuration
-      console.log('[AlchemyAccountService] 🔧 Building client configuration...');
       const clientConfig: any = {
         apiKey,
         chain,
         signer,
         transport,
       };
-      console.log('[AlchemyAccountService] ✅ Base config created with keys:', Object.keys(clientConfig));
 
       // Add optional salt
       if (options?.salt !== undefined) {
@@ -114,62 +116,27 @@ export class AlchemyAccountService {
 
       // Add gas manager config if policy ID is provided
       if (gasPolicyId) {
-        console.log('[AlchemyAccountService] 💰 Gas sponsorship configuration:');
-        console.log('[AlchemyAccountService]   - Policy ID:', gasPolicyId);
-        console.log('[AlchemyAccountService]   - Format check:', /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(gasPolicyId) ? 'VALID UUID' : 'INVALID FORMAT');
-        
         clientConfig.gasManagerConfig = {
           policyId: gasPolicyId,
         };
-        
-        console.log('[AlchemyAccountService] ✅ Gas manager config added to client config');
-        console.log('[AlchemyAccountService] 📋 Final config keys:', Object.keys(clientConfig));
-        console.log('[AlchemyAccountService] 📋 Gas manager keys:', Object.keys(clientConfig.gasManagerConfig));
-      } else {
-        console.log('[AlchemyAccountService] ⚠️  WARNING: No gas policy configured!');
-        console.log('[AlchemyAccountService] ⚠️  Transactions will NOT be sponsored!');
-        console.log('[AlchemyAccountService] ⚠️  User will need ETH in smart account for gas');
       }
 
       // Create smart account client
-      console.log('[AlchemyAccountService] 🚀 Creating modular account client...');
-      console.log('[AlchemyAccountService] 🔍 Pre-flight checks:');
-      console.log('[AlchemyAccountService]   - API Key type:', typeof apiKey, '| Length:', apiKey?.length);
-      console.log('[AlchemyAccountService]   - Chain type:', typeof chain, '| Has id:', !!chain?.id);
-      console.log('[AlchemyAccountService]   - Signer type:', typeof signer, '| Constructor:', signer?.constructor?.name);
-      console.log('[AlchemyAccountService]   - Transport type:', typeof transport, '| Is function:', typeof transport === 'function');
-      console.log('[AlchemyAccountService]   - Config has gasManagerConfig:', !!clientConfig.gasManagerConfig);
-      
       try {
-        console.log('[AlchemyAccountService] 📞 Calling createModularAccountAlchemyClient...');
         this.client = await createModularAccountAlchemyClient(clientConfig);
-        console.log('[AlchemyAccountService] ✅ Client created successfully!');
       } catch (clientError: any) {
-        console.error('[AlchemyAccountService] ❌ Client creation failed!');
-        console.error('[AlchemyAccountService] Error name:', clientError?.name);
-        console.error('[AlchemyAccountService] Error message:', clientError?.message);
-        console.error('[AlchemyAccountService] Error stack:', clientError?.stack);
+        console.error('[AlchemyAccountService] Client creation failed:', clientError?.message);
         throw clientError;
       }
 
       // Get and store account address
-      console.log('[AlchemyAccountService] 🔍 Extracting account address...');
-      console.log('[AlchemyAccountService]   - Client exists:', !!this.client);
-      console.log('[AlchemyAccountService]   - Client.account exists:', !!this.client?.account);
-      console.log('[AlchemyAccountService]   - Client.account.address exists:', !!this.client?.account?.address);
-      
       this.accountAddress = this.client.account?.address ?? null;
 
       if (!this.accountAddress) {
-        console.error('[AlchemyAccountService] ❌ Failed to get smart account address!');
-        console.error('[AlchemyAccountService] Client keys:', Object.keys(this.client || {}));
-        console.error('[AlchemyAccountService] Account keys:', Object.keys(this.client?.account || {}));
         throw new Error('Failed to get smart account address');
       }
 
-      console.log('[AlchemyAccountService] ✅ Smart account initialized successfully!');
-      console.log('[AlchemyAccountService] 📍 Smart Account Address:', this.accountAddress);
-      console.log('[AlchemyAccountService] 📍 EOA Owner Address:', account.address);
+      console.log('[AlchemyAccountService] ✅ Smart account initialized:', this.accountAddress);
 
       return this.accountAddress;
     } catch (error) {
@@ -222,32 +189,7 @@ export class AlchemyAccountService {
     }
 
     try {
-      console.log('[AlchemyAccountService] 🚀 Sending user operation...');
-      console.log('[AlchemyAccountService] 🔍 Transaction details:');
-      console.log('[AlchemyAccountService]   - Target:', call.target);
-      console.log('[AlchemyAccountService]   - Value:', call.value?.toString() || '0');
-      console.log('[AlchemyAccountService]   - Data length:', call.data?.length || 0);
-      console.log('[AlchemyAccountService]   - Client exists:', !!this.client);
-      console.log('[AlchemyAccountService]   - Account exists:', !!this.client?.account);
-
-      // Check if account is deployed
-      console.log('[AlchemyAccountService] 🔍 Checking if smart account is deployed...');
-      const isDeployed = await this.isAccountDeployed();
-      console.log('[AlchemyAccountService] Deployment status:', isDeployed ? '✅ DEPLOYED' : '❌ NOT DEPLOYED');
-      
-      if (!isDeployed) {
-        console.warn('[AlchemyAccountService] ⚠️  Smart account not yet deployed!');
-        console.warn('[AlchemyAccountService] Account address:', this.accountAddress);
-        console.warn('[AlchemyAccountService] This transaction will include deployment (initCode).');
-        console.warn('[AlchemyAccountService] If gas policy fails to sponsor deployment:');
-        console.warn('[AlchemyAccountService]   1. Check gas policy is active at dashboard.alchemy.com/gas-manager');
-        console.warn('[AlchemyAccountService]   2. Ensure policy has funds and allows deployments');
-        console.warn('[AlchemyAccountService]   3. OR manually send 0.01 ETH to:', this.accountAddress);
-      }
-
-      // Send user operation using the client
-      // Gas sponsorship is handled automatically via gasManagerConfig set during client initialization
-      console.log('[AlchemyAccountService] 📤 Preparing user operation...');
+      // Prepare user operation
       const userOp = {
         uo: {
           target: call.target,
@@ -257,49 +199,15 @@ export class AlchemyAccountService {
         account: this.client.account!,
       };
       
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] 🔍 FINAL USER OPERATION STRUCTURE');
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService]   ✅ Has uo wrapper:', !!userOp.uo);
-      console.log('[AlchemyAccountService]   📍 uo.target (RECIPIENT or TOKEN):', userOp.uo.target);
-      console.log('[AlchemyAccountService]   💰 uo.value (WEI):', userOp.uo.value.toString());
-      console.log('[AlchemyAccountService]   📦 uo.data:', userOp.uo.data);
-      console.log('[AlchemyAccountService]   🔧 uo.data length:', userOp.uo.data.length, 'bytes');
-      console.log('[AlchemyAccountService]   ✅ Has account:', !!userOp.account);
-      console.log('[AlchemyAccountService]   🏦 Account address (FROM):', userOp.account?.address);
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] ⚠️  CRITICAL: Verify target matches recipient!');
-      if (userOp.uo.data === '0x' || userOp.uo.data.length <= 2) {
-        console.log('[AlchemyAccountService] 📍 NATIVE TRANSFER: target IS the recipient');
-      } else {
-        console.log('[AlchemyAccountService] 🪙 TOKEN TRANSFER: target is token contract');
-        console.log('[AlchemyAccountService] Recipient is encoded in data field');
-      }
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
-      console.log('[AlchemyAccountService] 📞 Calling client.sendUserOperation...');
+      // Send user operation
       const result = await this.client.sendUserOperation(userOp);
-
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] ✅ User operation sent successfully!');
-      console.log('[AlchemyAccountService]   - UserOp Hash:', result.hash);
-      console.log('[AlchemyAccountService] ⏳ Waiting for transaction to be mined...');
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // Wait for the transaction to be mined
       const txHash = await this.client.waitForUserOperationTransaction({
         hash: result.hash,
       });
 
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] ⛏️  TRANSACTION MINED!');
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] 📋 Transaction Hash:', txHash);
-      console.log('[AlchemyAccountService] 🔗 Check on Explorer:');
-      console.log('[AlchemyAccountService]    https://sepolia.etherscan.io/tx/' + txHash);
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log('[AlchemyAccountService] ⚠️  VERIFY: Check the TO field matches your intended recipient!');
-      console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('[AlchemyAccountService] ✅ Transaction mined:', txHash);
 
       return {
         hash: txHash,
@@ -353,9 +261,6 @@ export class AlchemyAccountService {
     }
 
     try {
-      console.log('[AlchemyAccountService] Sending batch user operation...');
-      console.log('[AlchemyAccountService] Batch size:', calls.length);
-
       // Send batch user operation
       const result = await this.client.sendUserOperation({
         uo: calls.map(call => ({
@@ -366,14 +271,12 @@ export class AlchemyAccountService {
         account: this.client.account!,
       });
 
-      console.log('[AlchemyAccountService] Batch user operation sent:', result.hash);
-
       // Wait for the transaction to be mined
       const txHash = await this.client.waitForUserOperationTransaction({
         hash: result.hash,
       });
 
-      console.log('[AlchemyAccountService] Batch transaction mined:', txHash);
+      console.log('[AlchemyAccountService] ✅ Batch transaction mined:', txHash);
 
       return {
         hash: txHash,
@@ -398,26 +301,11 @@ export class AlchemyAccountService {
       gasSponsored?: boolean;
     }
   ): Promise<UserOperationResult> {
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[AlchemyAccountService] 💸 sendNativeToken called');
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[AlchemyAccountService] 📍 TO (Recipient):', to);
-    console.log('[AlchemyAccountService] 💰 AMOUNT (Wei):', amount.toString());
-    console.log('[AlchemyAccountService] 💰 AMOUNT (ETH):', (Number(amount) / 1e18).toFixed(6));
-    console.log('[AlchemyAccountService] 📦 Data:', '0x (empty - native transfer)');
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    
     const call: TransactionCall = {
       target: to,
       data: '0x' as Hex,
       value: amount,
     };
-
-    console.log('[AlchemyAccountService] 🔧 TransactionCall constructed:');
-    console.log('[AlchemyAccountService]   - target:', call.target);
-    console.log('[AlchemyAccountService]   - data:', call.data);
-    console.log('[AlchemyAccountService]   - value:', call.value?.toString() || '0');
-    console.log('[AlchemyAccountService] 📤 Sending to sendUserOperation...');
 
     return this.sendUserOperation(call, options);
   }
@@ -437,14 +325,6 @@ export class AlchemyAccountService {
       gasSponsored?: boolean;
     }
   ): Promise<UserOperationResult> {
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[AlchemyAccountService] 🪙 sendERC20Token called');
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('[AlchemyAccountService] 📍 Token Contract:', tokenAddress);
-    console.log('[AlchemyAccountService] 📍 TO (Recipient):', to);
-    console.log('[AlchemyAccountService] 💰 AMOUNT (Units):', amount.toString());
-    console.log('[AlchemyAccountService] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    
     // Encode ERC-20 transfer function call
     const data = encodeFunctionData({
       abi: [
@@ -463,23 +343,11 @@ export class AlchemyAccountService {
       args: [to, amount],
     });
 
-    console.log('[AlchemyAccountService] 🔧 ERC-20 transfer data encoded');
-    console.log('[AlchemyAccountService]   - Function: transfer(address,uint256)');
-    console.log('[AlchemyAccountService]   - Arg[0] to:', to);
-    console.log('[AlchemyAccountService]   - Arg[1] amount:', amount.toString());
-    console.log('[AlchemyAccountService]   - Encoded data:', data);
-
     const call: TransactionCall = {
       target: tokenAddress,
       data,
       value: 0n,
     };
-
-    console.log('[AlchemyAccountService] 🔧 TransactionCall constructed:');
-    console.log('[AlchemyAccountService]   - target (token contract):', call.target);
-    console.log('[AlchemyAccountService]   - data (transfer call):', call.data);
-    console.log('[AlchemyAccountService]   - value:', call.value?.toString() || '0');
-    console.log('[AlchemyAccountService] 📤 Sending to sendUserOperation...');
 
     return this.sendUserOperation(call, options);
   }
@@ -546,7 +414,6 @@ export class AlchemyAccountService {
   disconnect(): void {
     this.client = null;
     this.accountAddress = null;
-    console.log('[AlchemyAccountService] Disconnected');
   }
 }
 

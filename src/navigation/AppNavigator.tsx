@@ -16,7 +16,6 @@ import { RewardsHomeScreen } from "@/screens/rewards/RewardsHomeScreen";
 import { TradeFinanceScreen } from "@/screens/trade/TradeFinanceScreen";
 import { TreasuryPortalScreen } from "@/screens/treasury/TreasuryPortalScreen";
 import { ReceivePaymentScreen } from "@/screens/wallet/ReceivePaymentScreen";
-import { SendPaymentReviewScreen } from "@/screens/wallet/SendPaymentReviewScreen";
 import { SendPaymentScreen } from "@/screens/wallet/SendPaymentScreenNew";
 // Trade Finance Payment Components
 import { TradeFinancePayment } from "@/screens/trade/TradeFinancePayment";
@@ -61,17 +60,6 @@ const WalletNavigator = () => (
       options={{
         headerShown: true,
         title: "Send Payment",
-        headerStyle: { backgroundColor: palette.primaryBlue },
-        headerTintColor: palette.white,
-        headerTitleStyle: { fontSize: 18, fontWeight: "600" },
-      }}
-    />
-    <WalletStack.Screen
-      name="SendPaymentReview"
-      component={SendPaymentReviewScreen}
-      options={{
-        headerShown: true,
-        title: "Review & Confirm",
         headerStyle: { backgroundColor: palette.primaryBlue },
         headerTintColor: palette.white,
         headerTitleStyle: { fontSize: 18, fontWeight: "600" },

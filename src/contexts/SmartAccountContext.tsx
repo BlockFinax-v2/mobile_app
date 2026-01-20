@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { ethers } from "ethers";
 import { secureStorage } from "@/utils/secureStorage";
+import { biometricService } from "@/services/biometricService";
 import { useWallet } from "@/contexts/WalletContext";
 import {
   smartAccountService,
@@ -100,8 +101,18 @@ export function SmartAccountProvider({
     try {
       console.log("🚀 Initializing smart account for:", address);
 
-      // Get private key from secure storage
-      const privateKey = await secureStorage.getItem(PRIVATE_KEY);
+      // Get password from secure storage (skip biometrics during auto-initialization)
+      // Biometrics should only be used for explicit user actions (e.g., UnlockWalletScreen)
+      const password = await secureStorage.getSecureItem("blockfinax.password");
+      
+      if (!password) {
+        console.error("Password not found in secure storage");
+        setIsInitialized(false);
+        return;
+      }
+
+      // Get encrypted private key and decrypt it
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         console.error("Private key not found in secure storage");
         setIsInitialized(false);

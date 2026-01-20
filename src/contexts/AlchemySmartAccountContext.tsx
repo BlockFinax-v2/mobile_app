@@ -11,6 +11,7 @@ import { type Hex } from 'viem';
 import { AlchemyAccountService, type TransactionCall, type UserOperationResult } from '../services/alchemyAccountService';
 import { useWallet } from './WalletContext';
 import { secureStorage } from '../utils/secureStorage';
+import { biometricService } from '../services/biometricService';
 import { FEATURE_FLAGS } from '../config/featureFlags';
 import { isAlchemyNetworkSupported } from '../config/alchemyAccount';
 
@@ -59,6 +60,9 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
   const [isInitializing, setIsInitializing] = useState(false);
   const [isSendingTransaction, setIsSendingTransaction] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const [lastInitNetwork, setLastInitNetwork] = useState<string | null>(null);
+  const MAX_RETRIES = 3;
 
   /**
    * Initialize Alchemy smart account
@@ -91,8 +95,16 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
       setIsInitializing(true);
       setError(null);
 
-      // Get private key from secure storage
-      const privateKey = await secureStorage.getItem(PRIVATE_KEY);
+      // Get password from secure storage (skip biometrics during auto-initialization)
+      // Biometrics should only be used for explicit user actions (e.g., UnlockWalletScreen)
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      
+      if (!password) {
+        throw new Error('Password not found in secure storage');
+      }
+
+      // Get decrypted private key
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         throw new Error('No private key found in secure storage');
       }
@@ -112,21 +124,33 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
       setAlchemyAccountAddress(address);
       setIsAlchemyDeployed(deployed);
       setIsAlchemyInitialized(true);
+      setRetryCount(0); // Reset retry count on success
+      setLastInitNetwork(selectedNetwork.id); // Track successfully initialized network
 
       // Update WalletContext with smart account info
       setSmartAccountInfo(address, deployed);
 
-      console.log('[AlchemyContext] Alchemy account initialized:', address);
-      console.log('[AlchemyContext] Account deployed:', deployed);
+      console.log('[AlchemyContext] ✅ Alchemy account initialized:', address);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to initialize Alchemy account';
-      console.error('[AlchemyContext] Initialization error:', err);
+      
+      // Only log error if retry count is low to prevent spam
+      if (retryCount < MAX_RETRIES) {
+        console.error('[AlchemyContext] Initialization error:', errorMessage);
+      }
+      
       setError(errorMessage);
       setIsAlchemyInitialized(false);
+      setRetryCount(prev => prev + 1);
+      
+      // Stop retrying after max attempts
+      if (retryCount >= MAX_RETRIES) {
+        console.error('[AlchemyContext] Max retries reached. Stopping initialization attempts.');
+      }
     } finally {
       setIsInitializing(false);
     }
-  }, [isUnlocked, selectedNetwork]);
+  }, [isUnlocked, selectedNetwork, retryCount]);
 
   /**
    * Disconnect Alchemy account
@@ -140,6 +164,8 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
     setIsAlchemyInitialized(false);
     setIsAlchemyDeployed(false);
     setError(null);
+    setRetryCount(0);
+    setLastInitNetwork(null);
     
     // Clear smart account info from WalletContext
     clearSmartAccountInfo();
@@ -317,19 +343,14 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
    * Auto-initialize smart account when wallet is unlocked
    */
   useEffect(() => {
-    if (isUnlocked && !isAlchemyInitialized && !isInitializing && FEATURE_FLAGS.USE_ALCHEMY_AA) {
+    if (isUnlocked && !isAlchemyInitialized && !isInitializing && FEATURE_FLAGS.USE_ALCHEMY_AA && retryCount < MAX_RETRIES) {
       const networkSupported = isAlchemyNetworkSupported(selectedNetwork.id);
       
       if (networkSupported) {
-        console.log('[AlchemyContext] Auto-initializing smart account on wallet unlock');
-        initializeAlchemyAccount().catch((error) => {
-          console.error('[AlchemyContext] Auto-initialization failed:', error);
-        });
-      } else {
-        console.log('[AlchemyContext] Skipping auto-init - network not supported:', selectedNetwork.id);
+        initializeAlchemyAccount();
       }
     }
-  }, [isUnlocked, isAlchemyInitialized, isInitializing, selectedNetwork.id, initializeAlchemyAccount]);
+  }, [isUnlocked, isInitializing, selectedNetwork.id]);
 
   /**
    * Disconnect and clear when wallet is locked
@@ -345,20 +366,21 @@ export const AlchemySmartAccountProvider: React.FC<{ children: React.ReactNode }
    * Re-initialize when network changes (if unlocked)
    */
   useEffect(() => {
-    if (isUnlocked && isAlchemyInitialized && FEATURE_FLAGS.USE_ALCHEMY_AA) {
+    // Only re-initialize if network actually changed and we're not already initializing
+    if (isUnlocked && FEATURE_FLAGS.USE_ALCHEMY_AA && !isInitializing && selectedNetwork.id !== lastInitNetwork) {
       const networkSupported = isAlchemyNetworkSupported(selectedNetwork.id);
       
-      if (networkSupported) {
-        console.log('[AlchemyContext] Network changed - re-initializing smart account');
-        initializeAlchemyAccount().catch((error) => {
-          console.error('[AlchemyContext] Re-initialization failed:', error);
-        });
-      } else {
-        console.log('[AlchemyContext] Network not supported - disconnecting:', selectedNetwork.id);
+      if (networkSupported && retryCount < MAX_RETRIES) {
+        // Reset retry count for new network
+        setRetryCount(0);
+        setLastInitNetwork(selectedNetwork.id);
+        disconnectAlchemyAccount();
+        initializeAlchemyAccount();
+      } else if (!networkSupported) {
         disconnectAlchemyAccount();
       }
     }
-  }, [selectedNetwork.id, isUnlocked, isAlchemyInitialized, initializeAlchemyAccount, disconnectAlchemyAccount]);
+  }, [selectedNetwork.id, isUnlocked, isInitializing, lastInitNetwork]);
 
   /**
    * Clean up on unmount or when dependencies change

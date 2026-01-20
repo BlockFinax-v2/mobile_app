@@ -23,13 +23,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Alert, AppState, AppStateStatus } from "react-native";
+import { Alert, AppState, AppStateStatus, Platform } from "react-native";
 import { dataPreloader } from "@/utils/dataPreloader";
 
 const MNEMONIC_KEY = "blockfinax.mnemonic";
 const PRIVATE_KEY = "blockfinax.privateKey";
 const PASSWORD_KEY = "blockfinax.password";
 const SETTINGS_KEY = "blockfinax.settings";
+const TRANSACTIONS_KEY = "blockfinax.transactions";
 
 const AUTO_LOCK_INTERVAL = 15 * 60 * 1000; // 15 minutes
 
@@ -330,7 +331,7 @@ interface WalletContextValue {
   refreshBalanceInstant: () => Promise<void>;
   refreshTransactions: () => Promise<void>;
   refreshTransactionsInstant: () => Promise<void>;
-  addPendingTransaction: (tx: Partial<RealTransaction>) => void;
+  addPendingTransaction: (tx: Partial<RealTransaction>) => Promise<void>;
   switchNetwork: (networkId: SupportedNetworkId) => Promise<void>;
   switchToken: (tokenAddress?: string) => Promise<void>;
   updateSettings: (nextSettings: Partial<WalletSettings>) => Promise<void>;
@@ -694,7 +695,31 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const limitedTransactions = uniqueTransactions.slice(0, 20);
 
       console.log(`✅ Real transactions loaded: ${limitedTransactions.length} (from ${addresses.length} address${addresses.length > 1 ? 'es' : ''})`);
-      setTransactions(limitedTransactions);
+      
+      // Merge with existing transactions in state (which includes pending/local transactions)
+      setTransactions(prevTxs => {
+        // Keep pending transactions and local transactions that aren't in the new list
+        const pendingTxs = prevTxs.filter(tx => 
+          tx.status === 'pending' || !limitedTransactions.some(newTx => newTx.hash === tx.hash)
+        );
+        
+        // Combine and remove duplicates
+        const combined = [...pendingTxs, ...limitedTransactions];
+        const unique = combined.filter((tx, index, self) =>
+          index === self.findIndex((t) => t.hash === tx.hash || t.id === tx.id)
+        );
+        
+        // Sort by timestamp (most recent first)
+        unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        
+        // Persist merged transactions to storage
+        secureStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(unique)).catch(error => {
+          console.error('❌ Failed to persist transactions:', error);
+        });
+        
+        return unique;
+      });
+      
       setLastTransactionUpdate(now);
     } catch (error) {
       console.error("Failed to refresh transactions", error);
@@ -736,16 +761,19 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         return true;
       }
       
-      // If no mnemonic, try private key (for social auth/instant wallets)
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
-      
-      if (privateKey) {
-        const wallet = new ethers.Wallet(privateKey);
-        setAddress(wallet.address);
-        setIsUnlocked(true);
-        console.log(`Wallet hydrated from private key: ${wallet.address}`);
-        await refreshBalance();
-        return true;
+      // If no mnemonic, try encrypted private key (for social auth/instant wallets)
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      if (password) {
+        const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+        
+        if (privateKey) {
+          const wallet = new ethers.Wallet(privateKey);
+          setAddress(wallet.address);
+          setIsUnlocked(true);
+          console.log(`Wallet hydrated from private key: ${wallet.address}`);
+          await refreshBalance();
+          return true;
+        }
       }
 
       // No wallet found
@@ -777,7 +805,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   }, [refreshTransactions]);
 
   // Add pending transaction immediately to UI (optimistic update)
-  const addPendingTransaction = useCallback((tx: Partial<RealTransaction>) => {
+  const addPendingTransaction = useCallback(async (tx: Partial<RealTransaction>) => {
     console.log('═══════════════════════════════════════════════');
     console.log('💫 addPendingTransaction CALLED');
     console.log('═══════════════════════════════════════════════');
@@ -818,6 +846,14 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const newTxs = [newTransaction, ...prevTxs];
       console.log('✅ Added pending transaction to list!');
       console.log('📊 New transactions count:', newTxs.length);
+      
+      // Persist to storage
+      secureStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(newTxs)).then(() => {
+        console.log('💾 Transactions persisted to storage');
+      }).catch(error => {
+        console.error('❌ Failed to persist transactions:', error);
+      });
+      
       console.log('═══════════════════════════════════════════════');
       return newTxs;
     });
@@ -834,9 +870,26 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         setSelectedNetwork(NETWORKS[savedNetworkId as SupportedNetworkId]);
       }
 
-      // Check if we have a wallet (either mnemonic or private key)
+      // Load saved transactions
+      const savedTransactions = await secureStorage.getItem(TRANSACTIONS_KEY);
+      if (savedTransactions) {
+        try {
+          const parsedTransactions = JSON.parse(savedTransactions) as RealTransaction[];
+          // Convert timestamp strings back to Date objects
+          const transactionsWithDates = parsedTransactions.map(tx => ({
+            ...tx,
+            timestamp: new Date(tx.timestamp)
+          }));
+          setTransactions(transactionsWithDates);
+          console.log(`📥 Loaded ${transactionsWithDates.length} transactions from storage`);
+        } catch (error) {
+          console.error('❌ Failed to parse saved transactions:', error);
+        }
+      }
+
+      // Check if we have a wallet (either mnemonic or encrypted private key)
       const existingMnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      const existingPrivateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      const existingPrivateKey = await secureStorage.getSecureItem('blockfinax.encryptedPrivateKey');
       setHasWallet(Boolean(existingMnemonic || existingPrivateKey));
 
       // Initialize biometric capability and settings
@@ -878,17 +931,70 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       if (!wallet.mnemonic) {
         throw new Error("Failed to generate wallet mnemonic.");
       }
+
+      // Prompt for password
+      const password = await new Promise<string>((resolve, reject) => {
+        Alert.prompt(
+          "Secure Your Wallet",
+          "Create a password to encrypt your wallet",
+          [
+            { text: "Cancel", onPress: () => reject(new Error("User cancelled")), style: "cancel" },
+            { 
+              text: "Create", 
+              onPress: (pwd?: string) => {
+                if (pwd && pwd.length >= 8) {
+                  resolve(pwd);
+                } else {
+                  Alert.alert("Error", "Password must be at least 8 characters");
+                  reject(new Error("Password too short"));
+                }
+              }
+            },
+          ],
+          "secure-text"
+        );
+      });
+
+      // Store encrypted private key and mnemonic
       await secureStorage.setSecureItem(MNEMONIC_KEY, wallet.mnemonic.phrase);
-      await secureStorage.setSecureItem(PRIVATE_KEY, wallet.privateKey);
+      await secureStorage.setEncryptedPrivateKey(wallet.privateKey, password);
+      await secureStorage.setSecureItem(PASSWORD_KEY, password);
 
       setHasWallet(true);
       setAddress(wallet.address);
       setIsUnlocked(true);
       await refreshBalance();
+
+      // Prompt to enable biometrics
+      if (isBiometricAvailable) {
+        Alert.alert(
+          "Enable Biometric Authentication?",
+          `Use ${Platform.OS === 'ios' ? 'Face ID/Touch ID' : 'fingerprint'} to unlock your wallet and sign transactions securely.`,
+          [
+            { text: "Skip", style: "cancel" },
+            { 
+              text: "Enable", 
+              onPress: async () => {
+                try {
+                  await biometricService.enableBiometricAuth(password);
+                  setIsBiometricEnabled(true);
+                  const newSettings = { ...settings, enableBiometrics: true };
+                  setSettings(newSettings);
+                  await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+                  Alert.alert("Success", "Biometric authentication enabled!");
+                } catch (error) {
+                  console.error("Failed to enable biometrics:", error);
+                  Alert.alert("Error", "Failed to enable biometric authentication");
+                }
+              }
+            },
+          ]
+        );
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [refreshBalance, ensureCryptoRNG]);
+  }, [refreshBalance, ensureCryptoRNG, isBiometricAvailable, settings]);
 
   const importWallet = useCallback(
     async ({
@@ -919,23 +1025,50 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
           );
         } else if (privateKey) {
           wallet = new ethers.Wallet(privateKey.trim());
-          await secureStorage.setSecureItem(PRIVATE_KEY, wallet.privateKey);
         } else {
           throw new Error("Invalid wallet import payload.");
         }
 
-        await secureStorage.setSecureItem(PRIVATE_KEY, wallet.privateKey);
+        // Store encrypted private key
+        await secureStorage.setEncryptedPrivateKey(wallet.privateKey, password);
         await secureStorage.setSecureItem(PASSWORD_KEY, password);
 
         setHasWallet(true);
         setAddress(wallet.address);
         setIsUnlocked(true);
         await refreshBalance();
+
+        // Prompt to enable biometrics
+        if (isBiometricAvailable) {
+          Alert.alert(
+            "Enable Biometric Authentication?",
+            `Use ${Platform.OS === 'ios' ? 'Face ID/Touch ID' : 'fingerprint'} to unlock your wallet and sign transactions securely.`,
+            [
+              { text: "Skip", style: "cancel" },
+              { 
+                text: "Enable", 
+                onPress: async () => {
+                  try {
+                    await biometricService.enableBiometricAuth(password);
+                    setIsBiometricEnabled(true);
+                    const newSettings = { ...settings, enableBiometrics: true };
+                    setSettings(newSettings);
+                    await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+                    Alert.alert("Success", "Biometric authentication enabled!");
+                  } catch (error) {
+                    console.error("Failed to enable biometrics:", error);
+                    Alert.alert("Error", "Failed to enable biometric authentication");
+                  }
+                }
+              },
+            ]
+          );
+        }
       } finally {
         setIsLoading(false);
       }
     },
-    [refreshBalance]
+    [refreshBalance, isBiometricAvailable, settings]
   );
 
   const unlockWallet = useCallback(

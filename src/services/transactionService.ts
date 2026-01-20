@@ -33,6 +33,7 @@ export interface TransactionParams {
   gasLimit?: string;
   maxFeePerGas?: string; // For EIP-1559 transactions
   maxPriorityFeePerGas?: string; // For EIP-1559 transactions
+  password?: string; // Password for decrypting private key
   // AA-specific options
   useAccountAbstraction?: boolean; // Force AA or EOA (auto-detect if undefined)
   gasless?: boolean; // Use paymaster for gas sponsorship
@@ -107,12 +108,23 @@ class TransactionService {
   }
 
   /**
-   * Get signer (wallet) from secure storage
+   * Get signer (wallet) from secure storage with decryption
    */
   private async getSigner(
-    network: WalletNetwork
+    network: WalletNetwork,
+    password?: string
   ): Promise<ethers.Wallet> {
     try {
+      // Get password if not provided
+      let pwd = password;
+      if (!pwd) {
+        pwd = await secureStorage.getSecureItem("blockfinax.password") || undefined;
+      }
+
+      if (!pwd) {
+        throw new Error("Password required to decrypt private key");
+      }
+
       // Try to get mnemonic first
       const mnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
       if (mnemonic) {
@@ -121,14 +133,15 @@ class TransactionService {
         return hdWallet.connect(provider);
       }
 
-      // Fallback to private key
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      // Otherwise, get encrypted private key
+      const privateKey = await secureStorage.getDecryptedPrivateKey(pwd);
       if (!privateKey) {
-        throw new Error("No wallet credentials found in secure storage");
+        throw new Error("No wallet found. Please create or import a wallet first.");
       }
 
+      const wallet = new ethers.Wallet(privateKey);
       const provider = this.getProvider(network);
-      return new ethers.Wallet(privateKey, provider);
+      return wallet.connect(provider);
     } catch (error) {
       console.error("Error getting signer:", error);
       throw new Error("Failed to access wallet credentials");
@@ -181,8 +194,13 @@ class TransactionService {
     console.log('[TransactionService] ═══════════════════════════════════════');
 
     try {
-      // Get private key for AA initialization
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      // Get password and decrypt private key for AA initialization
+      const password = params.password || await secureStorage.getSecureItem('blockfinax.password');
+      if (!password) {
+        throw new Error("Password required for AA transaction");
+      }
+
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         throw new Error("No private key found for AA");
       }
@@ -286,7 +304,7 @@ class TransactionService {
     this.validateTransactionParams(params);
 
     try {
-      const signer = await this.getSigner(params.network);
+      const signer = await this.getSigner(params.network, params.password);
 
       // Estimate gas first
       const gasEstimate = await this.estimateGas(params);
@@ -384,7 +402,7 @@ class TransactionService {
     this.validateTransactionParams(params);
 
     try {
-      const signer = await this.getSigner(params.network);
+      const signer = await this.getSigner(params.network, params.password);
       const provider = signer.provider as ethers.providers.JsonRpcProvider;
       const isEIP1559 = await this.supportsEIP1559(provider);
 
@@ -743,11 +761,12 @@ class TransactionService {
   public async replaceTransaction(
     originalTxHash: string,
     network: WalletNetwork,
-    increaseGasBy: number = 20 // Percentage increase
+    increaseGasBy: number = 20, // Percentage increase
+    password?: string
   ): Promise<TransactionResult> {
     try {
       const provider = this.getProvider(network);
-      const signer = await this.getSigner(network);
+      const signer = await this.getSigner(network, password);
 
       const originalTx = await provider.getTransaction(originalTxHash);
       if (!originalTx) {

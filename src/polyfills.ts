@@ -9,6 +9,30 @@ import { Buffer } from "@craftzdog/react-native-buffer";
 if (!globalThis.Buffer) {
   (globalThis as any).Buffer = Buffer;
 }
+if (!(global as any).Buffer) {
+  (global as any).Buffer = Buffer;
+}
+
+// Add base64FromArrayBuffer polyfill for expo-secure-store
+// This function is required by expo-secure-store but not provided in React Native
+const base64FromArrayBuffer = function(arrayBuffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(arrayBuffer);
+  return Buffer.from(bytes).toString('base64');
+};
+
+if (typeof (globalThis as any).base64FromArrayBuffer === 'undefined') {
+  (globalThis as any).base64FromArrayBuffer = base64FromArrayBuffer;
+}
+if (typeof (global as any).base64FromArrayBuffer === 'undefined') {
+  (global as any).base64FromArrayBuffer = base64FromArrayBuffer;
+}
+
+console.log('✅ Polyfills loaded:', {
+  Buffer: typeof Buffer !== 'undefined',
+  globalBuffer: typeof (global as any).Buffer !== 'undefined',
+  globalBase64: typeof (global as any).base64FromArrayBuffer !== 'undefined',
+  globalThisBase64: typeof (globalThis as any).base64FromArrayBuffer !== 'undefined'
+});
 
 // Ensure crypto.getRandomValues is available globally
 if (typeof globalThis.crypto === 'undefined') {

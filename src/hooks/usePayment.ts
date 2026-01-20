@@ -26,6 +26,8 @@ import {
 } from "@/contexts/WalletContext";
 import { transactionService } from "@/services/transactionService";
 import { formatBalanceForUI, isValidAddress } from "@/utils/tokenUtils";
+import { biometricService } from "@/services/biometricService";
+import { secureStorage } from "@/utils/secureStorage";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { Alert, Vibration } from "react-native";
@@ -527,6 +529,92 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
       setState(prev => ({ ...prev, isSubmitting: true }));
 
       try {
+        // 🔐 Biometric/Password Authentication before transaction
+        const isBiometricEnabled = await biometricService.isBiometricEnabled();
+        let authenticationPassed = false;
+        let userPassword: string | undefined;
+
+        if (isBiometricEnabled) {
+          try {
+            console.log('[usePayment] 🔐 Requesting biometric authentication...');
+            await biometricService.authenticate('Authenticate to send transaction');
+            authenticationPassed = true;
+            // Get password from secure storage for decryption
+            userPassword = await secureStorage.getSecureItem('blockfinax.password') || undefined;
+            console.log('[usePayment] ✅ Biometric authentication successful');
+          } catch (error) {
+            console.log('[usePayment] ❌ Biometric authentication failed, requesting password');
+            
+            // Fallback to password
+            const passwordResult = await new Promise<string | null>((resolve) => {
+              Alert.prompt(
+                'Authentication Required',
+                'Enter your wallet password to continue',
+                [
+                  { text: 'Cancel', onPress: () => resolve(null), style: 'cancel' },
+                  { 
+                    text: 'Confirm', 
+                    onPress: async (password?: string) => {
+                      const storedPassword = await secureStorage.getSecureItem('blockfinax.password');
+                      if (storedPassword === password) {
+                        resolve(password || null);
+                      } else {
+                        Alert.alert('Error', 'Incorrect password');
+                        resolve(null);
+                      }
+                    }
+                  },
+                ],
+                'secure-text'
+              );
+            });
+
+            if (!passwordResult) {
+              setState(prev => ({ ...prev, isSubmitting: false }));
+              return { success: false };
+            }
+            userPassword = passwordResult;
+            authenticationPassed = true;
+          }
+        } else {
+          // No biometrics, require password
+          console.log('[usePayment] 🔐 Requesting password authentication...');
+          const passwordResult = await new Promise<string | null>((resolve) => {
+            Alert.prompt(
+              'Authentication Required',
+              'Enter your wallet password to send transaction',
+              [
+                { text: 'Cancel', onPress: () => resolve(null), style: 'cancel' },
+                { 
+                  text: 'Confirm', 
+                  onPress: async (password?: string) => {
+                    const storedPassword = await secureStorage.getSecureItem('blockfinax.password');
+                    if (storedPassword === password) {
+                      resolve(password || null);
+                    } else {
+                      Alert.alert('Error', 'Incorrect password');
+                      resolve(null);
+                    }
+                  }
+                },
+              ],
+              'secure-text'
+            );
+          });
+
+          if (!passwordResult) {
+            setState(prev => ({ ...prev, isSubmitting: false }));
+            return { success: false };
+          }
+          userPassword = passwordResult;
+          authenticationPassed = true;
+        }
+
+        if (!authenticationPassed || !userPassword) {
+          setState(prev => ({ ...prev, isSubmitting: false }));
+          return { success: false };
+        }
+
         // Determine if we should use AA (gasless)
         const useAA = params?.preferGasless || params?.forceAccountAbstraction;
         const gasless = useAA && state.isGasless; // Only gasless if AA is enabled and available
@@ -543,6 +631,7 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
           useAccountAbstraction: useAA,
           gasless: gasless,
           smartAccountAddress: smartAccountAddress,
+          password: userPassword, // Pass password for private key decryption
         });
 
         console.log('[usePayment] ✅ Transaction result received:', result.hash);
@@ -553,7 +642,7 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
           console.log('📋 [usePayment] Adding pending transaction to dashboard...');
           console.log('addPendingTransaction function exists:', typeof addPendingTransaction);
           
-          addPendingTransaction({
+          await addPendingTransaction({
             hash: result.hash,
             from: result.from,
             to: state.recipientAddress,

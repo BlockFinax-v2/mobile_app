@@ -3,6 +3,15 @@
  * 
  * Comprehensive EVM chain support with USDC as primary transaction token.
  * Designed for easy extension to support additional stablecoins.
+ * 
+ * IMPORTANT: Alchemy Account Abstraction (ERC-4337) officially supports:
+ * - Ethereum (Mainnet, Sepolia, Goerli)
+ * - Base (Mainnet, Sepolia)
+ * - Optimism (Mainnet, Sepolia)
+ * - Arbitrum (Mainnet, Sepolia)
+ * - Polygon (Mainnet, Amoy)
+ * 
+ * Custom chains (Avalanche, BSC, Lisk) may not work with AA and will fallback to EOA.
  */
 
 import { 
@@ -15,6 +24,7 @@ import {
   // Arbitrum
   arbitrum, arbitrumSepolia,
   // Note: Avalanche, BSC, Lisk not in @account-kit/infra - using custom configs
+  // These chains may not support Alchemy Account Abstraction
 } from '@account-kit/infra';
 import type { Chain } from 'viem';
 
@@ -295,6 +305,22 @@ export const ALCHEMY_CHAINS: Record<string, Chain> = {
 };
 
 /**
+ * Officially supported networks for Alchemy Account Abstraction
+ * These are chains that Alchemy guarantees will work with AA
+ */
+export const OFFICIALLY_SUPPORTED_AA_NETWORKS = [
+  'ethereum_mainnet',
+  'ethereum_sepolia',
+  'ethereum_goerli',
+  'base_mainnet',
+  'base_sepolia',
+  'optimism_mainnet',
+  'optimism_sepolia',
+  'arbitrum_mainnet',
+  'arbitrum_sepolia',
+] as const;
+
+/**
  * Supported networks for Alchemy AA
  */
 export const SUPPORTED_ALCHEMY_NETWORKS = Object.keys(ALCHEMY_CHAINS);
@@ -306,6 +332,15 @@ export type SupportedAlchemyNetwork = keyof typeof ALCHEMY_CHAINS;
 export function isAlchemyNetworkSupported(network: string): network is SupportedAlchemyNetwork {
   const alchemyNetworkId = toAlchemyNetworkId(network);
   return alchemyNetworkId in ALCHEMY_CHAINS;
+}
+
+/**
+ * Check if a network is officially supported by Alchemy for Account Abstraction
+ * Returns false for custom chains (Avalanche, BSC, Lisk) that may not work with AA
+ */
+export function isOfficiallySupported(network: string): boolean {
+  const alchemyNetworkId = toAlchemyNetworkId(network);
+  return OFFICIALLY_SUPPORTED_AA_NETWORKS.includes(alchemyNetworkId as any);
 }
 
 /**

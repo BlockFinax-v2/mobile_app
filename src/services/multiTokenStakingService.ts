@@ -15,7 +15,7 @@ import {
   convertToUSD,
   StablecoinConfig,
 } from "@/config/stablecoinPrices";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { secureStorage } from "@/utils/secureStorage";
 import { LIQUIDITY_POOL_FACET_ABI } from "@/contracts/LiquidityPoolFacet.abi";
 import { GOVERNANCE_FACET_ABI } from "@/contracts/GovernanceFacet.abi";
 
@@ -138,10 +138,19 @@ class MultiTokenStakingService {
    */
   private async getSigner(chainId: number): Promise<ethers.Wallet> {
     const provider = this.getProvider(chainId);
-    const privateKey = await AsyncStorage.getItem("blockfinax.privateKey");
+    
+    // Get password from secure storage
+    const password = await secureStorage.getSecureItem("blockfinax.password");
+    if (!password) {
+      throw new Error("Password not found. Please unlock your wallet.");
+    }
+    
+    // Get decrypted private key
+    const privateKey = await secureStorage.getDecryptedPrivateKey(password);
     if (!privateKey) {
       throw new Error("No private key found. Please unlock your wallet.");
     }
+    
     return new ethers.Wallet(privateKey, provider);
   }
 
