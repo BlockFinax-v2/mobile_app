@@ -28,10 +28,14 @@ const SplashGate: React.FC<SplashGateProps> = ({ navigation }) => {
 
   useEffect(() => {
     if (isLoading || !animationDone) {
+      console.log('[SplashGate] Waiting...', { isLoading, animationDone });
       return;
     }
 
+    console.log('[SplashGate] Navigation check:', { hasWallet, isUnlocked });
+
     if (!hasWallet) {
+      console.log('[SplashGate] → Navigating to SocialAuth (no wallet)');
       navigation.dispatch(
         StackActions.replace("Auth", {
           screen: "SocialAuth",
@@ -41,6 +45,7 @@ const SplashGate: React.FC<SplashGateProps> = ({ navigation }) => {
     }
 
     if (!isUnlocked) {
+      console.log('[SplashGate] → Navigating to UnlockWallet (wallet exists, needs unlock)');
       navigation.dispatch(
         StackActions.replace("Auth", {
           screen: "UnlockWallet",
@@ -49,6 +54,7 @@ const SplashGate: React.FC<SplashGateProps> = ({ navigation }) => {
       return;
     }
 
+    console.log('[SplashGate] → Navigating to App (wallet unlocked)');
     navigation.dispatch(StackActions.replace("App"));
   }, [animationDone, hasWallet, isLoading, isUnlocked, navigation]);
 

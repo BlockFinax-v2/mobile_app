@@ -148,8 +148,8 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
             />
           </View>
           <View style={styles.tokenInfo}>
-            <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-            <Text style={styles.tokenName}>{token.name}</Text>
+            <Text style={styles.tokenSymbol}>{token.symbol || 'Unknown'}</Text>
+            <Text style={styles.tokenName}>{token.name || 'Unknown Token'}</Text>
           </View>
         </View>
 

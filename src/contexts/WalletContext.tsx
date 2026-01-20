@@ -889,7 +889,14 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
       // Check if we have a wallet (either mnemonic or encrypted private key)
       const existingMnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      const existingPrivateKey = await secureStorage.getSecureItem('blockfinax.encryptedPrivateKey');
+      const existingPrivateKey = await secureStorage.getSecureItem('blockfinax.privateKey.encrypted');
+      
+      console.log('🔍 Checking wallet existence:', {
+        hasMnemonic: !!existingMnemonic,
+        hasEncryptedKey: !!existingPrivateKey,
+        hasWallet: Boolean(existingMnemonic || existingPrivateKey)
+      });
+      
       setHasWallet(Boolean(existingMnemonic || existingPrivateKey));
 
       // Initialize biometric capability and settings
@@ -1073,13 +1080,24 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
   const unlockWallet = useCallback(
     async (password: string) => {
+      console.log('[WalletContext] 🔓 Unlock wallet attempt');
+      
       const savedPassword = await secureStorage.getSecureItem(PASSWORD_KEY);
+      
+      console.log('[WalletContext] Password check:', {
+        hasSavedPassword: !!savedPassword,
+        passwordsMatch: savedPassword === password
+      });
+      
       if (savedPassword && savedPassword !== password) {
+        console.error('[WalletContext] ❌ Password mismatch');
         throw new Error("Invalid password provided.");
       }
 
+      console.log('[WalletContext] 💧 Hydrating wallet...');
       await hydrateWallet();
 
+      console.log('[WalletContext] ✅ Wallet unlocked, loading data...');
       // Load data after unlock
       forceRefreshBalance();
       refreshTransactions();

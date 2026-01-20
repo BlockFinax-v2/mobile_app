@@ -101,6 +101,15 @@ export class AlchemyAccountService {
       // Create transport (chain is inferred from client config)
       const transport = alchemy({ apiKey });
 
+      console.log('[AlchemyAccountService] Creating client with config:', {
+        hasApiKey: !!apiKey,
+        hasChain: !!chain,
+        hasSigner: !!signer,
+        hasTransport: !!transport,
+        chainId: chain.id,
+        signerAddress: account.address
+      });
+
       // Create smart account client configuration
       const clientConfig: any = {
         apiKey,
@@ -116,16 +125,22 @@ export class AlchemyAccountService {
 
       // Add gas manager config if policy ID is provided
       if (gasPolicyId) {
+        console.log('[AlchemyAccountService] Adding gas policy:', gasPolicyId);
         clientConfig.gasManagerConfig = {
           policyId: gasPolicyId,
         };
+      } else {
+        console.log('[AlchemyAccountService] ⚠️  No gas policy configured - transactions may fail');
       }
 
       // Create smart account client
       try {
+        console.log('[AlchemyAccountService] Creating modular account client...');
         this.client = await createModularAccountAlchemyClient(clientConfig);
+        console.log('[AlchemyAccountService] ✅ Client created successfully');
       } catch (clientError: any) {
         console.error('[AlchemyAccountService] Client creation failed:', clientError?.message);
+        console.error('[AlchemyAccountService] Full error:', clientError);
         throw clientError;
       }
 
