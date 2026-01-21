@@ -5,9 +5,11 @@
  * Integrates with LiquidityPoolFacet for staking, unstaking, and rewards management
  * 
  * Account Abstraction Support:
- * - Supports gasless staking operations via Alchemy AA
- * - Batch transactions (approve + stake in single UserOp)
- * - Automatic fallback to EOA when AA unavailable
+ * - Uses SmartContractTransactionService for unified AA+EOA transaction handling
+ * - Automatically links smart account to EOA on first transaction
+ * - Batch transactions (approve + stake in single UserOp) for gasless operations
+ * - Automatic fallback to EOA when AA unavailable, gas limits reached, or network unsupported
+ * - Contract-level address resolution ensures single identity (EOA) across both transaction methods
  */
 
 import { WalletNetwork } from "@/contexts/WalletContext";
@@ -16,6 +18,7 @@ import { ethers } from "ethers";
 import { FEATURE_FLAGS } from "@/config/featureFlags";
 import { isAlchemyNetworkSupported } from "@/config/alchemyAccount";
 import { AlchemyAccountService } from "@/services/alchemyAccountService";
+import { smartContractTransactionService } from "@/services/smartContractTransactionService";
 import { Hex, encodeFunctionData } from "viem";
 
 // Contract Configuration
@@ -195,6 +198,7 @@ export interface StakingTransaction {
   timestamp: number;
   status: 'pending' | 'confirmed' | 'failed';
   explorerUrl?: string;
+  usedAA?: boolean; // Whether Account Abstraction was used for the transaction
 }
 
 export interface Proposal {
@@ -342,6 +346,43 @@ class StakingService {
   }
 
   /**
+   * Get the smart account address for the current user
+   * This ensures consistent identity regardless of EOA vs AA transaction method
+   * 
+   * IMPORTANT: With contract upgrade, the contract now auto-resolves Smart Account → EOA
+   * This method returns the smart account address, and the contract handles resolution.
+   * 
+   * CRITICAL: All contract state queries can now use either EOA or Smart Account address
+   * The contract will automatically resolve to the primary identity (EOA).
+   */
+  private async getSmartAccountAddress(): Promise<string> {
+    try {
+      // Try to get from AA service first (if AA is enabled)
+      if (this.shouldUseAA()) {
+        const alchemyService = await this.initializeAA();
+        if (alchemyService) {
+          const smartAccountAddr = alchemyService.getAccountAddress();
+          if (smartAccountAddr) {
+            console.log('[StakingService] Using smart account address:', smartAccountAddr);
+            return smartAccountAddr;
+          }
+        }
+      }
+      
+      // Fallback: Use EOA address
+      const signer = await this.getSigner();
+      const eoaAddress = await signer.getAddress();
+      console.log('[StakingService] Using EOA address:', eoaAddress);
+      return eoaAddress;
+    } catch (error) {
+      console.error('[StakingService] Error getting address:', error);
+      // Last resort fallback to EOA
+      const signer = await this.getSigner();
+      return await signer.getAddress();
+    }
+  }
+
+  /**
    * Get the staking contract instance
    */
   private async getStakingContract(): Promise<ethers.Contract> {
@@ -380,6 +421,7 @@ class StakingService {
 
   /**
    * Get user's stake information
+   * Uses smart account address to ensure consistent identity
    */
   public async getStakeInfo(userAddress?: string): Promise<StakeInfo> {
     try {
@@ -387,8 +429,8 @@ class StakingService {
       let address = userAddress;
       
       if (!address) {
-        const signer = await this.getSigner();
-        address = await signer.getAddress();
+        // CRITICAL: Use smart account address for queries
+        address = await this.getSmartAccountAddress();
       }
 
       console.log('Getting stake info for address:', address);
@@ -565,12 +607,14 @@ class StakingService {
    * Stake USDC tokens (includes approval if needed)
    * Returns transaction with progress stages
    * 
-   * AA Enhancement: When AA is enabled and available, performs batch transaction
-   * (approve + stake in single UserOp for gasless operation)
+   * AA Enhancement: Uses SmartContractTransactionService for unified AA+EOA handling
+   * - Automatically links smart account to EOA on first transaction
+   * - Batch approve+stake in single UserOp when using AA
+   * - Falls back to EOA when AA unavailable or gas limits reached
    */
   public async stake(
     amount: string, 
-    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching', message: string) => void
+    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching' | 'linking', message: string) => void
   ): Promise<StakingTransaction> {
     try {
       // Validate amount
@@ -595,11 +639,61 @@ class StakingService {
 
       const amountInWei = ethers.utils.parseUnits(amount, 6);
 
-      // Try AA batch transaction if available
+      // Get USDC contract address
+      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      if (!usdcAddress) {
+        throw new Error('USDC address not found');
+      }
+
+      // Check if should use AA
       if (this.shouldUseAA()) {
         try {
           onProgress?.('batching', 'Preparing gasless batch transaction...');
-          return await this.stakeViaAA(amount, amountInWei, onProgress);
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          const txService = smartContractTransactionService;
+          
+          // Execute batch transaction (approve + stake) with AA
+          const result = await txService.executeBatchTransaction({
+            transactions: [
+              {
+                contractAddress: usdcAddress,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [DIAMOND_CONTRACT_ADDRESS, amountInWei.toString()],
+                value: '0'
+              },
+              {
+                contractAddress: DIAMOND_CONTRACT_ADDRESS,
+                abi: LIQUIDITY_POOL_FACET_ABI,
+                functionName: 'stake',
+                args: [amountInWei.toString(), '0']
+              }
+            ],
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey
+          });
+
+          console.log('[StakingService] AA batch stake completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'stake',
+            amount,
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
         } catch (error) {
           console.warn('[StakingService] AA batch transaction failed, falling back to EOA:', error);
           // Continue to EOA method below
@@ -651,6 +745,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw stake error:", error);
@@ -729,8 +824,12 @@ class StakingService {
 
   /**
    * Unstake tokens
+   * Uses SmartContractTransactionService for unified AA+EOA handling
    */
-  public async unstake(amount: string): Promise<StakingTransaction> {
+  public async unstake(
+    amount: string,
+    onProgress?: (stage: 'checking' | 'unstaking' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
       // Validate amount
       const amountFloat = parseFloat(amount);
@@ -738,10 +837,60 @@ class StakingService {
         throw new Error("Invalid unstake amount");
       }
 
+      onProgress?.('checking', 'Checking unstaking requirements...');
+
+      const amountInWei = ethers.utils.parseUnits(amount, 6);
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA unstake');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          const txService = smartContractTransactionService;
+          
+          // Execute unstake transaction with AA
+          const result = await txService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'unstake',
+            args: [amountInWei.toString()]
+          });
+
+          console.log('[StakingService] AA unstake completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'unstake',
+            amount,
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA unstake failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('unstaking', 'Unstaking tokens...');
+      
       const contract = await this.getStakingContract();
       const signer = await this.getSigner();
       const address = await signer.getAddress();
-      const amountInWei = ethers.utils.parseUnits(amount, 6);
       
       console.log("Unstaking USDC:", {
         amount,
@@ -768,6 +917,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw unstake error:", error);
@@ -776,10 +926,104 @@ class StakingService {
   }
 
   /**
-   * Claim pending rewards
+   * Unstake via Account Abstraction
    */
-  public async claimRewards(): Promise<StakingTransaction> {
+  private async unstakeViaAA(
+    amount: string,
+    amountInWei: ethers.BigNumber
+  ): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA unstake:', {
+      amount,
+      amountInWei: amountInWei.toString(),
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      LIQUIDITY_POOL_FACET_ABI,
+      'unstake',
+      [BigInt(amountInWei.toString())]
+    );
+
+    console.log('[StakingService] AA unstake submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'unstake',
+      amount,
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
+   * Claim pending rewards
+   * Uses SmartContractTransactionService for unified AA+EOA handling
+   */
+  public async claimRewards(
+    onProgress?: (stage: 'checking' | 'claiming' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Checking pending rewards...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA claimRewards');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute claimRewards transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'claimRewards',
+            args: []
+          });
+
+          console.log('[StakingService] AA claimRewards completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'claim',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA claimRewards failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('claiming', 'Claiming rewards...');
+      
       const contract = await this.getStakingContract();
       const signer = await this.getSigner();
       const address = await signer.getAddress();
@@ -824,6 +1068,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw claim rewards error:", error);
@@ -832,10 +1077,98 @@ class StakingService {
   }
 
   /**
-   * Emergency withdraw (with penalty)
+   * Claim rewards via Account Abstraction
    */
-  public async emergencyWithdraw(): Promise<StakingTransaction> {
+  private async claimRewardsViaAA(): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA claimRewards:', {
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      LIQUIDITY_POOL_FACET_ABI,
+      'claimRewards',
+      []
+    );
+
+    console.log('[StakingService] AA claimRewards submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'claim',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
+   * Emergency withdraw (with penalty)
+   * Uses SmartContractTransactionService for unified AA+EOA handling
+   */
+  public async emergencyWithdraw(
+    onProgress?: (stage: 'checking' | 'withdrawing' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Checking stake status...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA emergencyWithdraw');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute emergencyWithdraw transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'emergencyWithdraw',
+            args: []
+          });
+
+          console.log('[StakingService] AA emergencyWithdraw completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'emergency',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA emergencyWithdraw failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('withdrawing', 'Processing emergency withdrawal...');
+      
       const contract = await this.getStakingContract();
       const signer = await this.getSigner();
       const address = await signer.getAddress();
@@ -866,6 +1199,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw emergency withdraw error:", error);
@@ -874,10 +1208,98 @@ class StakingService {
   }
 
   /**
-   * Apply as financier (required to create proposals)
+   * Emergency withdraw via Account Abstraction
    */
-  public async applyAsFinancier(): Promise<StakingTransaction> {
+  private async emergencyWithdrawViaAA(): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA emergencyWithdraw:', {
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      LIQUIDITY_POOL_FACET_ABI,
+      'emergencyWithdraw',
+      []
+    );
+
+    console.log('[StakingService] AA emergencyWithdraw submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'emergency',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
+   * Apply as financier (required to create proposals)
+   * Uses SmartContractTransactionService for unified AA+EOA handling
+   */
+  public async applyAsFinancier(
+    onProgress?: (stage: 'checking' | 'applying' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Checking financier eligibility...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA applyAsFinancier');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute applyAsFinancier transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'applyAsFinancier',
+            args: []
+          });
+
+          console.log('[StakingService] AA applyAsFinancier completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'proposal', // Using proposal type for financier actions
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA applyAsFinancier failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('applying', 'Submitting financier application...');
+      
       const contract = await this.getStakingContract();
       const signer = await this.getSigner();
       const address = await signer.getAddress();
@@ -922,6 +1344,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw apply as financier error:", error);
@@ -930,7 +1353,45 @@ class StakingService {
   }
 
   /**
+   * Apply as financier via Account Abstraction
+   */
+  private async applyAsFinancierViaAA(): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA applyAsFinancier:', {
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      LIQUIDITY_POOL_FACET_ABI,
+      'applyAsFinancier',
+      []
+    );
+
+    console.log('[StakingService] AA applyAsFinancier submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'proposal',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
    * Check if user is eligible to be a financier
+   * Uses smart account address to ensure consistent identity
    */
   public async isEligibleFinancier(userAddress?: string): Promise<boolean> {
     try {
@@ -938,8 +1399,8 @@ class StakingService {
       let address = userAddress;
       
       if (!address) {
-        const signer = await this.getSigner();
-        address = await signer.getAddress();
+        // CRITICAL: Use smart account address for queries
+        address = await this.getSmartAccountAddress();
       }
 
       const isEligible = await contract.isEligibleFinancier(address);
@@ -961,10 +1422,15 @@ class StakingService {
   /**
    * Stake USDC tokens as financier (includes approval if needed and automatically grants financier status)
    * Returns transaction with progress stages
+   * 
+   * AA Enhancement: Uses SmartContractTransactionService for unified AA+EOA handling
+   * - Automatically links smart account to EOA on first transaction
+   * - Batch approve+stakeAsFinancier in single UserOp when using AA
+   * - Falls back to EOA when AA unavailable or gas limits reached
    */
   public async stakeAsFinancier(
     amount: string, 
-    onProgress?: (stage: 'checking' | 'approving' | 'staking', message: string) => void
+    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching' | 'linking', message: string) => void
   ): Promise<StakingTransaction> {
     try {
       // Validate amount
@@ -989,7 +1455,69 @@ class StakingService {
 
       const amountInWei = ethers.utils.parseUnits(amount, 6);
 
-      // Check and handle approval if needed
+      // Get USDC contract address
+      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      if (!usdcAddress) {
+        throw new Error('USDC address not found');
+      }
+
+      // Try AA batch transaction if available
+      if (this.shouldUseAA()) {
+        try {
+          onProgress?.('batching', 'Preparing gasless batch transaction...');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute batch transaction (approve + stakeAsFinancier) with AA
+          const result = await smartContractTransactionService.executeBatchTransaction({
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            transactions: [
+              {
+                contractAddress: usdcAddress,
+                abi: ERC20_ABI,
+                functionName: 'approve',
+                args: [DIAMOND_CONTRACT_ADDRESS, amountInWei.toString()],
+                value: '0'
+              },
+              {
+                contractAddress: DIAMOND_CONTRACT_ADDRESS,
+                abi: LIQUIDITY_POOL_FACET_ABI,
+                functionName: 'stakeAsFinancier',
+                args: [amountInWei.toString(), '0'], // amount, customDeadline
+                value: '0'
+              }
+            ]
+          });
+
+          console.log('[StakingService] AA batch stakeAsFinancier completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'stake',
+            amount,
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA batch stakeAsFinancier failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method: Check and handle approval if needed
       const hasAllowance = await this.checkAllowance(amount);
       if (!hasAllowance) {
         onProgress?.('approving', 'Approving USDC spend...');
@@ -1034,11 +1562,81 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
-      console.error("Raw stake as financier error:", error);
+      console.error("Raw stakeAsFinancier error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Stake as financier via Account Abstraction with batch transaction
+   * Combines approve + stakeAsFinancier in single UserOp for gasless operation
+   */
+  private async stakeAsFinancierViaAA(
+    amount: string,
+    amountInWei: ethers.BigNumber,
+    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching', message: string) => void
+  ): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    onProgress?.('batching', 'Submitting gasless batch transaction...');
+
+    // Get USDC contract address
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found');
+    }
+
+    console.log('[StakingService] Executing AA batch stakeAsFinancier:', {
+      amount,
+      amountInWei: amountInWei.toString(),
+      usdcAddress,
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    // Execute batch transaction via AA
+    const result = await alchemyService.sendBatchUserOperation([
+      {
+        target: usdcAddress as Hex,
+        data: encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [DIAMOND_CONTRACT_ADDRESS as Hex, BigInt(amountInWei.toString())]
+        }),
+        value: BigInt(0)
+      },
+      {
+        target: DIAMOND_CONTRACT_ADDRESS as Hex,
+        data: encodeFunctionData({
+          abi: LIQUIDITY_POOL_FACET_ABI,
+          functionName: 'stakeAsFinancier',
+          args: [BigInt(amountInWei.toString()), BigInt(0)] // amount, customDeadline
+        }),
+        value: BigInt(0)
+      }
+    ]);
+
+    console.log('[StakingService] AA batch stakeAsFinancier submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'stake',
+      amount,
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
   }
 
   /**
@@ -1240,14 +1838,64 @@ class StakingService {
 
   /**
    * Create a new proposal
+   * Uses SmartContractTransactionService for unified AA+EOA handling
    */
   public async createProposal(
     proposalId: string,
     category: string,
     title: string,
-    description: string
+    description: string,
+    onProgress?: (stage: 'checking' | 'creating' | 'linking', message: string) => void
   ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Checking financier status...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA createProposal');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute createProposal transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'createProposal',
+            args: [proposalId, category, title, description]
+          });
+
+          console.log('[StakingService] AA createProposal completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'proposal',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA createProposal failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('creating', 'Creating proposal...');
+      
       const contract = await this.getGovernanceContract();
       const signer = await this.getSigner();
       const address = await signer.getAddress();
@@ -1296,6 +1944,7 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw create proposal error:", error);
@@ -1327,10 +1976,108 @@ class StakingService {
   }
 
   /**
-   * Vote on a proposal
+   * Create proposal via Account Abstraction
    */
-  public async voteOnProposal(proposalId: string, support: boolean): Promise<StakingTransaction> {
+  private async createProposalViaAA(
+    proposalId: string,
+    category: string,
+    title: string,
+    description: string
+  ): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA createProposal:', {
+      proposalId,
+      category,
+      title,
+      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      GOVERNANCE_FACET_ABI,
+      'createProposal',
+      [proposalId, category, title, description]
+    );
+
+    console.log('[StakingService] AA createProposal submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'proposal',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
+   * Vote on a proposal
+   * Uses SmartContractTransactionService for unified AA+EOA handling
+   */
+  public async voteOnProposal(
+    proposalId: string,
+    support: boolean,
+    onProgress?: (stage: 'checking' | 'voting' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Preparing to vote...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA voteOnProposal');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute voteOnProposal transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'voteOnProposal',
+            args: [proposalId, support]
+          });
+
+          console.log('[StakingService] AA voteOnProposal completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'vote',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA voteOnProposal failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('voting', 'Submitting vote...');
+      
       const contract = await this.getGovernanceContract();
       
       console.log("Voting on proposal:", { proposalId, support });
@@ -1345,11 +2092,54 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw vote error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Vote on proposal via Account Abstraction
+   */
+  private async voteOnProposalViaAA(
+    proposalId: string,
+    support: boolean
+  ): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA voteOnProposal:', {
+      proposalId,
+      support,
+      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      GOVERNANCE_FACET_ABI,
+      'voteOnProposal',
+      [proposalId, support]
+    );
+
+    console.log('[StakingService] AA voteOnProposal submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'vote',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
   }
 
   /**
@@ -1452,6 +2242,7 @@ class StakingService {
 
   /**
    * Get vote status for a user on a proposal
+   * Uses smart account address to ensure consistent identity
    */
   public async getVoteStatus(proposalId: string, voterAddress?: string): Promise<VoteStatus> {
     try {
@@ -1459,8 +2250,8 @@ class StakingService {
       let address = voterAddress;
       
       if (!address) {
-        const signer = await this.getSigner();
-        address = await signer.getAddress();
+        // CRITICAL: Use smart account address for queries
+        address = await this.getSmartAccountAddress();
       }
 
       const voteStatus = await contract.getVoteStatus(proposalId, address);
@@ -1525,6 +2316,18 @@ class StakingService {
    */
   public async finalizeVote(proposalId: string): Promise<StakingTransaction> {
     try {
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA finalizeVote');
+          return await this.finalizeVoteViaAA(proposalId);
+        } catch (error) {
+          console.warn('[StakingService] AA finalizeVote failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
       const contract = await this.getGovernanceContract();
       
       console.log("Finalizing vote for proposal:", proposalId);
@@ -1545,10 +2348,100 @@ class StakingService {
   }
 
   /**
-   * Execute a passed proposal
+   * Finalize vote via Account Abstraction
    */
-  public async executeProposal(proposalId: string): Promise<StakingTransaction> {
+  private async finalizeVoteViaAA(proposalId: string): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA finalizeVote:', {
+      proposalId,
+      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      GOVERNANCE_FACET_ABI,
+      'finalizeVote',
+      [proposalId]
+    );
+
+    console.log('[StakingService] AA finalizeVote submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'proposal',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
+  }
+
+  /**
+   * Execute a passed proposal
+   * Uses SmartContractTransactionService for unified AA+EOA handling
+   */
+  public async executeProposal(
+    proposalId: string,
+    onProgress?: (stage: 'checking' | 'executing' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
     try {
+      onProgress?.('checking', 'Preparing to execute proposal...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA executeProposal');
+          
+          // Get private key for linking/fallback
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Execute executeProposal transaction with AA
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'executeProposal',
+            args: [proposalId]
+          });
+
+          console.log('[StakingService] AA executeProposal completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'proposal',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA executeProposal failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method
+      onProgress?.('executing', 'Executing proposal...');
+      
       const contract = await this.getGovernanceContract();
       
       console.log("Executing proposal:", proposalId);
@@ -1561,11 +2454,50 @@ class StakingService {
         timestamp: Date.now(),
         status: 'pending',
         explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
       };
     } catch (error: any) {
       console.error("Raw execute proposal error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Execute proposal via Account Abstraction
+   */
+  private async executeProposalViaAA(proposalId: string): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    console.log('[StakingService] Executing AA executeProposal:', {
+      proposalId,
+      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    const result = await alchemyService.executeContractFunction(
+      DIAMOND_CONTRACT_ADDRESS as Hex,
+      GOVERNANCE_FACET_ABI,
+      'executeProposal',
+      [proposalId]
+    );
+
+    console.log('[StakingService] AA executeProposal submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'proposal',
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
   }
 }
 

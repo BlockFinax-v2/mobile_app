@@ -41,9 +41,7 @@ import {
   TokenStakeInfo,
   MultiTokenPoolStats,
 } from "@/services/multiTokenStakingService";
-import {
-  isStakingSupportedOnNetwork,
-} from "@/services/multiNetworkStakingService";
+import { isStakingSupportedOnNetwork } from "@/services/multiNetworkStakingService";
 import {
   getSupportedStablecoins,
   convertToUSD,
@@ -821,7 +819,16 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [stakeAmount, stakingConfig, selectedToken, tokenBalances, stakeAsFinancier, address, selectedNetwork.chainId, loadMultiTokenData]);
+  }, [
+    stakeAmount,
+    stakingConfig,
+    selectedToken,
+    tokenBalances,
+    stakeAsFinancier,
+    address,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   const handleUnstake = useCallback(async () => {
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
@@ -836,10 +843,14 @@ export function TreasuryPortalScreen() {
 
     // Find the stake for the selected token
     const tokenStake = multiTokenStakes?.stakes.find(
-      (s) => s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase()
+      (s) =>
+        s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase()
     );
 
-    if (!tokenStake || parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)) {
+    if (
+      !tokenStake ||
+      parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)
+    ) {
       Alert.alert("Error", "Cannot unstake more than your staked amount");
       return;
     }
@@ -847,7 +858,11 @@ export function TreasuryPortalScreen() {
     try {
       setIsTransacting(true);
 
-      console.log("Attempting to unstake:", unstakeAmount, selectedToken.symbol);
+      console.log(
+        "Attempting to unstake:",
+        unstakeAmount,
+        selectedToken.symbol
+      );
       console.log("Token stake info:", tokenStake);
 
       const txHash = await multiTokenStakingService.unstakeToken(
@@ -875,7 +890,14 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [unstakeAmount, selectedToken, multiTokenStakes, address, selectedNetwork.chainId, loadMultiTokenData]);
+  }, [
+    unstakeAmount,
+    selectedToken,
+    multiTokenStakes,
+    address,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   const handleClaimRewards = useCallback(async () => {
     if (!selectedToken) {
