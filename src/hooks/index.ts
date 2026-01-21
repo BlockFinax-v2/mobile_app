@@ -9,3 +9,6 @@ export * from './usePerformantNavigation';
 
 // Keep existing hooks
 export * from './useWalletCompatibility';
+
+// Smart Account Provider (unified interface for Pimlico/Alchemy)
+export * from './useSmartAccountProvider';

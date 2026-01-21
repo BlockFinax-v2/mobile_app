@@ -21,17 +21,17 @@ export default function NetworkTestScreen() {
     try {
       setTesting(true);
       const networks = {
-        polygonMumbai: {
-          name: "Polygon Mumbai",
-          rpcUrl: "https://rpc-mumbai.maticvigil.com",
-          chainId: 80001,
-          nativeCurrency: { name: "MATIC", symbol: "MATIC", decimals: 18 },
-          blockExplorerUrl: "https://mumbai.polygonscan.com",
+        ethereumSepolia: {
+          name: "Ethereum Sepolia",
+          rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+          chainId: 11155111,
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          blockExplorerUrl: "https://sepolia.etherscan.io",
           stablecoins: [
             {
               symbol: "USDC",
               name: "USD Coin",
-              address: "0x2058A9D7613eEE744279e3856Ef0eAda5FCbaA7e",
+              address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
               decimals: 6,
             },
             {
@@ -42,13 +42,12 @@ export default function NetworkTestScreen() {
             },
           ],
         },
-        ethereumSepolia: {
-          name: "Ethereum Sepolia",
-          rpcUrl:
-            "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161",
-          chainId: 11155111,
-          nativeCurrency: { name: "Sepolia ETH", symbol: "SEP", decimals: 18 },
-          blockExplorerUrl: "https://sepolia.etherscan.io",
+        baseSepolia: {
+          name: "Base Sepolia",
+          rpcUrl: "https://sepolia.base.org",
+          chainId: 84532,
+          nativeCurrency: { name: "ETH", symbol: "ETH", decimals: 18 },
+          blockExplorerUrl: "https://sepolia.basescan.org",
           stablecoins: [
             {
               symbol: "USDC",
@@ -91,9 +90,9 @@ export default function NetworkTestScreen() {
             },
           ],
         },
-        baseSepolia: {
-          name: "Base Sepolia",
-          rpcUrl: "https://sepolia.base.org",
+        baseSepoliaAlt: {
+          name: "Base Sepolia (Alt)",
+          rpcUrl: "https://base-sepolia.blockpi.network/v1/rpc/public",
           chainId: 84532,
           nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
           blockExplorerUrl: "https://sepolia.basescan.org",
@@ -164,7 +163,6 @@ export default function NetworkTestScreen() {
     setTestResults({});
 
     const networks = [
-      "polygonMumbai",
       "ethereumSepolia",
       "bscTestnet",
       "baseSepolia",

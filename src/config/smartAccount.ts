@@ -30,11 +30,9 @@ export function getPimlicoConfig(networkId: SupportedNetworkId): PimlicoConfig |
     "ethereum-mainnet": "ethereum",
     "base-mainnet": "base",
     "lisk-mainnet": "lisk",
-    "polygon-mainnet": "polygon",
     "bsc-mainnet": "bsc",
     
     // Testnets
-    "polygon-mumbai": null, // Mumbai deprecated, use Amoy
     "ethereum-sepolia": "sepolia",
     "bsc-testnet": "bsc-testnet",
     "base-sepolia": "base-sepolia",

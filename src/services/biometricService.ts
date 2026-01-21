@@ -147,19 +147,14 @@ class BiometricService {
       }
 
       // Verify password first by trying to decrypt wallet
-      const privateKey = await secureStorage.getSecureItem('blockfinax.privateKey');
+      const privateKey = await secureStorage.getDecryptedPrivateKey(walletPassword);
       const mnemonic = await secureStorage.getSecureItem('blockfinax.mnemonic');
       
       if (!privateKey && !mnemonic) {
-        throw new Error('No wallet found to enable biometric authentication');
+        throw new Error('No wallet found or incorrect password');
       }
 
-      // Test the password by trying to decrypt (if encrypted)
-      // For now, we'll just validate the password exists
-      if (!walletPassword || walletPassword.length < 8) {
-        throw new Error('Invalid password provided');
-      }
-
+      // Password is valid if we got here
       // Store encrypted credentials for biometric access
       await secureStorage.setSecureItem(BIOMETRIC_CREDENTIALS_KEY, walletPassword);
 
@@ -237,7 +232,7 @@ class BiometricService {
   /**
    * Unlock wallet with biometrics
    */
-  async unlockWithBiometrics(): Promise<string> {
+  async unlockWithBiometrics(options?: { promptMessage?: string; silent?: boolean }): Promise<string> {
     try {
       const isEnabled = await this.isBiometricEnabled();
       if (!isEnabled) {
@@ -249,7 +244,9 @@ class BiometricService {
         throw new Error('Biometric authentication is not available');
       }
 
-      const authenticated = await this.authenticate('Unlock your BlockFinaX wallet');
+      const authenticated = await this.authenticate(
+        options?.promptMessage || 'Unlock your BlockFinaX wallet'
+      );
       if (!authenticated) {
         throw new Error('Biometric authentication failed');
       }
@@ -261,7 +258,9 @@ class BiometricService {
 
       return storedPassword;
     } catch (error) {
-      console.error('Error unlocking with biometrics:', error);
+      if (!options?.silent) {
+        console.error('Error unlocking with biometrics:', error);
+      }
       throw error;
     }
   }

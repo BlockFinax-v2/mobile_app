@@ -1,4 +1,5 @@
 // Export all UI components for easy importing
+export * from './AAStatusIndicator';
 export * from './Button';
 export * from './DebugTool';
 export * from './DocumentUploadArea';

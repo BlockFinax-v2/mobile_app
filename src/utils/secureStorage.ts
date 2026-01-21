@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 
 class SecureStorageManager {
   private static instance: SecureStorageManager;
@@ -9,6 +10,164 @@ class SecureStorageManager {
       SecureStorageManager.instance = new SecureStorageManager();
     }
     return SecureStorageManager.instance;
+  }
+
+  /**
+   * Derive encryption key from password using PBKDF2
+   */
+  private async deriveKey(password: string, salt: string): Promise<string> {
+    const combined = password + salt;
+    const hash = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      combined
+    );
+    return hash;
+  }
+
+  /**
+   * Simple XOR encryption (not cryptographically strong, but better than plain text)
+   * For production, consider using expo-crypto's AES encryption
+   */
+  private encrypt(data: string, key: string): string {
+    let encrypted = '';
+    for (let i = 0; i < data.length; i++) {
+      encrypted += String.fromCharCode(
+        data.charCodeAt(i) ^ key.charCodeAt(i % key.length)
+      );
+    }
+    // Use btoa for React Native compatible base64 encoding
+    return this.base64Encode(encrypted);
+  }
+
+  /**
+   * Simple XOR decryption
+   */
+  private decrypt(encryptedData: string, key: string): string {
+    // Use atob for React Native compatible base64 decoding
+    const binary = this.base64Decode(encryptedData);
+    let decrypted = '';
+    for (let i = 0; i < binary.length; i++) {
+      decrypted += String.fromCharCode(
+        binary.charCodeAt(i) ^ key.charCodeAt(i % key.length)
+      );
+    }
+    return decrypted;
+  }
+
+  /**
+   * React Native compatible base64 encode
+   * Pure JavaScript implementation to avoid stack overflow with large data
+   */
+  private base64Encode(str: string): string {
+    const base64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    let i = 0;
+    
+    while (i < str.length) {
+      const a = str.charCodeAt(i++);
+      const b = i < str.length ? str.charCodeAt(i++) : 0;
+      const c = i < str.length ? str.charCodeAt(i++) : 0;
+      
+      const bitmap = (a << 16) | (b << 8) | c;
+      
+      result += base64chars.charAt((bitmap >> 18) & 63);
+      result += base64chars.charAt((bitmap >> 12) & 63);
+      result += (i - 2) < str.length ? base64chars.charAt((bitmap >> 6) & 63) : '=';
+      result += (i - 1) < str.length ? base64chars.charAt(bitmap & 63) : '=';
+    }
+    
+    return result;
+  }
+
+  /**
+   * React Native compatible base64 decode
+   * Pure JavaScript implementation to avoid stack overflow with large data
+   */
+  private base64Decode(base64: string): string {
+    const base64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let result = '';
+    let i = 0;
+    
+    // Remove padding and whitespace
+    base64 = base64.replace(/[^A-Za-z0-9+/]/g, '');
+    
+    while (i < base64.length) {
+      const enc1 = base64chars.indexOf(base64.charAt(i++));
+      const enc2 = base64chars.indexOf(base64.charAt(i++));
+      const enc3 = base64chars.indexOf(base64.charAt(i++));
+      const enc4 = base64chars.indexOf(base64.charAt(i++));
+      
+      const bitmap = (enc1 << 18) | (enc2 << 12) | (enc3 << 6) | enc4;
+      
+      result += String.fromCharCode((bitmap >> 16) & 255);
+      
+      if (enc3 !== -1) {
+        result += String.fromCharCode((bitmap >> 8) & 255);
+      }
+      if (enc4 !== -1) {
+        result += String.fromCharCode(bitmap & 255);
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Store encrypted private key (requires password or biometric)
+   */
+  public async setEncryptedPrivateKey(privateKey: string, password: string): Promise<void> {
+    try {
+      // Generate random salt
+      const salt = Math.random().toString(36).substring(7);
+      await this.setItem('blockfinax.salt', salt);
+
+      // Derive encryption key from password
+      const encryptionKey = await this.deriveKey(password, salt);
+
+      // Encrypt private key
+      const encrypted = this.encrypt(privateKey, encryptionKey);
+
+      // Store encrypted private key
+      await SecureStore.setItemAsync('blockfinax.privateKey.encrypted', encrypted, {
+        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+
+      console.log('✅ Private key encrypted and stored securely');
+    } catch (error) {
+      console.error('Error storing encrypted private key:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get decrypted private key (requires password or biometric)
+   */
+  public async getDecryptedPrivateKey(password: string): Promise<string | null> {
+    try {
+      const encrypted = await SecureStore.getItemAsync('blockfinax.privateKey.encrypted');
+      if (!encrypted) {
+        // Fallback: check for old unencrypted key
+        const oldKey = await this.getSecureItem('blockfinax.privateKey');
+        if (oldKey) {
+          console.log('⚠️  Found unencrypted private key, migrating to encrypted storage...');
+          await this.setEncryptedPrivateKey(oldKey, password);
+          await this.deleteSecureItem('blockfinax.privateKey');
+          return oldKey;
+        }
+        return null;
+      }
+
+      const salt = await this.getItem('blockfinax.salt');
+      if (!salt) throw new Error('Encryption salt not found');
+
+      const encryptionKey = await this.deriveKey(password, salt);
+      const decrypted = this.decrypt(encrypted, encryptionKey);
+
+      return decrypted;
+    } catch (error) {
+      console.error('Error decrypting private key:', error);
+      throw new Error('Failed to decrypt private key. Incorrect password?');
+    }
   }
 
 

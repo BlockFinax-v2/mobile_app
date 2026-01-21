@@ -234,7 +234,6 @@ export class CurrencyConverter {
    */
   private getNativeTokenSymbol(networkId: SupportedNetworkId): string {
     if (networkId.includes('ethereum')) return 'ETH';
-    if (networkId.includes('polygon')) return 'MATIC';
     if (networkId.includes('bsc')) return 'BNB';
     if (networkId.includes('base')) return 'ETH';
     if (networkId.includes('lisk')) return 'ETH';
@@ -260,7 +259,6 @@ export class CurrencyConverter {
     // Simple fallback rates (approximate)
     const fallbackRates: { [key: string]: number } = {
       'ETH': 2500,
-      'MATIC': 0.45,
       'BNB': 240,
       'USDC': 1,
       'USDT': 1,

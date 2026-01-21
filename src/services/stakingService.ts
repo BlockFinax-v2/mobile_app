@@ -3,11 +3,20 @@
  * 
  * Handles all interactions with the BlockFinax Diamond Contract Staking System
  * Integrates with LiquidityPoolFacet for staking, unstaking, and rewards management
+ * 
+ * Account Abstraction Support:
+ * - Supports gasless staking operations via Alchemy AA
+ * - Batch transactions (approve + stake in single UserOp)
+ * - Automatic fallback to EOA when AA unavailable
  */
 
 import { WalletNetwork } from "@/contexts/WalletContext";
 import { secureStorage } from "@/utils/secureStorage";
 import { ethers } from "ethers";
+import { FEATURE_FLAGS } from "@/config/featureFlags";
+import { isAlchemyNetworkSupported } from "@/config/alchemyAccount";
+import { AlchemyAccountService } from "@/services/alchemyAccountService";
+import { Hex, encodeFunctionData } from "viem";
 
 // Contract Configuration
 export const DIAMOND_CONTRACT_ADDRESS = "0xe1A27Ee53D0E90F024965E6826e0BCA28946747A";
@@ -268,8 +277,13 @@ class StakingService {
         return this.currentSigner;
       }
 
-      // Fallback to private key
-      const privateKey = await secureStorage.getSecureItem(PRIVATE_KEY);
+      // Fallback to encrypted private key
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      if (!password) {
+        throw new Error("Password not found in secure storage");
+      }
+
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
       if (!privateKey) {
         throw new Error("No wallet credentials found in secure storage");
       }
@@ -280,6 +294,50 @@ class StakingService {
     } catch (error) {
       console.error("Error getting signer:", error);
       throw new Error("Failed to access wallet credentials");
+    }
+  }
+
+  /**
+   * Check if Account Abstraction should be used for staking operations
+   */
+  private shouldUseAA(): boolean {
+    // Check feature flag
+    if (!FEATURE_FLAGS.USE_ALCHEMY_AA) {
+      return false;
+    }
+
+    // Check if Lisk Sepolia is supported by Alchemy (currently it's not, so will fallback to EOA)
+    // This check ensures graceful degradation
+    if (!isAlchemyNetworkSupported(LISK_SEPOLIA_NETWORK.id)) {
+      console.log('[StakingService] AA not supported on Lisk Sepolia, using EOA');
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Initialize Alchemy Account Service for contract interactions
+   */
+  private async initializeAA(): Promise<AlchemyAccountService | null> {
+    try {
+      const password = await secureStorage.getSecureItem('blockfinax.password');
+      if (!password) {
+        throw new Error("Password not found for AA");
+      }
+
+      const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+      if (!privateKey) {
+        throw new Error("No private key found for AA");
+      }
+
+      const alchemyService = new AlchemyAccountService(LISK_SEPOLIA_NETWORK.id);
+      await alchemyService.initializeSmartAccount(privateKey);
+
+      return alchemyService;
+    } catch (error) {
+      console.error('[StakingService] Failed to initialize AA:', error);
+      return null;
     }
   }
 
@@ -506,10 +564,13 @@ class StakingService {
   /**
    * Stake USDC tokens (includes approval if needed)
    * Returns transaction with progress stages
+   * 
+   * AA Enhancement: When AA is enabled and available, performs batch transaction
+   * (approve + stake in single UserOp for gasless operation)
    */
   public async stake(
     amount: string, 
-    onProgress?: (stage: 'checking' | 'approving' | 'staking', message: string) => void
+    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching', message: string) => void
   ): Promise<StakingTransaction> {
     try {
       // Validate amount
@@ -534,7 +595,18 @@ class StakingService {
 
       const amountInWei = ethers.utils.parseUnits(amount, 6);
 
-      // Check and handle approval if needed
+      // Try AA batch transaction if available
+      if (this.shouldUseAA()) {
+        try {
+          onProgress?.('batching', 'Preparing gasless batch transaction...');
+          return await this.stakeViaAA(amount, amountInWei, onProgress);
+        } catch (error) {
+          console.warn('[StakingService] AA batch transaction failed, falling back to EOA:', error);
+          // Continue to EOA method below
+        }
+      }
+
+      // EOA method: Check and handle approval if needed
       const hasAllowance = await this.checkAllowance(amount);
       if (!hasAllowance) {
         onProgress?.('approving', 'Approving USDC spend...');
@@ -584,6 +656,75 @@ class StakingService {
       console.error("Raw stake error:", error);
       throw error;
     }
+  }
+
+  /**
+   * Stake via Account Abstraction with batch transaction
+   * Combines approve + stake in single UserOp for gasless operation
+   */
+  private async stakeViaAA(
+    amount: string,
+    amountInWei: ethers.BigNumber,
+    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching', message: string) => void
+  ): Promise<StakingTransaction> {
+    const alchemyService = await this.initializeAA();
+    if (!alchemyService) {
+      throw new Error('Failed to initialize AA service');
+    }
+
+    const accountAddress = alchemyService.getAccountAddress();
+    if (!accountAddress) {
+      throw new Error('Failed to get smart account address');
+    }
+
+    onProgress?.('batching', 'Submitting gasless batch transaction...');
+
+    // Get USDC contract address
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found');
+    }
+
+    console.log('[StakingService] Executing AA batch stake:', {
+      amount,
+      amountInWei: amountInWei.toString(),
+      usdcAddress,
+      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      accountAddress
+    });
+
+    // Execute batch transaction via AA
+    const result = await alchemyService.sendBatchUserOperation([
+      {
+        target: usdcAddress as Hex,
+        data: encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: 'approve',
+          args: [DIAMOND_CONTRACT_ADDRESS as Hex, BigInt(amountInWei.toString())]
+        }),
+        value: BigInt(0)
+      },
+      {
+        target: DIAMOND_CONTRACT_ADDRESS as Hex,
+        data: encodeFunctionData({
+          abi: LIQUIDITY_POOL_FACET_ABI,
+          functionName: 'stake',
+          args: [BigInt(amountInWei.toString()), BigInt(0)] // amount, customDeadline
+        }),
+        value: BigInt(0)
+      }
+    ]);
+
+    console.log('[StakingService] AA batch stake submitted:', result.hash);
+
+    return {
+      hash: result.hash,
+      type: 'stake',
+      amount,
+      timestamp: Date.now(),
+      status: 'pending',
+      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+    };
   }
 
   /**

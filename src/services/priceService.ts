@@ -128,7 +128,6 @@ class PriceService {
   private mapSymbolsToCoinIds(symbols: string[]): string[] {
     const symbolMap: { [key: string]: string } = {
       'eth': 'ethereum',
-      'matic': 'matic-network',
       'bnb': 'binancecoin',
       'usdc': 'usd-coin',
       'usdt': 'tether',
@@ -148,7 +147,6 @@ class PriceService {
   private getFallbackPrices(): { [key: string]: number } {
     return {
       'eth': 2500,
-      'matic': 0.45,
       'bnb': 240,
       'usdc': 1.00,
       'usdt': 1.00,

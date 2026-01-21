@@ -2,9 +2,11 @@ import { CommunicationProvider } from "@/contexts/CommunicationContext";
 import { NetworkProvider } from "@/contexts/NetworkContext";
 import { WalletProvider } from "@/contexts/WalletContext";
 import { SmartAccountProvider } from "@/contexts/SmartAccountContext";
+import { AlchemySmartAccountProvider } from "@/contexts/AlchemySmartAccountContext";
 import { TradeFinanceProvider } from "@/contexts/TradeFinanceContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect } from "react";
+import { logFeatureFlags } from "@/config/featureFlags";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,14 +21,23 @@ const queryClient = new QueryClient({
 const AppProviders: React.FC<React.PropsWithChildren> = ({ children }) => {
   const client = useMemo(() => queryClient, []);
 
+  // Log feature flags on mount (dev only)
+  useEffect(() => {
+    logFeatureFlags();
+  }, []);
+
   return (
     <QueryClientProvider client={client}>
       <NetworkProvider>
         <WalletProvider>
+          {/* Pimlico Smart Account Provider (Legacy) */}
           <SmartAccountProvider>
-            <TradeFinanceProvider>
-              <CommunicationProvider>{children}</CommunicationProvider>
-            </TradeFinanceProvider>
+            {/* Alchemy Smart Account Provider (New) */}
+            <AlchemySmartAccountProvider>
+              <TradeFinanceProvider>
+                <CommunicationProvider>{children}</CommunicationProvider>
+              </TradeFinanceProvider>
+            </AlchemySmartAccountProvider>
           </SmartAccountProvider>
         </WalletProvider>
       </NetworkProvider>

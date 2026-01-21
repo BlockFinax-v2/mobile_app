@@ -15,6 +15,7 @@
  * - Cross-network token support
  * - Transaction submission and tracking
  * - Standardized error handling
+ * - Account Abstraction support (gasless transactions)
  */
 
 import {
@@ -25,9 +26,13 @@ import {
 } from "@/contexts/WalletContext";
 import { transactionService } from "@/services/transactionService";
 import { formatBalanceForUI, isValidAddress } from "@/utils/tokenUtils";
+import { biometricService } from "@/services/biometricService";
+import { secureStorage } from "@/utils/secureStorage";
 import { useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useState, useMemo } from "react";
 import { Alert, Vibration } from "react-native";
+import { FEATURE_FLAGS } from "@/config/featureFlags";
+import { isAlchemyNetworkSupported } from "@/config/alchemyAccount";
 
 export interface PaymentToken {
   symbol: string;
@@ -62,6 +67,10 @@ export interface PaymentParams {
   maxAmount?: number; // Maximum amount allowed
   allowedTokens?: string[]; // Restrict to specific token symbols (e.g., ["USDC", "USDT"])
   restrictToStablecoins?: boolean; // Restrict to stablecoins only
+  
+  // Account Abstraction options
+  preferGasless?: boolean; // Try gasless transaction via AA if available
+  forceAccountAbstraction?: boolean; // Force AA (fail if not available)
 }
 
 export interface PaymentState {
@@ -78,6 +87,7 @@ export interface PaymentState {
   // Gas and fees
   estimatedFee: string | null;
   isEstimatingGas: boolean;
+  isGasless: boolean; // Whether current transaction will be gasless via AA
   
   // UI state
   showNetworkSelector: boolean;
@@ -162,6 +172,8 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     switchNetwork,
     isRefreshingBalance,
     forceRefreshBalance,
+    smartAccountAddress,
+    addPendingTransaction,
   } = useWallet();
 
   // Initialize state
@@ -174,6 +186,7 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     availableTokens: [],
     estimatedFee: null,
     isEstimatingGas: false,
+    isGasless: false, // Will be determined based on AA availability
     showNetworkSelector: false,
     showTokenSelector: false,
     isValid: false,
@@ -188,7 +201,6 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     if (id.includes("ethereum")) return "#627EEA";
     if (id.includes("base")) return "#0052FF";
     if (id.includes("lisk")) return "#4070F4";
-    if (id.includes("polygon")) return "#8247E5";
     if (id.includes("bsc") || id.includes("bnb")) return "#F3BA2F";
     return "#007AFF";
   }, [state.selectedNetwork.id]);
@@ -199,7 +211,6 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     if (id.includes("ethereum")) return "ethereum";
     if (id.includes("base")) return "alpha-b-circle-outline";
     if (id.includes("lisk")) return "alpha-l-circle";
-    if (id.includes("polygon")) return "triangle";
     if (id.includes("bsc") || id.includes("bnb")) return "alpha-b-circle";
     return "earth";
   }, [state.selectedNetwork.id]);
@@ -292,6 +303,33 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
   useEffect(() => {
     setState(prev => ({ ...prev, selectedNetwork }));
   }, [selectedNetwork]);
+
+  // Detect AA availability for gasless transactions
+  useEffect(() => {
+    const checkAAAvailability = () => {
+      const aaEnabled = FEATURE_FLAGS.USE_ALCHEMY_AA;
+      const networkSupported = isAlchemyNetworkSupported(state.selectedNetwork.id);
+      const smartAccountAvailable = !!smartAccountAddress; // From WalletContext
+      
+      const isGasless = aaEnabled && networkSupported && smartAccountAvailable;
+      
+      console.log(`[usePayment] AA Check:`, {
+        aaEnabled,
+        networkSupported,
+        networkId: state.selectedNetwork.id,
+        smartAccountAddress,
+        smartAccountAvailable,
+        isGasless
+      });
+      
+      if (isGasless !== state.isGasless) {
+        setState(prev => ({ ...prev, isGasless }));
+        console.log(`[usePayment] Gasless transactions ${isGasless ? 'enabled' : 'disabled'} on ${state.selectedNetwork.name}`);
+      }
+    };
+
+    checkAAAvailability();
+  }, [state.selectedNetwork.id, smartAccountAddress, state.isGasless]);
 
   // Validation function
   const validateForm = useCallback(() => {
@@ -491,6 +529,97 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
       setState(prev => ({ ...prev, isSubmitting: true }));
 
       try {
+        // 🔐 Biometric/Password Authentication before transaction
+        const isBiometricEnabled = await biometricService.isBiometricEnabled();
+        let authenticationPassed = false;
+        let userPassword: string | undefined;
+
+        if (isBiometricEnabled) {
+          try {
+            console.log('[usePayment] 🔐 Requesting biometric authentication...');
+            await biometricService.authenticate('Authenticate to send transaction');
+            authenticationPassed = true;
+            // Get password from secure storage for decryption
+            userPassword = await secureStorage.getSecureItem('blockfinax.password') || undefined;
+            console.log('[usePayment] ✅ Biometric authentication successful');
+          } catch (error) {
+            console.log('[usePayment] ❌ Biometric authentication failed, requesting password');
+            
+            // Fallback to password
+            const passwordResult = await new Promise<string | null>((resolve) => {
+              Alert.prompt(
+                'Authentication Required',
+                'Enter your wallet password to continue',
+                [
+                  { text: 'Cancel', onPress: () => resolve(null), style: 'cancel' },
+                  { 
+                    text: 'Confirm', 
+                    onPress: async (password?: string) => {
+                      const storedPassword = await secureStorage.getSecureItem('blockfinax.password');
+                      if (storedPassword === password) {
+                        resolve(password || null);
+                      } else {
+                        Alert.alert('Error', 'Incorrect password');
+                        resolve(null);
+                      }
+                    }
+                  },
+                ],
+                'secure-text'
+              );
+            });
+
+            if (!passwordResult) {
+              setState(prev => ({ ...prev, isSubmitting: false }));
+              return { success: false };
+            }
+            userPassword = passwordResult;
+            authenticationPassed = true;
+          }
+        } else {
+          // No biometrics, require password
+          console.log('[usePayment] 🔐 Requesting password authentication...');
+          const passwordResult = await new Promise<string | null>((resolve) => {
+            Alert.prompt(
+              'Authentication Required',
+              'Enter your wallet password to send transaction',
+              [
+                { text: 'Cancel', onPress: () => resolve(null), style: 'cancel' },
+                { 
+                  text: 'Confirm', 
+                  onPress: async (password?: string) => {
+                    const storedPassword = await secureStorage.getSecureItem('blockfinax.password');
+                    if (storedPassword === password) {
+                      resolve(password || null);
+                    } else {
+                      Alert.alert('Error', 'Incorrect password');
+                      resolve(null);
+                    }
+                  }
+                },
+              ],
+              'secure-text'
+            );
+          });
+
+          if (!passwordResult) {
+            setState(prev => ({ ...prev, isSubmitting: false }));
+            return { success: false };
+          }
+          userPassword = passwordResult;
+          authenticationPassed = true;
+        }
+
+        if (!authenticationPassed || !userPassword) {
+          setState(prev => ({ ...prev, isSubmitting: false }));
+          return { success: false };
+        }
+
+        // Determine if we should use AA (gasless)
+        const useAA = params?.preferGasless || params?.forceAccountAbstraction;
+        const gasless = useAA && state.isGasless; // Only gasless if AA is enabled and available
+
+        console.log('[usePayment] 🚀 About to send transaction...');
         const result = await transactionService.sendTransaction({
           recipientAddress: state.recipientAddress,
           amount: state.amount,
@@ -499,7 +628,41 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
             : state.selectedToken!.address,
           tokenDecimals: state.selectedToken!.decimals,
           network: state.selectedNetwork,
+          useAccountAbstraction: useAA,
+          gasless: gasless,
+          smartAccountAddress: smartAccountAddress,
+          password: userPassword, // Pass password for private key decryption
         });
+
+        console.log('[usePayment] ✅ Transaction result received:', result.hash);
+
+        // ✅ Immediately add transaction to UI (optimistic update)
+        try {
+          console.log('═══════════════════════════════════════════════');
+          console.log('📋 [usePayment] Adding pending transaction to dashboard...');
+          console.log('addPendingTransaction function exists:', typeof addPendingTransaction);
+          
+          await addPendingTransaction({
+            hash: result.hash,
+            from: result.from,
+            to: state.recipientAddress,
+            value: state.amount,
+            tokenSymbol: state.selectedToken!.symbol,
+            tokenAddress: state.selectedToken!.address === "0x0000000000000000000000000000000000000000"
+              ? undefined
+              : state.selectedToken!.address,
+            type: 'send',
+            status: 'pending',
+            timestamp: new Date(),
+            description: `Sent ${state.selectedToken!.symbol}`,
+            amount: `-${state.amount} ${state.selectedToken!.symbol}`,
+          });
+          
+          console.log('✅ [usePayment] Transaction added to dashboard!');
+          console.log('═══════════════════════════════════════════════');
+        } catch (error) {
+          console.error('❌ [usePayment] Failed to add pending transaction:', error);
+        }
 
         setState(prev => ({ ...prev, isSubmitting: false }));
 

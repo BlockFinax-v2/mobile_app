@@ -91,7 +91,7 @@ class RealTransactionService {
   }
 
   /**
-   * Get native token (ETH, MATIC, BNB) transactions
+   * Get native token (ETH, BNB) transactions
    */
   private async getNativeTransactions(
     address: string,

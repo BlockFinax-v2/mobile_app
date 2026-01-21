@@ -264,7 +264,6 @@ export const ReceivePaymentScreen: React.FC = () => {
     if (currentNetworkId.includes("ethereum")) return "ethereum";
     if (currentNetworkId.includes("base")) return "alpha-b-circle-outline";
     if (currentNetworkId.includes("lisk")) return "alpha-l-circle";
-    if (currentNetworkId.includes("polygon")) return "triangle";
     if (currentNetworkId.includes("bsc")) return "alpha-b-circle";
     return "earth";
   };
@@ -273,7 +272,6 @@ export const ReceivePaymentScreen: React.FC = () => {
     if (currentNetworkId.includes("ethereum")) return "#627EEA";
     if (currentNetworkId.includes("base")) return "#0052FF";
     if (currentNetworkId.includes("lisk")) return "#4070F4";
-    if (currentNetworkId.includes("polygon")) return "#8247E5";
     if (currentNetworkId.includes("bsc")) return "#F3BA2F";
     return palette.primaryBlue;
   };

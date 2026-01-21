@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Switch, Text, Alert } from "react-native";
-import { useSmartAccount } from "@/contexts/SmartAccountContext";
+import { useSmartAccountProvider } from "@/hooks";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
@@ -12,6 +12,8 @@ import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityI
  * - Gasless transaction toggle
  * - Smart account status
  * - Batch transaction support
+ * 
+ * ✅ Phase 3 Migration: Now uses unified hook that switches between Pimlico/Alchemy
  */
 
 interface SmartAccountPaymentOptionsProps {
@@ -31,9 +33,13 @@ export const SmartAccountPaymentOptions: React.FC<
   onBatchChange,
   batchEnabled = false,
 }) => {
-  const { isEnabled, isInitialized, smartAccount } = useSmartAccount();
+  const { 
+    isInitialized, 
+    smartAccountAddress, 
+    isDeployed
+  } = useSmartAccountProvider('SmartAccountPaymentOptions');
 
-  if (!isEnabled || !isInitialized) {
+  if (!isInitialized) {
     return null; // Don't show if smart accounts are not available
   }
 
@@ -52,14 +58,14 @@ export const SmartAccountPaymentOptions: React.FC<
         </View>
       </View>
 
-      {smartAccount && (
+      {smartAccountAddress && (
         <View style={styles.accountInfo}>
           <Text style={styles.infoLabel}>Smart Account Address:</Text>
           <Text style={styles.infoValue} numberOfLines={1}>
-            {smartAccount.address}
+            {smartAccountAddress}
           </Text>
           <Text style={styles.infoStatus}>
-            {smartAccount.isDeployed
+            {isDeployed
               ? "✓ Deployed"
               : "⚠ Will deploy on first transaction"}
           </Text>
