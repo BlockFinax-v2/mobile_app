@@ -23,6 +23,8 @@ import {
   optimism, optimismSepolia,
   // Arbitrum
   arbitrum, arbitrumSepolia,
+  // Helper for custom chains
+  defineAlchemyChain,
   // Note: Avalanche, BSC, Lisk not in @account-kit/infra - using custom configs
   // These chains may not support Alchemy Account Abstraction
 } from '@account-kit/infra';
@@ -178,96 +180,109 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
 
 /**
  * BSC Chain Configuration
- * BSC is not in @account-kit/infra, so we define it manually
+ * BSC is not in @account-kit/infra, so we define it manually using defineAlchemyChain
  */
-export const bscChain: Chain = {
-  id: 56,
-  name: 'BNB Smart Chain',
-  nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://bsc-dataseed.binance.org'] },
-    public: { http: ['https://bsc-dataseed.binance.org'] },
+export const bscChain = defineAlchemyChain({
+  chain: {
+    id: 56,
+    name: 'BNB Smart Chain',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://bsc-dataseed.binance.org'] },
+    },
+    blockExplorers: {
+      default: { name: 'BscScan', url: 'https://bscscan.com' },
+    },
   },
-  blockExplorers: {
-    default: { name: 'BscScan', url: 'https://bscscan.com' },
-  },
-};
+  rpcBaseUrl: 'https://bsc-dataseed.binance.org',
+});
 
-export const bscTestnetChain: Chain = {
-  id: 97,
-  name: 'BNB Smart Chain Testnet',
-  nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
-    public: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
+export const bscTestnetChain = defineAlchemyChain({
+  chain: {
+    id: 97,
+    name: 'BNB Smart Chain Testnet',
+    nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
+    },
+    blockExplorers: {
+      default: { name: 'BscScan', url: 'https://testnet.bscscan.com' },
+    },
+    testnet: true,
   },
-  blockExplorers: {
-    default: { name: 'BscScan', url: 'https://testnet.bscscan.com' },
-  },
-  testnet: true,
-};
+  rpcBaseUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
+});
 
 /**
  * Lisk Chain Configuration
- * Lisk is not in @account-kit/infra, so we define it manually
+ * Lisk is not in @account-kit/infra, so we define it manually using defineAlchemyChain
+ * Note: Since Lisk doesn't have official Alchemy support, we use the public RPC URLs
  */
-export const liskChain: Chain = {
-  id: 1135,
-  name: 'Lisk',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.api.lisk.com'] },
-    public: { http: ['https://rpc.api.lisk.com'] },
+export const liskChain = defineAlchemyChain({
+  chain: {
+    id: 1135,
+    name: 'Lisk',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://rpc.api.lisk.com'] },
+    },
+    blockExplorers: {
+      default: { name: 'Lisk Explorer', url: 'https://blockscout.lisk.com' },
+    },
   },
-  blockExplorers: {
-    default: { name: 'Lisk Explorer', url: 'https://blockscout.lisk.com' },
-  },
-};
+  rpcBaseUrl: 'https://rpc.api.lisk.com',
+});
 
-export const liskSepoliaChain: Chain = {
-  id: 4202,
-  name: 'Lisk Sepolia',
-  nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.sepolia-api.lisk.com'] },
-    public: { http: ['https://rpc.sepolia-api.lisk.com'] },
+export const liskSepoliaChain = defineAlchemyChain({
+  chain: {
+    id: 4202,
+    name: 'Lisk Sepolia',
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://rpc.sepolia-api.lisk.com'] },
+    },
+    blockExplorers: {
+      default: { name: 'Lisk Sepolia Explorer', url: 'https://sepolia-blockscout.lisk.com' },
+    },
+    testnet: true,
   },
-  blockExplorers: {
-    default: { name: 'Lisk Sepolia Explorer', url: 'https://sepolia-blockscout.lisk.com' },
-  },
-  testnet: true,
-};
+  rpcBaseUrl: 'https://rpc.sepolia-api.lisk.com',
+});
 
 /**
  * Avalanche Chain Configuration
- * Avalanche is not in @account-kit/infra, so we define it manually
+ * Avalanche is not in @account-kit/infra, so we define it manually using defineAlchemyChain
  */
-export const avalancheChain: Chain = {
-  id: 43114,
-  name: 'Avalanche C-Chain',
-  nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
-    public: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
+export const avalancheChain = defineAlchemyChain({
+  chain: {
+    id: 43114,
+    name: 'Avalanche C-Chain',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
+    },
+    blockExplorers: {
+      default: { name: 'SnowTrace', url: 'https://snowtrace.io' },
+    },
   },
-  blockExplorers: {
-    default: { name: 'SnowTrace', url: 'https://snowtrace.io' },
-  },
-};
+  rpcBaseUrl: 'https://api.avax.network/ext/bc/C/rpc',
+});
 
-export const avalancheFujiChain: Chain = {
-  id: 43113,
-  name: 'Avalanche Fuji',
-  nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
-    public: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
+export const avalancheFujiChain = defineAlchemyChain({
+  chain: {
+    id: 43113,
+    name: 'Avalanche Fuji',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
+    },
+    blockExplorers: {
+      default: { name: 'SnowTrace', url: 'https://testnet.snowtrace.io' },
+    },
+    testnet: true,
   },
-  blockExplorers: {
-    default: { name: 'SnowTrace', url: 'https://testnet.snowtrace.io' },
-  },
-  testnet: true,
-};
+  rpcBaseUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
+});
 
 /**
  * Network configurations for Alchemy
