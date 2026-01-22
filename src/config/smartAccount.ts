@@ -30,11 +30,9 @@ export function getPimlicoConfig(networkId: SupportedNetworkId): PimlicoConfig |
     "ethereum-mainnet": "ethereum",
     "base-mainnet": "base",
     "lisk-mainnet": "lisk",
-    "bsc-mainnet": "bsc",
     
     // Testnets
     "ethereum-sepolia": "sepolia",
-    "bsc-testnet": "bsc-testnet",
     "base-sepolia": "base-sepolia",
     "lisk-sepolia": "lisk-sepolia",
   };

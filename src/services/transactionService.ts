@@ -3,7 +3,7 @@
  * 
  * Handles all blockchain transaction operations including:
  * - Native token transfers (ETH, BNB)
- * - ERC-20 token transfers (USDT, USDC, DAI, etc.)
+ * - ERC-20 token transfers (USDT, USDC, etc.)
  * - Gas estimation and management
  * - Transaction broadcasting and monitoring
  * - Account Abstraction (AA) integration with automatic routing
@@ -17,7 +17,7 @@ import { secureStorage } from "@/utils/secureStorage";
 import { ERC20_ABI, isValidAddress } from "@/utils/tokenUtils";
 import { ethers } from "ethers";
 import { FEATURE_FLAGS } from "@/config/featureFlags";
-import { isAlchemyNetworkSupported, getStablecoinAddress } from "@/config/alchemyAccount";
+import { isAlchemyNetworkSupported, isConfiguredInAlchemyDashboard, getStablecoinAddress } from "@/config/alchemyAccount";
 import { AlchemyAccountService } from "./alchemyAccountService";
 import type { Hex } from "viem";
 
@@ -162,7 +162,15 @@ class TransactionService {
       return false;
     }
 
-    // Check if network is supported
+    // CRITICAL: Check if network is actually configured in Alchemy dashboard
+    // All mainnets + Ethereum Sepolia are configured, other sepolias use EOA
+    if (!isConfiguredInAlchemyDashboard(params.network.id)) {
+      console.log(`[TransactionService] Network ${params.network.name} is NOT configured for Alchemy AA`);
+      console.log(`[TransactionService] Alchemy AA enabled for: All Mainnets + Ethereum Sepolia - using EOA instead`);
+      return false;
+    }
+
+    // Check if network is technically supported (should always pass for Ethereum Sepolia)
     if (!isAlchemyNetworkSupported(params.network.id)) {
       console.log(`[TransactionService] AA not supported on ${params.network.name}`);
       return false;

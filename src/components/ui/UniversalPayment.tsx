@@ -87,7 +87,7 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
             onPaymentCancel?.();
           },
         },
-      ]
+      ],
     );
   };
 
@@ -98,8 +98,6 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
       BTC: "bitcoin",
       USDC: "currency-usd-circle",
       USDT: "currency-usd",
-      DAI: "currency-usd-circle-outline",
-      BNB: "alpha-b-circle",
       MATIC: "triangle",
     };
     return iconMap[symbol] || "coins";
@@ -111,8 +109,6 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
       BTC: "#F7931A",
       USDC: "#2775CA",
       USDT: "#26A17B",
-      DAI: "#F5AC37",
-      BNB: "#F3BA2F",
       MATIC: "#8247E5",
     };
     return colorMap[symbol] || palette.primaryBlue;
@@ -217,8 +213,8 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
                   {state.isRefreshingBalance
                     ? "Loading balance..."
                     : state.selectedToken && availableBalance
-                    ? `Balance: ${availableBalance} ${state.selectedToken.symbol}`
-                    : "Choose a token to send"}
+                      ? `Balance: ${availableBalance} ${state.selectedToken.symbol}`
+                      : "Choose a token to send"}
                 </Text>
               </View>
             </View>

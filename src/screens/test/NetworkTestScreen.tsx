@@ -58,7 +58,7 @@ export default function NetworkTestScreen() {
             {
               symbol: "USDT",
               name: "Tether USD",
-              address: "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
+              address: "0x523C8591Fbe215B5aF0bEad65e65dF783A37BCBC",
               decimals: 6,
             },
           ],
@@ -188,7 +188,7 @@ export default function NetworkTestScreen() {
         "Error",
         `Failed to switch network: ${
           error instanceof Error ? error.message : "Unknown error"
-        }`
+        }`,
       );
     }
   };

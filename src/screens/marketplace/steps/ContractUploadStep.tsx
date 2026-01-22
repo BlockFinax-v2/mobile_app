@@ -51,10 +51,10 @@ export const ContractUploadStep: React.FC<Props> = ({
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
 
   const [currentNetworkId, setCurrentNetworkId] = useState<SupportedNetworkId>(
-    data.selectedNetwork || selectedNetwork.id
+    data.selectedNetwork || selectedNetwork.id,
   );
   const [selectedToken, setSelectedToken] = useState<TokenInfo | null>(
-    data.selectedToken || null
+    data.selectedToken || null,
   );
   const [contractDetails, setContractDetails] = useState({
     buyerName: "",
@@ -148,7 +148,7 @@ export const ContractUploadStep: React.FC<Props> = ({
       // Convert native token amount to USD using priceService directly
       const usdValue = await priceService.calculateUSDValue(
         nativeSymbol,
-        numericAmount
+        numericAmount,
       );
 
       setConvertedAmounts({
@@ -207,13 +207,9 @@ export const ContractUploadStep: React.FC<Props> = ({
       case "BTC":
         return "#F7931A";
       case "BNB":
-        return "#F3BA2F";
-      case "USDC":
         return "#2775CA";
       case "USDT":
         return "#26A17B";
-      case "DAI":
-        return "#F5AC37";
       default:
         return palette.neutralMid;
     }
@@ -222,7 +218,6 @@ export const ContractUploadStep: React.FC<Props> = ({
   // Helper functions for currency conversion
   const getNativeTokenSymbol = (networkId: SupportedNetworkId): string => {
     if (networkId.includes("ethereum")) return "ETH";
-    if (networkId.includes("bsc")) return "BNB";
     if (networkId.includes("base")) return "ETH";
     if (networkId.includes("lisk")) return "ETH";
     return "ETH";
@@ -230,7 +225,7 @@ export const ContractUploadStep: React.FC<Props> = ({
 
   const getPreferredStablecoin = (networkId: SupportedNetworkId): string => {
     const stablecoins = getAllSupportedTokens(networkId).filter(
-      (token) => token.address !== "0x0000000000000000000000000000000000000000"
+      (token) => token.address !== "0x0000000000000000000000000000000000000000",
     );
     return (
       stablecoins.find((coin) => coin.symbol === "USDC")?.symbol ||
@@ -240,7 +235,7 @@ export const ContractUploadStep: React.FC<Props> = ({
   };
 
   const isStablecoinSymbol = (symbol: string): boolean => {
-    const stablecoins = ["USDC", "USDT", "DAI", "USDB", "USDBC"];
+    const stablecoins = ["USDC", "USDT"];
     return stablecoins.includes(symbol.toUpperCase());
   };
 
@@ -279,7 +274,7 @@ export const ContractUploadStep: React.FC<Props> = ({
     if (!data.contractFile && !contractDetails.buyerName) {
       Alert.alert(
         "Required",
-        "Please upload a contract or enter contract details"
+        "Please upload a contract or enter contract details",
       );
       return;
     }
@@ -357,8 +352,8 @@ export const ContractUploadStep: React.FC<Props> = ({
               {uploading
                 ? "Uploading..."
                 : data.contractFile
-                ? data.contractFile.name
-                : "Tap to upload contract (PDF, DOC, DOCX)"}
+                  ? data.contractFile.name
+                  : "Tap to upload contract (PDF, DOC, DOCX)"}
             </Text>
             {data.contractFile && (
               <View style={styles.fileInfo}>
@@ -416,7 +411,7 @@ export const ContractUploadStep: React.FC<Props> = ({
             <View style={styles.amountContainer}>
               <Input
                 label={`Agreed Amount (${getNativeTokenSymbol(
-                  currentNetworkId
+                  currentNetworkId,
                 )})`}
                 value={contractDetails.agreedAmount}
                 onChangeText={(value) => {
@@ -453,7 +448,7 @@ export const ContractUploadStep: React.FC<Props> = ({
                         <Text style={styles.conversionValue}>
                           ≈{" "}
                           {currencyConverter.formatUSD(
-                            convertedAmounts.usdValue
+                            convertedAmounts.usdValue,
                           )}
                         </Text>
                       </View>
@@ -508,7 +503,7 @@ export const ContractUploadStep: React.FC<Props> = ({
                       styles.tokenIcon,
                       {
                         backgroundColor: getTokenColor(
-                          getNativeTokenSymbol(currentNetworkId)
+                          getNativeTokenSymbol(currentNetworkId),
                         ),
                       },
                     ]}
@@ -516,7 +511,7 @@ export const ContractUploadStep: React.FC<Props> = ({
                     <MaterialCommunityIcons
                       name={
                         getTokenIcon(
-                          getNativeTokenSymbol(currentNetworkId)
+                          getNativeTokenSymbol(currentNetworkId),
                         ) as any
                       }
                       size={20}

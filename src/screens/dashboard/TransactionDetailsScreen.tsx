@@ -7,6 +7,7 @@ import { realTransactionService, RealTransaction } from "@/services/realTransact
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { RouteProp, useRoute, useNavigation } from "@react-navigation/native";
+import { StackNavigationProp } from '@react-navigation/stack';
 import React, { useEffect, useState, useMemo } from "react";
 import {
   ActivityIndicator,
@@ -46,7 +47,7 @@ interface TransactionDetails {
 
 export const TransactionDetailsScreen: React.FC = () => {
   const route = useRoute<RouteProp<DashboardStackParamList, "TransactionDetails">>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<StackNavigationProp<DashboardStackParamList>>();
   const { selectedNetwork, transactions } = useWallet();
   const [details, setDetails] = useState<TransactionDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,7 +263,7 @@ export const TransactionDetailsScreen: React.FC = () => {
                   <Pressable
                     key={transaction.id}
                     style={styles.transactionCard}
-                    onPress={() => navigation.navigate('TransactionDetails' as never, { id: transaction.hash } as never)}
+                    onPress={() => navigation.navigate('TransactionDetails', { id: transaction.hash })}
                   >
                     <View style={[styles.transactionIcon, { backgroundColor: formatted.color + '20' }]}>
                       <MaterialCommunityIcons
@@ -482,7 +483,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xxxl * 2,
+    paddingVertical: spacing.xxl * 2,
     gap: spacing.md,
   },
   emptyTitle: {

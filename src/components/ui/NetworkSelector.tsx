@@ -56,7 +56,7 @@ export const NetworkSelector: React.FC<NetworkSelectorProps> = ({
 }) => {
   const { selectedNetwork, balances, switchNetwork } = useWallet();
   const [switching, setSwitching] = React.useState<SupportedNetworkId | null>(
-    null
+    null,
   );
 
   const mainnetNetworks = React.useMemo(() => getMainnetNetworks(), []);

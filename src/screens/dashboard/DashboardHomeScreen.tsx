@@ -131,11 +131,11 @@ export default function DashboardHomeScreen() {
   const [showNetworkConfig, setShowNetworkConfig] = useState(false);
   // Removed selectedTokenSymbol state - now showing total portfolio value
   const [expandedNetworkId, setExpandedNetworkId] = useState<string | null>(
-    null
+    null,
   );
   const accountDisplay = useMemo(
     () => address?.slice(0, 6) + "..." + address?.slice(-4),
-    [address]
+    [address],
   );
   const navigation = useNavigation<DashboardNavigation>();
 
@@ -158,7 +158,7 @@ export default function DashboardHomeScreen() {
   // But not on every render - only when truly necessary
   useEffect(() => {
     console.log(
-      "Dashboard mounted or network changed, refreshing data if needed"
+      "Dashboard mounted or network changed, refreshing data if needed",
     );
     // The refresh functions now have built-in throttling to avoid excessive calls
     refreshBalance();
@@ -193,7 +193,7 @@ export default function DashboardHomeScreen() {
       const amount = parseFloat(tx.value);
       if (!isNaN(amount)) {
         // For stablecoins, assume 1:1 USD
-        if (["USDC", "USDT", "DAI"].includes(tx.tokenSymbol)) {
+        if (["USDC", "USDT"].includes(tx.tokenSymbol)) {
           totalVolume += amount;
         }
       }
@@ -317,11 +317,11 @@ export default function DashboardHomeScreen() {
               } else {
                 // Find stablecoin balance
                 const stablecoin = balances.tokens.find(
-                  (t) => t.symbol === token.symbol
+                  (t) => t.symbol === token.symbol,
                 );
                 if (stablecoin) {
                   tokenBalance = formatBalanceForUI(
-                    parseFloat(stablecoin.balance)
+                    parseFloat(stablecoin.balance),
                   );
                   tokenUsdValue = (stablecoin.usdValue || 0).toFixed(2);
                 }
@@ -753,7 +753,7 @@ export default function DashboardHomeScreen() {
                 Production networks with real assets
               </Text>
               {mainnetNetworks.map((network) =>
-                renderNetworkConfigItem(network)
+                renderNetworkConfigItem(network),
               )}
             </View>
 
@@ -771,7 +771,7 @@ export default function DashboardHomeScreen() {
                 Testing networks with test tokens (no real value)
               </Text>
               {testnetNetworks.map((network) =>
-                renderNetworkConfigItem(network)
+                renderNetworkConfigItem(network),
               )}
             </View>
 

@@ -234,7 +234,6 @@ export class CurrencyConverter {
    */
   private getNativeTokenSymbol(networkId: SupportedNetworkId): string {
     if (networkId.includes('ethereum')) return 'ETH';
-    if (networkId.includes('bsc')) return 'BNB';
     if (networkId.includes('base')) return 'ETH';
     if (networkId.includes('lisk')) return 'ETH';
     return 'ETH'; // Default fallback
@@ -244,7 +243,7 @@ export class CurrencyConverter {
    * Check if token is a stablecoin
    */
   private isStablecoin(symbol: string): boolean {
-    const stablecoins = ['USDC', 'USDT', 'DAI', 'USDB', 'USDBC', 'BUSD', 'TUSD'];
+    const stablecoins = ['USDC', 'USDT'];
     return stablecoins.includes(symbol.toUpperCase());
   }
 
@@ -259,10 +258,8 @@ export class CurrencyConverter {
     // Simple fallback rates (approximate)
     const fallbackRates: { [key: string]: number } = {
       'ETH': 2500,
-      'BNB': 240,
       'USDC': 1,
       'USDT': 1,
-      'DAI': 1,
     };
 
     const fromRate = fallbackRates[fromSymbol.toUpperCase()] || 1;

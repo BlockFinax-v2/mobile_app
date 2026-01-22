@@ -57,7 +57,7 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
         } else {
           // ERC-20 token
           const tokenBalance = balances.tokens.find(
-            (t) => t.address.toLowerCase() === token.address.toLowerCase()
+            (t) => t.address.toLowerCase() === token.address.toLowerCase(),
           );
           balance = tokenBalance?.balance || "0";
           usdValue = tokenBalance?.usdValue || 0;
@@ -83,20 +83,10 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
         return "ethereum";
       case "MATIC":
         return "triangle";
-      case "BNB":
-        return "alpha-b-circle";
       case "USDC":
         return "currency-usd-circle";
       case "USDT":
         return "currency-usd";
-      case "DAI":
-        return "alpha-d-circle";
-      case "BUSD":
-        return "currency-usd-circle-outline";
-      case "USDB":
-        return "currency-usd-circle-outline";
-      case "USDBC":
-        return "currency-usd-circle-outline";
       default:
         return "currency-usd-circle-outline";
     }
@@ -108,20 +98,10 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
         return "#627EEA";
       case "MATIC":
         return "#8247E5";
-      case "BNB":
-        return "#F3BA2F";
       case "USDC":
         return "#2775CA";
       case "USDT":
         return "#26A17B";
-      case "DAI":
-        return "#F5AC37";
-      case "BUSD":
-        return "#F0B90B";
-      case "USDB":
-        return "#0052FF";
-      case "USDBC":
-        return "#0052FF";
       default:
         return palette.neutralMid;
     }
@@ -148,8 +128,10 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
             />
           </View>
           <View style={styles.tokenInfo}>
-            <Text style={styles.tokenSymbol}>{token.symbol}</Text>
-            <Text style={styles.tokenName}>{token.name}</Text>
+            <Text style={styles.tokenSymbol}>{token.symbol || "Unknown"}</Text>
+            <Text style={styles.tokenName}>
+              {token.name || "Unknown Token"}
+            </Text>
           </View>
         </View>
 
@@ -190,11 +172,11 @@ export const TokenSelector: React.FC<TokenSelectorProps> = ({
 
   // Separate tokens into native and stablecoins
   const nativeTokens = tokensWithBalances.filter(
-    (token) => token.address === "0x0000000000000000000000000000000000000000"
+    (token) => token.address === "0x0000000000000000000000000000000000000000",
   );
 
   const stablecoins = tokensWithBalances.filter(
-    (token) => token.address !== "0x0000000000000000000000000000000000000000"
+    (token) => token.address !== "0x0000000000000000000000000000000000000000",
   );
 
   return (

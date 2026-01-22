@@ -16,7 +16,6 @@ const PRICE_ESTIMATES: Record<string, number> = {
   // Stablecoins
   'USDC': 1.0,
   'USDT': 1.0,
-  'DAI': 1.0,
   
   // Major cryptocurrencies (approximate)
   'ETH': 3500,

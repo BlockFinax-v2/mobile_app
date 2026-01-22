@@ -104,13 +104,13 @@ export type WalletStackParamList = {
 export type MessagesStackParamList = {
   MessagesHome: undefined;
   Chat: {
-    recipientId: string;
-    network: string;
-    fee: number;
+    contactAddress: string;
+    recipientId?: string;
+    network?: string;
+    fee?: number;
     message?: string;
-    tokenAddress: string;
-    tokenDecimals: number;
-    contactAddress?: string;
+    tokenAddress?: string;
+    tokenDecimals?: number;
     returnTo?: "MarketplaceFlow";
     returnParams?: any;
   };

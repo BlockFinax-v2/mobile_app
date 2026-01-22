@@ -14,6 +14,7 @@ export const palette = {
   surface: '#F8FAFC', // Light gray background
   cardBackground: '#FFFFFF', // Pure white for cards
   shadowColor: '#000000', // Shadow color for components
+  background: '#F8FAFC', // Background color (same as surface)
 };
 
 // Additional color system for new screens

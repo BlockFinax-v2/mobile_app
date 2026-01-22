@@ -417,7 +417,7 @@ class GasManagerService {
    */
   getAvailableGasTokens(networkId: string): string[] {
     // Common stablecoins that can be used for gas payment
-    const commonGasTokens = ['USDC', 'USDT', 'DAI'];
+    const commonGasTokens = ['USDC', 'USDT'];
     
     // Network-specific tokens
     const networkTokens: Record<string, string[]> = {
@@ -425,8 +425,8 @@ class GasManagerService {
       'ethereum-sepolia': [...commonGasTokens],
       'base-mainnet': [...commonGasTokens],
       'base-sepolia': [...commonGasTokens],
-      'bsc-mainnet': [...commonGasTokens, 'BUSD'],
-      'bsc-testnet': [...commonGasTokens],
+      'lisk-mainnet': [...commonGasTokens],
+      'lisk-sepolia': [...commonGasTokens],
     };
     
     return networkTokens[networkId] || commonGasTokens;

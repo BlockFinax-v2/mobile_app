@@ -343,13 +343,13 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     newSocket.on("connect_error", (error) => {
-      console.error("🚫 Connection error:", error);
-      console.error("🚫 Error details:", {
-        message: error.message,
-        description: (error as any).description || "No description",
-        context: (error as any).context || "No context",
-        type: (error as any).type || "Unknown type",
-      });
+      // console.error("🚫 Connection error:", error);
+      // console.error("🚫 Error details:", {
+      //   message: error.message,
+      //   description: (error as any).description || "No description",
+      //   context: (error as any).context || "No context",
+      //   type: (error as any).type || "Unknown type",
+      // });
       setIsConnected(false);
     });
 

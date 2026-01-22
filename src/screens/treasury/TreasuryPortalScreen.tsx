@@ -41,9 +41,7 @@ import {
   TokenStakeInfo,
   MultiTokenPoolStats,
 } from "@/services/multiTokenStakingService";
-import {
-  isStakingSupportedOnNetwork,
-} from "@/services/multiNetworkStakingService";
+import { isStakingSupportedOnNetwork } from "@/services/multiNetworkStakingService";
 import {
   getSupportedStablecoins,
   convertToUSD,
@@ -75,7 +73,7 @@ export function TreasuryPortalScreen() {
   const [activeTab, setActiveTab] = useState<
     "stake" | "create" | "vote" | "pool"
   >("stake");
-  const { selectedNetwork, isUnlocked, address } = useWallet();
+  const { selectedNetwork, isUnlocked, address, switchNetwork } = useWallet();
 
   // Real staking state
   const [isLoading, setIsLoading] = useState(true);
@@ -83,7 +81,7 @@ export function TreasuryPortalScreen() {
   const [stakeInfo, setStakeInfo] = useState<StakeInfo | null>(null);
   const [poolStats, setPoolStats] = useState<PoolStats | null>(null);
   const [stakingConfig, setStakingConfig] = useState<StakingConfig | null>(
-    null
+    null,
   );
   const [usdcBalance, setUsdcBalance] = useState("0");
   const [currentAPR, setCurrentAPR] = useState(0);
@@ -114,15 +112,15 @@ export function TreasuryPortalScreen() {
 
   // Multi-token state
   const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
-    null
+    null,
   );
   const [supportedTokens, setSupportedTokens] = useState<StablecoinConfig[]>(
-    []
+    [],
   );
   const [multiTokenStakes, setMultiTokenStakes] =
     useState<MultiTokenUserStakes | null>(null);
   const [tokenBalances, setTokenBalances] = useState<Record<string, string>>(
-    {}
+    {},
   );
   const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [poolTokenStats, setPoolTokenStats] = useState<{
@@ -167,7 +165,7 @@ export function TreasuryPortalScreen() {
 
       isInitializing.current = true;
       console.log(
-        "Initializing staking service with user's wallet credentials..."
+        "Initializing staking service with user's wallet credentials...",
       );
 
       const signer = await stakingService.getSigner();
@@ -192,7 +190,7 @@ export function TreasuryPortalScreen() {
     try {
       console.log(
         "[Multi-Token] Starting cross-network data load for address:",
-        address
+        address,
       );
 
       // Get all supported networks with Diamond contracts
@@ -210,7 +208,7 @@ export function TreasuryPortalScreen() {
 
       // Load current network tokens first
       const currentNetworkTokens = getSupportedStablecoins(
-        selectedNetwork.chainId
+        selectedNetwork.chainId,
       );
       if (currentNetworkTokens.length > 0) {
         setSupportedTokens(currentNetworkTokens);
@@ -227,7 +225,7 @@ export function TreasuryPortalScreen() {
 
       console.log("[Multi-Token] ⚠️ Using legacy single-token mode");
       console.log(
-        "[Multi-Token] To enable multi-token: deploy MultiTokenStakingFacet and add tokens"
+        "[Multi-Token] To enable multi-token: deploy MultiTokenStakingFacet and add tokens",
       );
 
       for (const chainId of activeChainIds) {
@@ -241,23 +239,23 @@ export function TreasuryPortalScreen() {
 
         console.log(
           `[Multi-Token] Loading data for chain ${chainId}, tokens:`,
-          networkTokens.map((t) => t.symbol)
+          networkTokens.map((t) => t.symbol),
         );
 
         try {
           // Load user stakes for this network using new service
           const stakesData = await multiTokenStakingService.getAllUserStakes(
             address,
-            chainId
+            chainId,
           );
 
           console.log(
             `[Multi-Token] Stakes data for chain ${chainId}:`,
-            JSON.stringify(stakesData, null, 2)
+            JSON.stringify(stakesData, null, 2),
           );
           console.log(
             `[Multi-Token] Stakes array length:`,
-            stakesData?.stakes?.length || 0
+            stakesData?.stakes?.length || 0,
           );
           console.log(`[Multi-Token] Stakes array:`, stakesData?.stakes);
 
@@ -268,7 +266,7 @@ export function TreasuryPortalScreen() {
             Array.isArray(stakesData.stakes)
           ) {
             console.log(
-              `[Multi-Token] Processing ${stakesData.stakes.length} stakes for chain ${chainId}`
+              `[Multi-Token] Processing ${stakesData.stakes.length} stakes for chain ${chainId}`,
             );
 
             for (const stake of stakesData.stakes) {
@@ -288,18 +286,18 @@ export function TreasuryPortalScreen() {
                 networkUserTotalUSD += stake.usdValue;
 
                 console.log(
-                  `[Multi-Token] ✅ Active stake found: ${stake.amount} ${stake.tokenSymbol} = $${stake.usdValue}`
+                  `[Multi-Token] ✅ Active stake found: ${stake.amount} ${stake.tokenSymbol} = $${stake.usdValue}`,
                 );
               } else {
                 console.log(
-                  `[Multi-Token] ⏭️ Skipping stake (active: ${stake.active}, amount: ${stake.amount})`
+                  `[Multi-Token] ⏭️ Skipping stake (active: ${stake.active}, amount: ${stake.amount})`,
                 );
               }
             }
           } else {
             console.log(
               `[Multi-Token] ⚠️ No valid stakes array for chain ${chainId}. stakesData:`,
-              stakesData
+              stakesData,
             );
           }
 
@@ -318,23 +316,23 @@ export function TreasuryPortalScreen() {
               const totalStaked =
                 await multiTokenStakingService.getTotalStakedForToken(
                   token.address,
-                  chainId
+                  chainId,
                 );
               if (parseFloat(totalStaked) > 0) {
                 const usdValue = await convertToUSD(
                   parseFloat(totalStaked),
                   token.symbol,
-                  chainId
+                  chainId,
                 );
                 globalPoolTotalUSD += usdValue;
                 console.log(
-                  `[Multi-Token] Pool ${token.symbol} on chain ${chainId}: ${totalStaked} = $${usdValue}`
+                  `[Multi-Token] Pool ${token.symbol} on chain ${chainId}: ${totalStaked} = $${usdValue}`,
                 );
               }
             } catch (error) {
               console.error(
                 `Failed to load pool stats for ${token.symbol} on chain ${chainId}:`,
-                error
+                error,
               );
             }
           }
@@ -355,28 +353,40 @@ export function TreasuryPortalScreen() {
       // Load current network-specific data
       const stakes = await multiTokenStakingService.getAllUserStakes(
         address,
-        selectedNetwork.chainId
+        selectedNetwork.chainId,
       );
       setMultiTokenStakes(stakes);
 
-      // Load balances for all supported tokens
+      // Load balances for all supported tokens on current network
+      const currentNetworkTokensList =
+        currentNetworkTokens.length > 0
+          ? currentNetworkTokens
+          : supportedTokens;
       const balances: Record<string, string> = {};
+
+      console.log(
+        "[Balance] Loading balances for tokens:",
+        currentNetworkTokensList.map((t) => t.symbol),
+      );
+
       await Promise.all(
-        supportedTokens.map(async (token) => {
+        currentNetworkTokensList.map(async (token) => {
           try {
             const balance = await multiTokenStakingService.getTokenBalance(
               address,
               token.address,
-              selectedNetwork.chainId
+              selectedNetwork.chainId,
             );
             balances[token.address] = balance;
+            console.log(`[Balance] ${token.symbol} balance: ${balance}`);
           } catch (error) {
             console.error(`Failed to load balance for ${token.symbol}:`, error);
             balances[token.address] = "0";
           }
-        })
+        }),
       );
       setTokenBalances(balances);
+      console.log("[Balance] All balances loaded:", balances);
 
       // Load pool-wide token statistics
       const poolStats: {
@@ -385,20 +395,20 @@ export function TreasuryPortalScreen() {
       let totalUSD = 0;
 
       await Promise.all(
-        supportedTokens.map(async (token) => {
+        currentNetworkTokensList.map(async (token) => {
           try {
             // Get total staked for this token from contract
             const totalStaked =
               await multiTokenStakingService.getTotalStakedForToken(
                 token.address,
-                selectedNetwork.chainId
+                selectedNetwork.chainId,
               );
 
             // Convert to USD
             const usdValue = await convertToUSD(
               parseFloat(totalStaked),
               token.symbol,
-              selectedNetwork.chainId
+              selectedNetwork.chainId,
             );
 
             poolStats[token.address] = {
@@ -409,11 +419,11 @@ export function TreasuryPortalScreen() {
           } catch (error) {
             console.error(
               `Failed to load pool stats for ${token.symbol}:`,
-              error
+              error,
             );
             poolStats[token.address] = { amount: "0", usdValue: 0 };
           }
-        })
+        }),
       );
 
       setPoolTokenStats(poolStats);
@@ -421,7 +431,7 @@ export function TreasuryPortalScreen() {
     } catch (error) {
       console.error("Failed to load multi-token data:", error);
     }
-  }, [isUnlocked, address, supportedTokens, selectedNetwork.chainId]);
+  }, [isUnlocked, address, selectedNetwork.chainId]);
 
   // 🚀 OPTIMIZED: Only load data for active tab
   const loadStakingData = useCallback(async () => {
@@ -442,7 +452,7 @@ export function TreasuryPortalScreen() {
       // Check if staking is supported on this network
       if (!isStakingSupportedOnNetwork(selectedNetwork.chainId)) {
         console.log(
-          `Staking not yet deployed on ${selectedNetwork.name} (chainId: ${selectedNetwork.chainId})`
+          `Staking not yet deployed on ${selectedNetwork.name} (chainId: ${selectedNetwork.chainId})`,
         );
         setIsLoading(false);
         return;
@@ -481,29 +491,29 @@ export function TreasuryPortalScreen() {
         [
           asyncQueue.enqueue(
             () => stakingService.getStakeInfo(address),
-            TaskPriority.HIGH
+            TaskPriority.HIGH,
           ),
           asyncQueue.enqueue(
             () => stakingService.getPoolStats(),
-            TaskPriority.NORMAL
+            TaskPriority.NORMAL,
           ),
           asyncQueue.enqueue(
             () => stakingService.getStakingConfig(),
-            TaskPriority.HIGH
+            TaskPriority.HIGH,
           ),
           asyncQueue.enqueue(
             () => stakingService.getUSDCBalance(address),
-            TaskPriority.NORMAL
+            TaskPriority.NORMAL,
           ),
           asyncQueue.enqueue(
             () => stakingService.calculateCurrentAPR(),
-            TaskPriority.LOW
+            TaskPriority.LOW,
           ),
           asyncQueue.enqueue(
             () => stakingService.isEligibleFinancier(address),
-            TaskPriority.HIGH
+            TaskPriority.HIGH,
           ),
-        ]
+        ],
       );
 
       // Update state
@@ -525,7 +535,7 @@ export function TreasuryPortalScreen() {
           apr,
           isEligible,
         },
-        5 * 60 * 1000
+        5 * 60 * 1000,
       );
 
       setDataVersion((v) => v + 1);
@@ -556,7 +566,7 @@ export function TreasuryPortalScreen() {
     // Skip if not on create or vote tab
     if (activeTab !== "create" && activeTab !== "vote") {
       console.log(
-        "[Perf] Skipping governance data load - not on create/vote tab"
+        "[Perf] Skipping governance data load - not on create/vote tab",
       );
       return;
     }
@@ -584,15 +594,15 @@ export function TreasuryPortalScreen() {
       const [allProposals, stats, config] = await Promise.all([
         asyncQueue.enqueue(
           () => stakingService.getAllProposals(),
-          TaskPriority.NORMAL
+          TaskPriority.NORMAL,
         ),
         asyncQueue.enqueue(
           () => stakingService.getDAOStats(),
-          TaskPriority.LOW
+          TaskPriority.LOW,
         ),
         asyncQueue.enqueue(
           () => stakingService.getDAOConfig(),
-          TaskPriority.NORMAL
+          TaskPriority.NORMAL,
         ),
       ]);
 
@@ -608,7 +618,7 @@ export function TreasuryPortalScreen() {
           stats,
           config,
         },
-        2 * 60 * 1000
+        2 * 60 * 1000,
       );
     } catch (error) {
       console.error("Failed to load governance data:", error);
@@ -622,6 +632,27 @@ export function TreasuryPortalScreen() {
     activeTab,
     initializeStakingService,
   ]);
+
+  // 🔄 AUTO-FALLBACK: Switch to Ethereum Sepolia if current network doesn't support staking
+  useEffect(() => {
+    // Only check if wallet is unlocked and user is on treasury screen
+    if (!isUnlocked) return;
+
+    const currentChainId = selectedNetwork.chainId;
+    const isSupported = isStakingSupportedOnNetwork(currentChainId);
+
+    if (!isSupported) {
+      console.log(
+        `⚠️ Staking not supported on ${selectedNetwork.name} (chainId: ${currentChainId}). Switching to Ethereum Sepolia...`,
+      );
+
+      // Automatically switch to Ethereum Sepolia for testing
+      // This will be Ethereum Mainnet when deploying to production
+      switchNetwork("ethereum-sepolia").catch((error) => {
+        console.error("Failed to switch network:", error);
+      });
+    }
+  }, [selectedNetwork.chainId, isUnlocked, switchNetwork]);
 
   // 🚀 OPTIMIZED: Load data only when needed based on active tab
   useEffect(() => {
@@ -654,7 +685,7 @@ export function TreasuryPortalScreen() {
               Alert.alert(
                 "Staking Successful! 🎉",
                 `You have successfully staked ${stakeAmount} USDC!\n\nTransaction Hash: ${transactionHash}\n\nYour voting power has increased and you'll start earning rewards immediately.`,
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
             }
             break;
@@ -663,7 +694,7 @@ export function TreasuryPortalScreen() {
             Alert.alert(
               "Deposit Successful! 🎉",
               `Your treasury deposit has been processed successfully!\n\nTransaction Hash: ${transactionHash}`,
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
             break;
 
@@ -671,7 +702,7 @@ export function TreasuryPortalScreen() {
             Alert.alert(
               "Governance Payment Successful! 🎉",
               `Your governance payment has been recorded!\n\nTransaction Hash: ${transactionHash}`,
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
             break;
         }
@@ -690,7 +721,7 @@ export function TreasuryPortalScreen() {
       try {
         console.log(
           `Monitoring ${pendingTx.type} transaction:`,
-          pendingTx.hash
+          pendingTx.hash,
         );
         const receipt = await stakingService.waitForTransaction(pendingTx.hash);
 
@@ -706,13 +737,13 @@ export function TreasuryPortalScreen() {
             await stakingService.getTransactionFailureReason(pendingTx.hash);
           console.log(
             `Transaction ${pendingTx.type} failed. Reason:`,
-            failureReason
+            failureReason,
           );
 
           Alert.alert(
             "Transaction Failed",
             `Your ${pendingTx.type} transaction failed.\n\nReason: ${failureReason}\n\nTransaction: ${pendingTx.hash}`,
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
         }
         setPendingTx(null);
@@ -722,7 +753,7 @@ export function TreasuryPortalScreen() {
         Alert.alert(
           "Transaction Error",
           `Transaction may have failed. Please check your wallet and try again if needed.`,
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
         setPendingTx(null);
         setIsTransacting(false);
@@ -731,6 +762,33 @@ export function TreasuryPortalScreen() {
 
     monitorTransaction();
   }, [pendingTx]);
+
+  // 🔄 AUTO-REFRESH: Refresh data every 30 seconds when screen is focused
+  useEffect(() => {
+    if (!isUnlocked || !address) return;
+
+    const refreshInterval = setInterval(async () => {
+      console.log("[Auto-Refresh] Refreshing treasury data...");
+      try {
+        await loadMultiTokenData();
+        if (activeTab === "stake" || activeTab === "pool") {
+          // Only refresh staking data if on relevant tab
+          const cacheKey = `staking:${address}:${selectedNetwork.chainId}`;
+          performanceCache.invalidate(cacheKey); // Clear cache to force fresh data
+        }
+      } catch (error) {
+        console.error("[Auto-Refresh] Failed to refresh data:", error);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(refreshInterval);
+  }, [
+    isUnlocked,
+    address,
+    activeTab,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   // Real staking transaction handlers with optimistic updates
   const handleStakeUSDC = useCallback(async () => {
@@ -759,7 +817,7 @@ export function TreasuryPortalScreen() {
         "Minimum Stake Required",
         `Minimum ${
           stakeAsFinancier ? "financier " : ""
-        }stake amount is ${minStake} ${selectedToken.symbol}`
+        }stake amount is ${minStake} ${selectedToken.symbol}`,
       );
       return;
     }
@@ -769,7 +827,7 @@ export function TreasuryPortalScreen() {
     if (parseFloat(tokenBalance) < parseFloat(stakeAmount)) {
       Alert.alert(
         "Insufficient Balance",
-        `You don't have enough ${selectedToken.symbol} to stake this amount`
+        `You don't have enough ${selectedToken.symbol} to stake this amount`,
       );
       return;
     }
@@ -782,7 +840,7 @@ export function TreasuryPortalScreen() {
       const usdEquivalent = await convertToUSD(
         parseFloat(stakeAmount),
         selectedToken.symbol,
-        selectedNetwork.chainId
+        selectedNetwork.chainId,
       );
 
       // Calculate custom deadline (90 days from now)
@@ -796,7 +854,7 @@ export function TreasuryPortalScreen() {
         stakeAmount,
         customDeadline,
         selectedNetwork.chainId,
-        stakeAsFinancier
+        stakeAsFinancier,
       );
 
       setStakeAmount(""); // Clear input
@@ -812,7 +870,7 @@ export function TreasuryPortalScreen() {
       Alert.alert(
         "Stake Submitted",
         `Successfully staked ${stakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     } catch (error: any) {
       console.error("Staking error:", error);
@@ -821,7 +879,16 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [stakeAmount, stakingConfig, selectedToken, tokenBalances, stakeAsFinancier, address, selectedNetwork.chainId, loadMultiTokenData]);
+  }, [
+    stakeAmount,
+    stakingConfig,
+    selectedToken,
+    tokenBalances,
+    stakeAsFinancier,
+    address,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   const handleUnstake = useCallback(async () => {
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
@@ -836,10 +903,14 @@ export function TreasuryPortalScreen() {
 
     // Find the stake for the selected token
     const tokenStake = multiTokenStakes?.stakes.find(
-      (s) => s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase()
+      (s) =>
+        s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase(),
     );
 
-    if (!tokenStake || parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)) {
+    if (
+      !tokenStake ||
+      parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)
+    ) {
       Alert.alert("Error", "Cannot unstake more than your staked amount");
       return;
     }
@@ -847,13 +918,17 @@ export function TreasuryPortalScreen() {
     try {
       setIsTransacting(true);
 
-      console.log("Attempting to unstake:", unstakeAmount, selectedToken.symbol);
+      console.log(
+        "Attempting to unstake:",
+        unstakeAmount,
+        selectedToken.symbol,
+      );
       console.log("Token stake info:", tokenStake);
 
       const txHash = await multiTokenStakingService.unstakeToken(
         selectedToken.address,
         unstakeAmount,
-        selectedNetwork.chainId
+        selectedNetwork.chainId,
       );
 
       setUnstakeAmount(""); // Clear input
@@ -867,7 +942,7 @@ export function TreasuryPortalScreen() {
       Alert.alert(
         "Unstake Submitted",
         `Successfully unstaked ${unstakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     } catch (error: any) {
       console.error("Unstake error:", error);
@@ -875,7 +950,14 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [unstakeAmount, selectedToken, multiTokenStakes, address, selectedNetwork.chainId, loadMultiTokenData]);
+  }, [
+    unstakeAmount,
+    selectedToken,
+    multiTokenStakes,
+    address,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   const handleClaimRewards = useCallback(async () => {
     if (!selectedToken) {
@@ -890,7 +972,7 @@ export function TreasuryPortalScreen() {
 
       const txHash = await multiTokenStakingService.claimTokenRewards(
         selectedToken.address,
-        selectedNetwork.chainId
+        selectedNetwork.chainId,
       );
 
       // Performance: Invalidate cache
@@ -902,7 +984,7 @@ export function TreasuryPortalScreen() {
       Alert.alert(
         "Claim Submitted",
         `Successfully claimed rewards for ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     } catch (error: any) {
       console.error("Claim rewards error:", error);
@@ -921,7 +1003,7 @@ export function TreasuryPortalScreen() {
       Alert.alert(
         "No Active Stake",
         "You don't have any active stake to withdraw. Please stake some USDC first.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
       return;
     }
@@ -933,11 +1015,11 @@ export function TreasuryPortalScreen() {
     Alert.alert(
       "Emergency Withdrawal Warning",
       `This will withdraw your stake with a ${penaltyPercent}% penalty.\n\nStaked Amount: ${stakedAmount.toFixed(
-        6
+        6,
       )} USDC\nEstimated Penalty: ${penalty.toFixed(
-        6
+        6,
       )} USDC\nYou'll receive: ~${(stakedAmount - penalty).toFixed(
-        6
+        6,
       )} USDC\n\nThis action cannot be undone and will be processed immediately.`,
       [
         { text: "Cancel", style: "cancel" },
@@ -961,7 +1043,7 @@ export function TreasuryPortalScreen() {
               Alert.alert(
                 "Emergency Withdrawal Submitted",
                 `Emergency withdrawal transaction submitted. Hash: ${tx.hash}`,
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
             } catch (error: any) {
               console.error("Emergency withdrawal error:", error);
@@ -971,7 +1053,7 @@ export function TreasuryPortalScreen() {
             }
           },
         },
-      ]
+      ],
     );
   }, [stakeInfo, stakingConfig, address]);
 
@@ -986,7 +1068,7 @@ export function TreasuryPortalScreen() {
     if (!proposalTitle.trim() || !proposalDescription.trim()) {
       Alert.alert(
         "Missing Information",
-        "Please fill in both title and description for your proposal."
+        "Please fill in both title and description for your proposal.",
       );
       return;
     }
@@ -1027,7 +1109,7 @@ export function TreasuryPortalScreen() {
                 proposalId,
                 cleanCategory,
                 cleanTitle,
-                cleanDescription
+                cleanDescription,
               );
 
               setPendingTx(tx);
@@ -1035,7 +1117,7 @@ export function TreasuryPortalScreen() {
               Alert.alert(
                 "Proposal Submitted!",
                 `Your proposal has been submitted to the blockchain.\n\nTransaction Hash: ${tx.hash}\n\nIt will appear in the voting section once confirmed.`,
-                [{ text: "OK" }]
+                [{ text: "OK" }],
               );
 
               // Reset form
@@ -1054,14 +1136,14 @@ export function TreasuryPortalScreen() {
               console.error("Create proposal error:", error);
               Alert.alert(
                 "Proposal Creation Failed",
-                error.message || "Failed to create proposal"
+                error.message || "Failed to create proposal",
               );
             } finally {
               setIsTransacting(false);
             }
           },
         },
-      ]
+      ],
     );
   }, [proposalTitle, proposalDescription, proposalCategory, address]);
 
@@ -1082,7 +1164,7 @@ export function TreasuryPortalScreen() {
           `Your ${
             support ? "FOR" : "AGAINST"
           } vote has been submitted.\n\nTransaction Hash: ${tx.hash}`,
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
 
         // Reload proposals after a delay
@@ -1096,7 +1178,7 @@ export function TreasuryPortalScreen() {
         setIsTransacting(false);
       }
     },
-    [address]
+    [address],
   );
 
   // Handle Apply as Financier
@@ -1109,13 +1191,13 @@ export function TreasuryPortalScreen() {
         Alert.alert(
           "No Active Stake",
           "You need to stake USDC first before applying as a financier.",
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
         return;
       }
 
       const minFinancierStake = parseFloat(
-        stakingConfig?.minimumFinancierStake || "0"
+        stakingConfig?.minimumFinancierStake || "0",
       );
       const currentStake = parseFloat(stakeInfo.amount);
 
@@ -1123,7 +1205,7 @@ export function TreasuryPortalScreen() {
         Alert.alert(
           "Insufficient Stake",
           `You need at least ${minFinancierStake} USDC staked to become a financier.\n\nCurrent stake: ${currentStake} USDC`,
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
         return;
       }
@@ -1151,7 +1233,7 @@ export function TreasuryPortalScreen() {
                 Alert.alert(
                   "Application Submitted!",
                   `Your financier application has been submitted.\n\nTransaction Hash: ${tx.hash}\n\nYou will be able to create proposals, vote, and participate in pool guarantees once confirmed.`,
-                  [{ text: "OK" }]
+                  [{ text: "OK" }],
                 );
 
                 // Reload stake info after a delay
@@ -1162,14 +1244,14 @@ export function TreasuryPortalScreen() {
                 console.error("Apply as financier error:", error);
                 Alert.alert(
                   "Application Failed",
-                  error.message || "Failed to apply as financier"
+                  error.message || "Failed to apply as financier",
                 );
               } finally {
                 setIsApplyingFinancier(false);
               }
             },
           },
-        ]
+        ],
       );
     } catch (error: any) {
       console.error("Apply as financier error:", error);
@@ -1195,12 +1277,12 @@ export function TreasuryPortalScreen() {
   // Performance: Memoize expensive computations
   const stakedAmount = useMemo(
     () => parseFloat(stakeInfo?.amount || "0"),
-    [stakeInfo?.amount]
+    [stakeInfo?.amount],
   );
 
   const hasActiveStake = useMemo(
     () => stakeInfo?.active && stakedAmount > 0,
-    [stakeInfo?.active, stakedAmount]
+    [stakeInfo?.active, stakedAmount],
   );
 
   const pendingRewardsAmount = useMemo(() => {
@@ -1217,10 +1299,29 @@ export function TreasuryPortalScreen() {
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Treasury Portal</Text>
-          <Text style={styles.subtitle}>
-            Stake, vote, and earn from treasury operations
-          </Text>
+          <View>
+            <Text style={styles.title}>Treasury Portal</Text>
+            <Text style={styles.subtitle}>
+              Stake, vote, and earn from treasury operations
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={async () => {
+              console.log("[Refresh] Manual refresh triggered");
+              setIsLoading(true);
+              await loadMultiTokenData();
+              await loadStakingData();
+              setIsLoading(false);
+            }}
+            disabled={isLoading}
+          >
+            <MaterialCommunityIcons
+              name="refresh"
+              size={24}
+              color={isLoading ? colors.textSecondary : colors.primary}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Navigation Tabs */}
@@ -1346,25 +1447,6 @@ export function TreasuryPortalScreen() {
                     Connect your wallet to view staking information
                   </Text>
                 </View>
-              ) : !isStakingSupportedOnNetwork(selectedNetwork.chainId) ? (
-                <View style={styles.networkPrompt}>
-                  <MaterialCommunityIcons
-                    name="network"
-                    size={48}
-                    color={colors.warning}
-                  />
-                  <Text style={styles.networkPromptText}>
-                    Staking not yet deployed on {selectedNetwork.name}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.networkPromptText,
-                      { fontSize: 12, marginTop: 8, opacity: 0.7 },
-                    ]}
-                  >
-                    Supported: Lisk Sepolia, Base Sepolia
-                  </Text>
-                </View>
               ) : (
                 <>
                   {/* Show skeleton loaders while loading */}
@@ -1423,14 +1505,14 @@ export function TreasuryPortalScreen() {
                                 chainId === "4202"
                                   ? "Lisk Sepolia"
                                   : chainId === "84532"
-                                  ? "Base Sepolia"
-                                  : `Chain ${chainId}`;
+                                    ? "Base Sepolia"
+                                    : `Chain ${chainId}`;
                               const networkIcon =
                                 chainId === "4202"
                                   ? "alpha-l-circle"
                                   : chainId === "84532"
-                                  ? "alpha-b-circle"
-                                  : "network";
+                                    ? "alpha-b-circle"
+                                    : "network";
 
                               return networkData.tokens.length > 0 ? (
                                 <View key={chainId} style={styles.networkCard}>
@@ -1472,7 +1554,7 @@ export function TreasuryPortalScreen() {
                                               style={styles.tokenStakeAmount}
                                             >
                                               {parseFloat(
-                                                token?.amount || "0"
+                                                token?.amount || "0",
                                               ).toFixed(4)}
                                             </Text>
                                           </View>
@@ -1481,11 +1563,11 @@ export function TreasuryPortalScreen() {
                                           ${(token?.usdValue || 0).toFixed(2)}
                                         </Text>
                                       </View>
-                                    )
+                                    ),
                                   )}
                                 </View>
                               ) : null;
-                            }
+                            },
                           )}
                         </View>
                       )}
@@ -1501,7 +1583,7 @@ export function TreasuryPortalScreen() {
                           <Text style={styles.quickStatValue}>
                             {multiTokenStakes?.totalVotingPower
                               ? parseFloat(
-                                  multiTokenStakes.totalVotingPower || "0"
+                                  multiTokenStakes.totalVotingPower || "0",
                                 ).toFixed(0)
                               : "0"}
                           </Text>
@@ -1632,7 +1714,7 @@ export function TreasuryPortalScreen() {
                                 : usdcBalance;
                               const maxStake = Math.max(
                                 0,
-                                parseFloat(balance) - 0.01
+                                parseFloat(balance) - 0.01,
                               );
                               setStakeAmount(maxStake.toFixed(6));
                             }}
@@ -1687,7 +1769,7 @@ export function TreasuryPortalScreen() {
                                 (stakeAsFinancier
                                   ? stakingConfig.minFinancierLockDuration
                                   : stakingConfig.minNormalStakerLockDuration) /
-                                  86400
+                                  86400,
                               )}{" "}
                               days
                             </Text>
@@ -1783,7 +1865,7 @@ export function TreasuryPortalScreen() {
                                 parseFloat(unstakeAmount) <= 0 ||
                                 Boolean(
                                   stakeInfo?.timeUntilUnlock &&
-                                    stakeInfo.timeUntilUnlock > 0
+                                  stakeInfo.timeUntilUnlock > 0,
                                 )
                                   ? styles.buttonDisabled
                                   : null,
@@ -1795,7 +1877,7 @@ export function TreasuryPortalScreen() {
                                 parseFloat(unstakeAmount) <= 0 ||
                                 Boolean(
                                   stakeInfo?.timeUntilUnlock &&
-                                    stakeInfo.timeUntilUnlock > 0
+                                  stakeInfo.timeUntilUnlock > 0,
                                 )
                               }
                             >
@@ -1822,7 +1904,7 @@ export function TreasuryPortalScreen() {
                                   styles.unstakeButtonText,
                                   Boolean(
                                     stakeInfo?.timeUntilUnlock &&
-                                      stakeInfo.timeUntilUnlock > 0
+                                    stakeInfo.timeUntilUnlock > 0,
                                   )
                                     ? styles.buttonTextDisabled
                                     : null,
@@ -1831,9 +1913,9 @@ export function TreasuryPortalScreen() {
                                 {isTransacting && pendingTx?.type === "unstake"
                                   ? "Unstaking..."
                                   : stakeInfo?.timeUntilUnlock &&
-                                    stakeInfo.timeUntilUnlock > 0
-                                  ? "Locked"
-                                  : "Unstake"}
+                                      stakeInfo.timeUntilUnlock > 0
+                                    ? "Locked"
+                                    : "Unstake"}
                               </Text>
                             </TouchableOpacity>
 
@@ -1938,7 +2020,7 @@ export function TreasuryPortalScreen() {
                       (!stakeInfo?.active ||
                         parseFloat(stakeInfo?.amount || "0") <
                           parseFloat(
-                            stakingConfig?.minimumFinancierStake || "0"
+                            stakingConfig?.minimumFinancierStake || "0",
                           )) &&
                         styles.buttonDisabled,
                     ]}
@@ -2173,7 +2255,7 @@ export function TreasuryPortalScreen() {
                       (!stakeInfo?.active ||
                         parseFloat(stakeInfo?.amount || "0") <
                           parseFloat(
-                            stakingConfig?.minimumFinancierStake || "0"
+                            stakingConfig?.minimumFinancierStake || "0",
                           )) &&
                         styles.buttonDisabled,
                     ]}
@@ -2249,8 +2331,8 @@ export function TreasuryPortalScreen() {
                     const status = proposal.executed
                       ? "Executed"
                       : isActive
-                      ? "Active"
-                      : "Ended";
+                        ? "Active"
+                        : "Ended";
 
                     return (
                       <View key={proposal.id} style={styles.proposalCard}>
@@ -2398,7 +2480,7 @@ export function TreasuryPortalScreen() {
                       (!stakeInfo?.active ||
                         parseFloat(stakeInfo?.amount || "0") <
                           parseFloat(
-                            stakingConfig?.minimumFinancierStake || "0"
+                            stakingConfig?.minimumFinancierStake || "0",
                           )) &&
                         styles.buttonDisabled,
                     ]}
@@ -2707,6 +2789,15 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.lg,
     paddingTop: spacing.md,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  refreshButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginTop: spacing.xs,
   },
   title: {
     fontSize: 28,
@@ -3924,15 +4015,17 @@ const styles = StyleSheet.create({
   // Hero Card Styles (Portfolio Value)
   heroCard: {
     backgroundColor: "white",
-    borderRadius: 16,
+    borderRadius: 20,
     padding: spacing.xl,
     margin: spacing.lg,
     marginTop: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + "10",
   },
   heroHeader: {
     flexDirection: "row",
@@ -3946,10 +4039,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   heroAmount: {
-    fontSize: 42,
-    fontWeight: "700",
+    fontSize: 48,
+    fontWeight: "800",
     color: colors.primary,
-    marginBottom: spacing.xs,
+    letterSpacing: -1,
+    height: 54,
   },
   heroSubtext: {
     fontSize: 14,
@@ -4036,7 +4130,7 @@ const styles = StyleSheet.create({
   },
   // Quick Stats Grid Styles
   quickStatsGrid: {
-    flexDirection: "row",
+    flexDirection: "column",
     gap: spacing.md,
     margin: spacing.lg,
     marginTop: spacing.md,
@@ -4044,24 +4138,31 @@ const styles = StyleSheet.create({
   quickStatCard: {
     flex: 1,
     backgroundColor: "white",
-    borderRadius: 12,
-    padding: spacing.lg,
+    borderRadius: 16,
+    padding: spacing.md,
+    paddingVertical: spacing.xl,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: colors.surface,
   },
   quickStatValue: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     color: colors.primary,
+    marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
   quickStatLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: "600",
     color: colors.textSecondary,
     textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

@@ -11,7 +11,7 @@
  * - Arbitrum (Mainnet, Sepolia)
  * - Polygon (Mainnet, Amoy)
  * 
- * Custom chains (Avalanche, BSC, Lisk) may not work with AA and will fallback to EOA.
+ * Custom chains (Avalanche, Lisk) may not work with AA and will fallback to EOA.
  */
 
 import { 
@@ -23,7 +23,9 @@ import {
   optimism, optimismSepolia,
   // Arbitrum
   arbitrum, arbitrumSepolia,
-  // Note: Avalanche, BSC, Lisk not in @account-kit/infra - using custom configs
+  // Helper for custom chains
+  defineAlchemyChain,
+  // Note: Avalanche, Lisk not in @account-kit/infra - using custom configs
   // These chains may not support Alchemy Account Abstraction
 } from '@account-kit/infra';
 import type { Chain } from 'viem';
@@ -52,7 +54,7 @@ export function fromAlchemyNetworkId(networkId: string): string {
  * Defines which stablecoins are supported for transactions across the app.
  * Add new stablecoins here to enable them app-wide.
  */
-export const SUPPORTED_STABLECOINS = ['USDC', 'USDT', 'DAI'] as const;
+export const SUPPORTED_STABLECOINS = ['USDC', 'USDT'] as const;
 export type SupportedStablecoin = typeof SUPPORTED_STABLECOINS[number];
 
 /**
@@ -64,24 +66,21 @@ export const PRIMARY_TRANSACTION_TOKEN: SupportedStablecoin = 'USDC';
 /**
  * Stablecoin contract addresses per network
  * 
- * Format: [network_id]: { USDC: address, USDT: address, DAI: address }
+ * Format: [network_id]: { USDC: address, USDT: address }
  */
 export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStablecoin, string>>> = {
   // ========== ETHEREUM ==========
   ethereum_mainnet: {
     USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-    DAI: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
   },
   ethereum_sepolia: {
     USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Sepolia USDC
-    USDT: '0x7169D38820dfd117C3FA1f22a697dBA58d90BA06', // Sepolia USDT
-    DAI: '0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6',  // Sepolia DAI
+    USDT: '0x523C8591Fbe215B5aF0bEad65e65dF783A37BCBC', // Sepolia USDT
   },
   ethereum_goerli: {
     USDC: '0x07865c6E87B9F70255377e024ace6630C1Eaa37F',
     USDT: '0x509Ee0d083DdF8AC028f2a56731412edD63223B9',
-    DAI: '0x73967c6a0904aA032C103b4104747E88c566B1A2',
   },
 
   // ========== BASE ==========
@@ -91,13 +90,13 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   },
   base_sepolia: {
     USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
+    // USDT removed - contract not working on Base Sepolia
   },
 
   // ========== OPTIMISM ==========
   optimism_mainnet: {
     USDC: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', // Native USDC on Optimism
     USDT: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-    DAI: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
   },
   optimism_sepolia: {
     USDC: '0x5fd84259d66Cd46123540766Be93DFE6D43130D7', // Optimism Sepolia USDC
@@ -107,7 +106,6 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   arbitrum_mainnet: {
     USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
     USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-    DAI: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
   },
   arbitrum_sepolia: {
     USDC: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', // Arbitrum Sepolia USDC
@@ -117,27 +115,14 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   avalanche_mainnet: {
     USDC: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // Native USDC on Avalanche
     USDT: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
-    DAI: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
   },
   avalanche_fuji: {
     USDC: '0x5425890298aed601595a70AB815c96711a31Bc65', // Avalanche Fuji USDC
   },
 
-  // ========== BSC (Binance Smart Chain) ==========
-  bsc_mainnet: {
-    USDC: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // BSC USDC
-    USDT: '0x55d398326f99059fF775485246999027B3197955', // BSC-USD (Binance-Peg)
-    DAI: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3',
-  },
-  bsc_testnet: {
-    USDC: '0x64544969ed7EBf5f083679233325356EbE738930', // BSC Testnet USDC
-    USDT: '0x337610d27c682E347C9cD60BD4b3b107C9d34dDd',
-  },
-
   // ========== FANTOM ==========
   fantom_mainnet: {
     USDC: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75', // Bridged USDC
-    DAI: '0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E',
   },
 
   // ========== CELO ==========
@@ -149,7 +134,6 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   // ========== GNOSIS ==========
   gnosis_mainnet: {
     USDC: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83', // USDC on Gnosis
-    DAI: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d',
   },
 
   // ========== LINEA ==========
@@ -169,155 +153,160 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
 
   // ========== LISK ==========
   lisk_mainnet: {
-    USDC: '0x05D032ac25d322df992303dCa074EE7392C117b9', // Bridged USDC on Lisk
+    USDC: '0xF242275d3a6527d877f2c927a82D9b057609cc71', // Bridged USDC (USDC.e) on Lisk
+    USDT: '0x05D64748c8920c2eAaD5a3068b5f6408bC033b24', // USDT on Lisk
   },
   lisk_sepolia: {
-    USDC: '0x28C2dAfEC0047f4358413Db0E80b2b0B3fDF3462', // Lisk Sepolia USDC
+    USDC: '0x17b3531549F842552911CB287CCf7a5F328ff7d1', // Lisk Sepolia USDC (Test)
+    USDT: '0xa3f3aA5B62237961AF222B211477e572149EBFAe', // Lisk Sepolia USDT (Test)
   },
-};
-
-/**
- * BSC Chain Configuration
- * BSC is not in @account-kit/infra, so we define it manually
- */
-export const bscChain: Chain = {
-  id: 56,
-  name: 'BNB Smart Chain',
-  nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://bsc-dataseed.binance.org'] },
-    public: { http: ['https://bsc-dataseed.binance.org'] },
-  },
-  blockExplorers: {
-    default: { name: 'BscScan', url: 'https://bscscan.com' },
-  },
-};
-
-export const bscTestnetChain: Chain = {
-  id: 97,
-  name: 'BNB Smart Chain Testnet',
-  nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
-    public: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
-  },
-  blockExplorers: {
-    default: { name: 'BscScan', url: 'https://testnet.bscscan.com' },
-  },
-  testnet: true,
 };
 
 /**
  * Lisk Chain Configuration
- * Lisk is not in @account-kit/infra, so we define it manually
+ * Lisk is not in @account-kit/infra, so we define it manually using defineAlchemyChain
+ * Note: Since Lisk doesn't have official Alchemy support, we use the public RPC URLs
  */
-export const liskChain: Chain = {
-  id: 1135,
-  name: 'Lisk',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.api.lisk.com'] },
-    public: { http: ['https://rpc.api.lisk.com'] },
+export const liskChain = defineAlchemyChain({
+  chain: {
+    id: 1135,
+    name: 'Lisk',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://rpc.api.lisk.com'] },
+    },
+    blockExplorers: {
+      default: { name: 'Lisk Explorer', url: 'https://blockscout.lisk.com' },
+    },
   },
-  blockExplorers: {
-    default: { name: 'Lisk Explorer', url: 'https://blockscout.lisk.com' },
-  },
-};
+  rpcBaseUrl: 'https://rpc.api.lisk.com',
+});
 
-export const liskSepoliaChain: Chain = {
-  id: 4202,
-  name: 'Lisk Sepolia',
-  nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://rpc.sepolia-api.lisk.com'] },
-    public: { http: ['https://rpc.sepolia-api.lisk.com'] },
+export const liskSepoliaChain = defineAlchemyChain({
+  chain: {
+    id: 4202,
+    name: 'Lisk Sepolia',
+    nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://rpc.sepolia-api.lisk.com'] },
+    },
+    blockExplorers: {
+      default: { name: 'Lisk Sepolia Explorer', url: 'https://sepolia-blockscout.lisk.com' },
+    },
+    testnet: true,
   },
-  blockExplorers: {
-    default: { name: 'Lisk Sepolia Explorer', url: 'https://sepolia-blockscout.lisk.com' },
-  },
-  testnet: true,
-};
+  rpcBaseUrl: 'https://rpc.sepolia-api.lisk.com',
+});
 
 /**
  * Avalanche Chain Configuration
- * Avalanche is not in @account-kit/infra, so we define it manually
+ * Avalanche is not in @account-kit/infra, so we define it manually using defineAlchemyChain
  */
-export const avalancheChain: Chain = {
-  id: 43114,
-  name: 'Avalanche C-Chain',
-  nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
-    public: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
+export const avalancheChain = defineAlchemyChain({
+  chain: {
+    id: 43114,
+    name: 'Avalanche C-Chain',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://api.avax.network/ext/bc/C/rpc'] },
+    },
+    blockExplorers: {
+      default: { name: 'SnowTrace', url: 'https://snowtrace.io' },
+    },
   },
-  blockExplorers: {
-    default: { name: 'SnowTrace', url: 'https://snowtrace.io' },
-  },
-};
+  rpcBaseUrl: 'https://api.avax.network/ext/bc/C/rpc',
+});
 
-export const avalancheFujiChain: Chain = {
-  id: 43113,
-  name: 'Avalanche Fuji',
-  nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
-    public: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
+export const avalancheFujiChain = defineAlchemyChain({
+  chain: {
+    id: 43113,
+    name: 'Avalanche Fuji',
+    nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: {
+      default: { http: ['https://api.avax-test.network/ext/bc/C/rpc'] },
+    },
+    blockExplorers: {
+      default: { name: 'SnowTrace', url: 'https://testnet.snowtrace.io' },
+    },
+    testnet: true,
   },
-  blockExplorers: {
-    default: { name: 'SnowTrace', url: 'https://testnet.snowtrace.io' },
+  rpcBaseUrl: 'https://api.avax-test.network/ext/bc/C/rpc',
+});
+
+/**
+ * Base Sepolia with Alchemy RPC
+ * 
+ * CRITICAL: The default baseSepolia uses Base's public RPC (https://sepolia.base.org)
+ * which doesn't work with Alchemy Account Abstraction SDK.
+ * We MUST use Alchemy's RPC endpoint for AA to work properly.
+ */
+export const baseSepoliaWithAlchemyRpc = defineAlchemyChain({
+  chain: {
+    ...baseSepolia,
+    rpcUrls: {
+      ...baseSepolia.rpcUrls,
+      default: {
+        http: [`https://base-sepolia.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`],
+      },
+      public: {
+        http: ['https://sepolia.base.org'], // Keep as fallback
+      },
+    },
   },
-  testnet: true,
-};
+  rpcBaseUrl: `https://base-sepolia.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`,
+});
 
 /**
  * Network configurations for Alchemy
  * Maps our internal network names to Alchemy chain configurations
+ * 
+ * STRATEGY:
+ * - All MAINNETS: Use Alchemy AA for production transactions
+ * - Ethereum Sepolia: Use Alchemy AA for testing
+ * - Other Sepolias: Fall back to EOA/Pimlico (not configured in dashboard)
  */
 export const ALCHEMY_CHAINS: Record<string, Chain> = {
-  // Ethereum
+  // ✅ MAINNETS - Production with Alchemy AA
   ethereum_mainnet: mainnet,
-  ethereum_sepolia: sepolia,
-  ethereum_goerli: goerli,
-  
-  // Base
   base_mainnet: base,
-  base_sepolia: baseSepolia,
-  
-  // Optimism
   optimism_mainnet: optimism,
-  optimism_sepolia: optimismSepolia,
-  
-  // Arbitrum
   arbitrum_mainnet: arbitrum,
-  arbitrum_sepolia: arbitrumSepolia,
   
-  // Avalanche (Custom)
+  // ✅ TESTNET - Ethereum Sepolia for testing AA
+  ethereum_sepolia: sepolia,
+  
+  // ❌ OTHER NETWORKS - Not configured for AA (will fall back to EOA/Pimlico)
+  ethereum_goerli: goerli,
+  base_sepolia: baseSepoliaWithAlchemyRpc,
+  optimism_sepolia: optimismSepolia,
+  arbitrum_sepolia: arbitrumSepolia,
   avalanche_mainnet: avalancheChain,
   avalanche_fuji: avalancheFujiChain,
-  
-  // BSC (Custom)
-  bsc_mainnet: bscChain,
-  bsc_testnet: bscTestnetChain,
-  
-  // Lisk (Custom)
   lisk_mainnet: liskChain,
   lisk_sepolia: liskSepoliaChain,
 };
 
 /**
  * Officially supported networks for Alchemy Account Abstraction
- * These are chains that Alchemy guarantees will work with AA
+ * IMPORTANT: Based on Alchemy dashboard configuration
+ * 
+ * PRODUCTION (Mainnets): Use Alchemy AA for real transactions
+ * TESTING: Ethereum Sepolia only (configured in dashboard)
+ * 
+ * Other testnets (Base Sepolia, Lisk Sepolia, etc.) will use EOA/Pimlico
  */
 export const OFFICIALLY_SUPPORTED_AA_NETWORKS = [
+  // ✅ MAINNETS - Production networks with Alchemy AA
   'ethereum_mainnet',
-  'ethereum_sepolia',
-  'ethereum_goerli',
   'base_mainnet',
-  'base_sepolia',
   'optimism_mainnet',
-  'optimism_sepolia',
   'arbitrum_mainnet',
-  'arbitrum_sepolia',
+  
+  // ✅ TESTNETS - Only Ethereum Sepolia is configured in Alchemy dashboard
+  'ethereum_sepolia',
+  
+  // ❌ Other testnets not configured in dashboard (will use EOA/Pimlico):
+  // 'base_sepolia', 'optimism_sepolia', 'arbitrum_sepolia', 'lisk_sepolia'
 ] as const;
 
 /**
@@ -336,11 +325,40 @@ export function isAlchemyNetworkSupported(network: string): network is Supported
 
 /**
  * Check if a network is officially supported by Alchemy for Account Abstraction
- * Returns false for custom chains (Avalanche, BSC, Lisk) that may not work with AA
+ * Returns false for custom chains (Avalanche, Lisk) that may not work with AA
  */
 export function isOfficiallySupported(network: string): boolean {
   const alchemyNetworkId = toAlchemyNetworkId(network);
   return OFFICIALLY_SUPPORTED_AA_NETWORKS.includes(alchemyNetworkId as any);
+}
+
+/**
+ * Check if network is actually configured in user's Alchemy dashboard
+ * 
+ * PRODUCTION STRATEGY:
+ * - All MAINNETS: Enabled for Alchemy AA (production transactions)
+ * - Ethereum Sepolia: Enabled for testing AA functionality
+ * - Other Sepolias: Disabled (use EOA/Pimlico for testing on those networks)
+ * 
+ * Use this instead of isOfficiallySupported for runtime AA decisions
+ */
+export function isConfiguredInAlchemyDashboard(network: string): boolean {
+  const alchemyNetworkId = toAlchemyNetworkId(network);
+  
+  // All mainnets have Alchemy AA enabled
+  const mainnets = [
+    'ethereum_mainnet',
+    'base_mainnet',
+    'optimism_mainnet',
+    'arbitrum_mainnet',
+  ];
+  
+  // Only Ethereum Sepolia for testing
+  const testnets = [
+    'ethereum_sepolia',
+  ];
+  
+  return [...mainnets, ...testnets].includes(alchemyNetworkId);
 }
 
 /**
@@ -387,7 +405,6 @@ export function getAvailableStablecoins(network: string): Array<{
   const STABLECOIN_DECIMALS: Record<SupportedStablecoin, number> = {
     USDC: 6,
     USDT: 6,
-    DAI: 18,
   };
   
   return Object.entries(networkStablecoins)
@@ -558,24 +575,6 @@ export const NETWORK_CONFIGS: Record<string, {
     explorerUrl: 'https://testnet.snowtrace.io',
     isTestnet: true,
     nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  },
-
-  // BSC
-  bsc_mainnet: {
-    name: 'BNB Smart Chain',
-    chainId: 56,
-    rpcUrl: 'https://bsc-dataseed.binance.org',
-    explorerUrl: 'https://bscscan.com',
-    isTestnet: false,
-    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-  },
-  bsc_testnet: {
-    name: 'BSC Testnet',
-    chainId: 97,
-    rpcUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
-    explorerUrl: 'https://testnet.bscscan.com',
-    isTestnet: true,
-    nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
   },
 
   // Lisk

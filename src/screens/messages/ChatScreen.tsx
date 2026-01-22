@@ -81,10 +81,11 @@ export const ChatScreen: React.FC = () => {
 
   // Get contact info
   const contact = contacts.find((c) => c.address === contactAddress);
-  const displayName = contact?.name || `User ${contactAddress.slice(-4)}`;
-  const isOnline = onlineUsers[contactAddress]?.isOnline || false;
-  const isTyping =
-    typingUsers[conversationId]?.includes(contactAddress) || false;
+  const displayName = contact?.name || `User ${contactAddress?.slice(-4) || ''}`;
+  const isOnline = contactAddress ? onlineUsers[contactAddress]?.isOnline || false : false;
+  const isTyping = contactAddress
+    ? typingUsers[conversationId]?.includes(contactAddress) || false
+    : false;
 
   // Set navigation options
   useEffect(() => {
@@ -216,6 +217,11 @@ export const ChatScreen: React.FC = () => {
         contactAddress,
       });
 
+      if (!contactAddress) {
+        Alert.alert("Error", "Contact address is not available");
+        return;
+      }
+
       if (type === "voice") {
         await startVoiceCall(contactAddress);
       } else {
@@ -313,6 +319,7 @@ export const ChatScreen: React.FC = () => {
 
   const sendImageMessage = async (imageUri: string) => {
     try {
+      if (!contactAddress) return;
       // Here you would typically upload the image to your server and get a URL
       // For now, we'll send it with the local URI
       await sendMessage(contactAddress, "", "image", { imageUri });
@@ -323,6 +330,7 @@ export const ChatScreen: React.FC = () => {
 
   const sendFileMessage = async (file: DocumentPicker.DocumentPickerAsset) => {
     try {
+      if (!contactAddress) return;
       // Here you would typically upload the file to your server
       await sendMessage(contactAddress, file.name, "file", {
         fileName: file.name,
@@ -371,6 +379,8 @@ export const ChatScreen: React.FC = () => {
       const uri = recording.getURI();
       const status = await recording.getStatusAsync();
 
+      if (!contactAddress) return;
+      
       if (uri && status.durationMillis) {
         const duration = Math.round((status.durationMillis || 0) / 1000);
         await sendMessage(contactAddress, "Voice message", "voice", {

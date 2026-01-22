@@ -91,15 +91,21 @@ export class AlchemyAccountService {
       const gasPolicyId = options?.gasPolicyId ?? getAlchemyGasPolicyId();
       const chain = getAlchemyChain(this.network);
 
-      console.log('[AlchemyAccountService] Chain config:', {
+      console.log('[AlchemyAccountService] Initializing with config:', {
         networkId: this.network,
         chainId: chain.id,
         chainName: chain.name,
+        hasRpcUrls: !!chain.rpcUrls,
+        defaultRpc: chain.rpcUrls?.default?.http?.[0],
+        publicRpc: chain.rpcUrls?.public?.http?.[0],
         hasGasPolicy: !!gasPolicyId
       });
 
-      // Create transport (chain is inferred from client config)
-      const transport = alchemy({ apiKey });
+      // Create transport with explicit configuration
+      const transport = alchemy({ 
+        apiKey,
+        // Ensure we're using the correct network
+      });
 
       // Create smart account client configuration
       const clientConfig: any = {
@@ -121,11 +127,34 @@ export class AlchemyAccountService {
         };
       }
 
+      console.log('[AlchemyAccountService] Creating client with config:', {
+        hasApiKey: !!clientConfig.apiKey,
+        hasChain: !!clientConfig.chain,
+        hasSigner: !!clientConfig.signer,
+        hasTransport: !!clientConfig.transport,
+        hasGasManager: !!clientConfig.gasManagerConfig,
+        chainId: clientConfig.chain?.id,
+      });
+
       // Create smart account client
       try {
         this.client = await createModularAccountAlchemyClient(clientConfig);
       } catch (clientError: any) {
-        console.error('[AlchemyAccountService] Client creation failed:', clientError?.message);
+        console.error('[AlchemyAccountService] ❌ Client creation failed:', clientError?.message);
+        console.error('[AlchemyAccountService] Error name:', clientError?.name);
+        console.error('[AlchemyAccountService] Error cause:', clientError?.cause);
+        
+        // Provide detailed troubleshooting info
+        if (clientError?.message?.includes('getCounterFactualAddress')) {
+          console.error('[AlchemyAccountService] 🔍 DIAGNOSIS: getCounterFactualAddress failed');
+          console.error('[AlchemyAccountService] This usually means:');
+          console.error('[AlchemyAccountService]   1. RPC endpoint is not responding correctly');
+          console.error('[AlchemyAccountService]   2. Network configuration is incomplete or wrong');
+          console.error('[AlchemyAccountService]   3. Alchemy API key doesn\'t have access to this network');
+          console.error('[AlchemyAccountService]   4. EntryPoint contract not deployed on this network');
+          console.error('[AlchemyAccountService] 💡 Solution: Check network support at https://accountkit.alchemy.com/');
+        }
+        
         throw clientError;
       }
 
