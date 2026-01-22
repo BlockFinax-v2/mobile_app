@@ -21,7 +21,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-  Modal,
+  Modal, Pressable,
+  Image
 } from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
@@ -29,7 +30,7 @@ type RootNavigationProp = StackNavigationProp<RootStackParamList>;
 
 export const SocialAuthScreen: React.FC = () => {
   const { importWallet } = useWallet();
-  
+  const Google_icon = require("../../../assets/images/google_icon.svg");
   const rootNavigation = useNavigation<RootNavigationProp>();
   const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +53,26 @@ export const SocialAuthScreen: React.FC = () => {
     }).start();
   }, [fadeAnim]);
 
+  const scaleAnim = React.useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 4,
+    }).start();
+  };
+
   const handleEmailSignIn = async () => {
     if (!email.trim()) {
       Alert.alert("Email Required", "Please enter your email address");
@@ -72,7 +93,7 @@ export const SocialAuthScreen: React.FC = () => {
 
       if (result.success && result.privateKey) {
         setLoadingMessage("Account ready!");
-        
+
         // Store private key and show password creation modal
         setPendingPrivateKey(result.privateKey);
         setShowPasswordModal(true);
@@ -103,7 +124,7 @@ export const SocialAuthScreen: React.FC = () => {
 
       if (result.success && result.privateKey) {
         setLoadingMessage("Account ready!");
-        
+
         // Store private key and show password creation modal
         setPendingPrivateKey(result.privateKey);
         setShowPasswordModal(true);
@@ -137,12 +158,12 @@ export const SocialAuthScreen: React.FC = () => {
       const privateKey = "0x" + Array.from(randomBytes)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
-      
+
       // Create wallet from the generated private key
       const wallet = new ethers.Wallet(privateKey);
-      
+
       setLoadingMessage("Account ready!");
-      
+
       // Store private key and show password creation modal
       setPendingPrivateKey(wallet.privateKey);
       setShowPasswordModal(true);
@@ -184,7 +205,7 @@ export const SocialAuthScreen: React.FC = () => {
 
     try {
       // Import wallet with the private key and user's password
-      await importWallet({privateKey: pendingPrivateKey, password});
+      await importWallet({ privateKey: pendingPrivateKey, password });
 
       setLoadingMessage("Welcome!");
 
@@ -210,6 +231,10 @@ export const SocialAuthScreen: React.FC = () => {
 
   const handleImportWallet = () => {
     setShowImportModal(true);
+  };
+
+  const showComingSoon = () => {
+    Alert.alert("Coming Soon", "Social sign-in will be available soon.");
   };
 
   const handleImportSubmit = async () => {
@@ -273,7 +298,7 @@ export const SocialAuthScreen: React.FC = () => {
 
       setLoadingMessage("Wallet validated!");
       setShowImportModal(false);
-      
+
       // Store private key and show password creation modal
       setPendingPrivateKey(privateKey);
       setShowPasswordModal(true);
@@ -303,7 +328,7 @@ export const SocialAuthScreen: React.FC = () => {
             <View style={styles.logoContainer}>
               <MaterialCommunityIcons
                 name="shield-star"
-                size={72}
+                size={60}
                 color={palette.white}
               />
             </View>
@@ -319,19 +344,19 @@ export const SocialAuthScreen: React.FC = () => {
               color={palette.white}
               style={styles.heroSubtitle}
             >
-              Sign in with email or Google or create a wallet instantly
+              Secure access to digital world of transparency
             </Text>
           </Animated.View>
         </LinearGradient>
 
         <View style={styles.authCard}>
-          <Text
+          {/* <Text
             variant="title"
             color={palette.neutralDark}
             style={styles.authTitle}
           >
-            Get Started
-          </Text>
+            {" "}
+          </Text> */}
 
           {/* Email Sign In */}
           <View style={styles.emailSection}>
@@ -362,26 +387,69 @@ export const SocialAuthScreen: React.FC = () => {
               label="Continue with Email"
               onPress={handleEmailSignIn}
               variant="primary"
-              disabled={isLoading}
-              style={styles.emailButton}
-            />
-          </View>
-          <Button
-              label="Create Wallet Instantly"
-              onPress={handleQuickCreate}
-              variant="outline"
-              disabled={isLoading}
-              icon={
-                <MaterialCommunityIcons
-                  name="lightning-bolt"
-                  size={20}
-                  color={palette.primaryBlue}
-                />
-              }
+              disabled={isLoading || email.trim().length < 1}
+              style={{ marginTop: -3 }}
             />
 
+            {/* <Pressable
+              onPress={handleEmailSignIn}
+              onPressIn={handlePressIn}
+              onPressOut={handlePressOut}
+              disabled={isLoading || email.trim().length < 1}
+              style={{
+                padding: spacing.md, display: "flex", flexDirection: "row", justifyContent: "center", alignItems: 'center',
+                borderRadius: 15, backgroundColor: palette.primaryBlue, marginBlockEnd: 7, marginBlockStart: 20
+              }}
+            >
+              <Text style={{ color: "#ffffff" }}>Continue with Email</Text>
+            </Pressable> */}
+
+          </View>
+
+          <Pressable
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            onPress={handleQuickCreate}
+            style={{ padding: spacing.md, borderWidth: 2, borderRadius: 15, borderColor: palette.primaryBlue, marginBlockEnd: 7, marginBlockStart: 20 }}>
+            <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 20 }}>
+              <MaterialCommunityIcons
+                name="lightning-bolt"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text style={{ color: palette.primaryBlue }}>Create wallet Instantly</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={handleImportWallet}
+            style={{ padding: spacing.md, borderRadius: 15, backgroundColor: "#d1ebf8", marginBlock: 7 }}>
+            <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 20 }}>
+              <MaterialCommunityIcons
+                name="import"
+                size={20}
+                color={palette.primaryBlue}
+              />
+              <Text style={{ color: palette.primaryBlue }}>Import Existing Wallet</Text>
+            </View>
+          </Pressable>
+
+          {/* <Button
+            label="Create Wallet Instantly"
+            onPress={handleQuickCreate}
+            variant="outline"
+            disabled={isLoading}
+            icon={
+              <MaterialCommunityIcons
+                name="lightning-bolt"
+                size={20}
+                color={palette.primaryBlue}
+              />
+            }
+          /> */}
+
           {/* Import Wallet */}
-          <View style={styles.importSection}>
+          {/* <View style={styles.importSection}>
             <Button
               label="Import Existing Wallet"
               onPress={handleImportWallet}
@@ -399,7 +467,7 @@ export const SocialAuthScreen: React.FC = () => {
             <Text variant="body" color={palette.neutralMid} style={styles.importHint}>
               Use your existing private key or seed phrase
             </Text>
-          </View>
+          </View> */}
 
           {/* Quick Create Option */}
           <View style={styles.quickCreateSection}>
@@ -411,75 +479,59 @@ export const SocialAuthScreen: React.FC = () => {
               <View style={styles.dividerLine} />
             </View>
 
-          {/* Social Sign In */}
-          <View style={styles.socialSection}>
-            <Text
-              variant="body"
-              color={palette.neutralMid}
-              style={styles.sectionLabel}
-            >
-              Sign in with Social
-            </Text>
-
-            {/* Google Sign In */}
-            <TouchableOpacity
-              style={[styles.socialButton, styles.disabledButton]}
-              disabled
-            >
-              <View style={styles.socialIconContainer}>
-                <MaterialCommunityIcons
-                  name="google"
-                  size={24}
-                  color="#DB4437"
-                />
-              </View>
-              <Text variant="body" color={palette.neutralDark}>
-                Continue with Google
+            {/* Social Sign In */}
+            <View style={styles.socialSection}>
+              <Text
+                variant="body"
+                color={palette.neutralMid}
+                style={{
+                  marginBottom: spacing.sm,
+                  fontWeight: "600",
+                  textAlign:'center',
+                }}
+              >
+                Sign in with Social
               </Text>
-              <Text variant="body" color={palette.neutralDark}>
-                  Coming Soon
-              </Text>
-              <View style={styles.socialArrow}>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={24}
-                  color={palette.neutralMid}
-                />
-              </View>
-            </TouchableOpacity>
 
-            {/* Apple Sign In (Coming Soon) */}
-            <TouchableOpacity
-              style={[styles.socialButton, styles.disabledButton]}
-              disabled
-            >
-              <View style={styles.socialIconContainer}>
-                <MaterialCommunityIcons
-                  name="apple"
-                  size={24}
-                  color={palette.neutralMid}
-                />
+              <View style={styles.socialRow}>
+
+                {/* Google */}
+                <Pressable
+                  onPress={showComingSoon}
+                  style={({ pressed }) => [
+                    styles.socialIconButton,
+                    pressed && { transform: [{ scale: 0.96 }] }
+                  ]}
+                >
+                  <Image
+                    source={Google_icon}
+                    style={{ width: 26, height: 26, resizeMode: "contain" }}
+                  />
+                </Pressable>
+
+                <Pressable
+                  onPress={showComingSoon}
+                  style={({ pressed }) => [
+                    styles.socialIconButton,
+                    pressed && { transform: [{ scale: 0.96 }] }
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="apple"
+                    size={30}
+                    color={palette.neutralDark}
+                  />
+                </Pressable>
+
               </View>
-              <View style={styles.socialTextContainer}>
-                <Text variant="body" color={palette.neutralMid}>
-                  Continue with Apple
-                </Text>
-                <Text variant="body" color={palette.neutralMid}>
-                  Coming Soon
-                </Text>
-              </View>
-              <View style={styles.socialArrow}>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={24}
-                  color={palette.neutralMid}
-                />
-              </View>
-            </TouchableOpacity>
-          </View>
-            
+            </View>
+
+
             <Text variant="body" color={palette.neutralMid} style={styles.quickCreateHint}>
-              No sign-up required • Secured by Account Abstraction
+              No sign-up required  
+            </Text>
+             <Text variant="body" color={palette.neutralMid} style={styles.quickCreateHint}>
+              Secured by Account Abstraction.
             </Text>
           </View>
 
@@ -651,7 +703,7 @@ export const SocialAuthScreen: React.FC = () => {
         visible={showPasswordModal}
         transparent
         animationType="slide"
-        onRequestClose={() => {}}
+        onRequestClose={() => { }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -726,8 +778,8 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   hero: {
-    paddingTop: spacing.xxl * 2,
-    paddingBottom: spacing.xxl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.xl,
     borderBottomLeftRadius: 32,
     borderBottomRightRadius: 32,
@@ -736,9 +788,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
@@ -751,7 +803,7 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     textAlign: "center",
     opacity: 0.9,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   authCard: {
     backgroundColor: palette.white,
@@ -770,14 +822,14 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   emailSection: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   sectionLabel: {
     marginBottom: spacing.sm,
     fontWeight: "600",
   },
   emailButton: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   divider: {
     flexDirection: "row",
@@ -794,7 +846,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   socialSection: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.md
+    
   },
   socialButton: {
     flexDirection: "row",
@@ -810,13 +863,14 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   socialIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 10,
     backgroundColor: palette.surface,
     justifyContent: "center",
     alignItems: "center",
     marginRight: spacing.md,
+
   },
   socialTextContainer: {
     flex: 1,
@@ -829,7 +883,7 @@ const styles = StyleSheet.create({
   },
   quickCreateHint: {
     textAlign: "center",
-    marginTop: spacing.sm,
+    marginTop: 2,
     fontSize: 12,
   },
   importSection: {
@@ -882,7 +936,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    padding: spacing.lg,
+    padding: spacing.sm,
   },
   modalContent: {
     backgroundColor: palette.white,
@@ -970,5 +1024,31 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  socialRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    gap: 20,
+    marginTop: spacing.sm,
+  },
+
+  socialIconButton: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    backgroundColor: palette.white,
+    justifyContent: "center",
+    alignItems: "center",
+
+    // iOS shadow
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+
+    // Android shadow
+    elevation: 6,
   },
 });
