@@ -357,10 +357,20 @@ export function TreasuryPortalScreen() {
       );
       setMultiTokenStakes(stakes);
 
-      // Load balances for all supported tokens
+      // Load balances for all supported tokens on current network
+      const currentNetworkTokensList =
+        currentNetworkTokens.length > 0
+          ? currentNetworkTokens
+          : supportedTokens;
       const balances: Record<string, string> = {};
+
+      console.log(
+        "[Balance] Loading balances for tokens:",
+        currentNetworkTokensList.map((t) => t.symbol),
+      );
+
       await Promise.all(
-        supportedTokens.map(async (token) => {
+        currentNetworkTokensList.map(async (token) => {
           try {
             const balance = await multiTokenStakingService.getTokenBalance(
               address,
@@ -368,6 +378,7 @@ export function TreasuryPortalScreen() {
               selectedNetwork.chainId,
             );
             balances[token.address] = balance;
+            console.log(`[Balance] ${token.symbol} balance: ${balance}`);
           } catch (error) {
             console.error(`Failed to load balance for ${token.symbol}:`, error);
             balances[token.address] = "0";
@@ -375,6 +386,7 @@ export function TreasuryPortalScreen() {
         }),
       );
       setTokenBalances(balances);
+      console.log("[Balance] All balances loaded:", balances);
 
       // Load pool-wide token statistics
       const poolStats: {
@@ -383,7 +395,7 @@ export function TreasuryPortalScreen() {
       let totalUSD = 0;
 
       await Promise.all(
-        supportedTokens.map(async (token) => {
+        currentNetworkTokensList.map(async (token) => {
           try {
             // Get total staked for this token from contract
             const totalStaked =
@@ -419,7 +431,7 @@ export function TreasuryPortalScreen() {
     } catch (error) {
       console.error("Failed to load multi-token data:", error);
     }
-  }, [isUnlocked, address, supportedTokens, selectedNetwork.chainId]);
+  }, [isUnlocked, address, selectedNetwork.chainId]);
 
   // 🚀 OPTIMIZED: Only load data for active tab
   const loadStakingData = useCallback(async () => {
@@ -750,6 +762,33 @@ export function TreasuryPortalScreen() {
 
     monitorTransaction();
   }, [pendingTx]);
+
+  // 🔄 AUTO-REFRESH: Refresh data every 30 seconds when screen is focused
+  useEffect(() => {
+    if (!isUnlocked || !address) return;
+
+    const refreshInterval = setInterval(async () => {
+      console.log("[Auto-Refresh] Refreshing treasury data...");
+      try {
+        await loadMultiTokenData();
+        if (activeTab === "stake" || activeTab === "pool") {
+          // Only refresh staking data if on relevant tab
+          const cacheKey = `staking:${address}:${selectedNetwork.chainId}`;
+          performanceCache.invalidate(cacheKey); // Clear cache to force fresh data
+        }
+      } catch (error) {
+        console.error("[Auto-Refresh] Failed to refresh data:", error);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(refreshInterval);
+  }, [
+    isUnlocked,
+    address,
+    activeTab,
+    selectedNetwork.chainId,
+    loadMultiTokenData,
+  ]);
 
   // Real staking transaction handlers with optimistic updates
   const handleStakeUSDC = useCallback(async () => {
@@ -1260,10 +1299,29 @@ export function TreasuryPortalScreen() {
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>Treasury Portal</Text>
-          <Text style={styles.subtitle}>
-            Stake, vote, and earn from treasury operations
-          </Text>
+          <View>
+            <Text style={styles.title}>Treasury Portal</Text>
+            <Text style={styles.subtitle}>
+              Stake, vote, and earn from treasury operations
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={async () => {
+              console.log("[Refresh] Manual refresh triggered");
+              setIsLoading(true);
+              await loadMultiTokenData();
+              await loadStakingData();
+              setIsLoading(false);
+            }}
+            disabled={isLoading}
+          >
+            <MaterialCommunityIcons
+              name="refresh"
+              size={24}
+              color={isLoading ? colors.textSecondary : colors.primary}
+            />
+          </TouchableOpacity>
         </View>
 
         {/* Navigation Tabs */}
@@ -2731,6 +2789,15 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.lg,
     paddingTop: spacing.md,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  refreshButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    marginTop: spacing.xs,
   },
   title: {
     fontSize: 28,
@@ -3948,15 +4015,17 @@ const styles = StyleSheet.create({
   // Hero Card Styles (Portfolio Value)
   heroCard: {
     backgroundColor: "white",
-    borderRadius: 16,
+    borderRadius: 20,
     padding: spacing.xl,
     margin: spacing.lg,
     marginTop: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + "10",
   },
   heroHeader: {
     flexDirection: "row",
@@ -3970,10 +4039,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   heroAmount: {
-    fontSize: 42,
-    fontWeight: "700",
+    fontSize: 48,
+    fontWeight: "800",
     color: colors.primary,
-    marginBottom: spacing.xs,
+    letterSpacing: -1,
+    height: 54,
   },
   heroSubtext: {
     fontSize: 14,
@@ -4060,7 +4130,7 @@ const styles = StyleSheet.create({
   },
   // Quick Stats Grid Styles
   quickStatsGrid: {
-    flexDirection: "row",
+    flexDirection: "column",
     gap: spacing.md,
     margin: spacing.lg,
     marginTop: spacing.md,
@@ -4068,24 +4138,31 @@ const styles = StyleSheet.create({
   quickStatCard: {
     flex: 1,
     backgroundColor: "white",
-    borderRadius: 12,
-    padding: spacing.lg,
+    borderRadius: 16,
+    padding: spacing.md,
+    paddingVertical: spacing.xl,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: colors.surface,
   },
   quickStatValue: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     color: colors.primary,
+    marginTop: spacing.sm,
     marginBottom: spacing.xs,
   },
   quickStatLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: "600",
     color: colors.textSecondary,
     textAlign: "center",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

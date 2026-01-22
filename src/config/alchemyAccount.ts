@@ -76,7 +76,7 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   },
   ethereum_sepolia: {
     USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Sepolia USDC
-    USDT: '0x7169D38820dfd117C3FA1f22a697dBA58d90BA06', // Sepolia USDT
+    USDT: '0x523C8591Fbe215B5aF0bEad65e65dF783A37BCBC', // Sepolia USDT
   },
   ethereum_goerli: {
     USDC: '0x07865c6E87B9F70255377e024ace6630C1Eaa37F',
@@ -90,7 +90,7 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   },
   base_sepolia: {
     USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
-    USDT: '0xf175520C52418dfE19C8098071a252da48Cd1C19', // Base Sepolia USDT
+    // USDT removed - contract not working on Base Sepolia
   },
 
   // ========== OPTIMISM ==========
@@ -153,10 +153,12 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
 
   // ========== LISK ==========
   lisk_mainnet: {
-    USDC: '0x05D032ac25d322df992303dCa074EE7392C117b9', // Bridged USDC on Lisk
+    USDC: '0xF242275d3a6527d877f2c927a82D9b057609cc71', // Bridged USDC (USDC.e) on Lisk
+    USDT: '0x05D64748c8920c2eAaD5a3068b5f6408bC033b24', // USDT on Lisk
   },
   lisk_sepolia: {
-    USDC: '0x28C2dAfEC0047f4358413Db0E80b2b0B3fDF3462', // Lisk Sepolia USDC
+    USDC: '0x17b3531549F842552911CB287CCf7a5F328ff7d1', // Lisk Sepolia USDC (Test)
+    USDT: '0xa3f3aA5B62237961AF222B211477e572149EBFAe', // Lisk Sepolia USDT (Test)
   },
 };
 
@@ -232,50 +234,79 @@ export const avalancheFujiChain = defineAlchemyChain({
 });
 
 /**
+ * Base Sepolia with Alchemy RPC
+ * 
+ * CRITICAL: The default baseSepolia uses Base's public RPC (https://sepolia.base.org)
+ * which doesn't work with Alchemy Account Abstraction SDK.
+ * We MUST use Alchemy's RPC endpoint for AA to work properly.
+ */
+export const baseSepoliaWithAlchemyRpc = defineAlchemyChain({
+  chain: {
+    ...baseSepolia,
+    rpcUrls: {
+      ...baseSepolia.rpcUrls,
+      default: {
+        http: [`https://base-sepolia.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`],
+      },
+      public: {
+        http: ['https://sepolia.base.org'], // Keep as fallback
+      },
+    },
+  },
+  rpcBaseUrl: `https://base-sepolia.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`,
+});
+
+/**
  * Network configurations for Alchemy
  * Maps our internal network names to Alchemy chain configurations
+ * 
+ * STRATEGY:
+ * - All MAINNETS: Use Alchemy AA for production transactions
+ * - Ethereum Sepolia: Use Alchemy AA for testing
+ * - Other Sepolias: Fall back to EOA/Pimlico (not configured in dashboard)
  */
 export const ALCHEMY_CHAINS: Record<string, Chain> = {
-  // Ethereum
+  // ✅ MAINNETS - Production with Alchemy AA
   ethereum_mainnet: mainnet,
-  ethereum_sepolia: sepolia,
-  ethereum_goerli: goerli,
-  
-  // Base
   base_mainnet: base,
-  base_sepolia: baseSepolia,
-  
-  // Optimism
   optimism_mainnet: optimism,
-  optimism_sepolia: optimismSepolia,
-  
-  // Arbitrum
   arbitrum_mainnet: arbitrum,
-  arbitrum_sepolia: arbitrumSepolia,
   
-  // Avalanche (Custom)
+  // ✅ TESTNET - Ethereum Sepolia for testing AA
+  ethereum_sepolia: sepolia,
+  
+  // ❌ OTHER NETWORKS - Not configured for AA (will fall back to EOA/Pimlico)
+  ethereum_goerli: goerli,
+  base_sepolia: baseSepoliaWithAlchemyRpc,
+  optimism_sepolia: optimismSepolia,
+  arbitrum_sepolia: arbitrumSepolia,
   avalanche_mainnet: avalancheChain,
   avalanche_fuji: avalancheFujiChain,
-  
-  // Lisk (Custom)
   lisk_mainnet: liskChain,
   lisk_sepolia: liskSepoliaChain,
 };
 
 /**
  * Officially supported networks for Alchemy Account Abstraction
- * These are chains that Alchemy guarantees will work with AA
+ * IMPORTANT: Based on Alchemy dashboard configuration
+ * 
+ * PRODUCTION (Mainnets): Use Alchemy AA for real transactions
+ * TESTING: Ethereum Sepolia only (configured in dashboard)
+ * 
+ * Other testnets (Base Sepolia, Lisk Sepolia, etc.) will use EOA/Pimlico
  */
 export const OFFICIALLY_SUPPORTED_AA_NETWORKS = [
+  // ✅ MAINNETS - Production networks with Alchemy AA
   'ethereum_mainnet',
-  'ethereum_sepolia',
-  'ethereum_goerli',
   'base_mainnet',
-  'base_sepolia',
   'optimism_mainnet',
-  'optimism_sepolia',
   'arbitrum_mainnet',
-  'arbitrum_sepolia',
+  
+  // ✅ TESTNETS - Only Ethereum Sepolia is configured in Alchemy dashboard
+  'ethereum_sepolia',
+  
+  // ❌ Other testnets not configured in dashboard (will use EOA/Pimlico):
+  // 'base_sepolia', 'optimism_sepolia', 'arbitrum_sepolia', 'lisk_sepolia'
 ] as const;
 
 /**
@@ -299,6 +330,35 @@ export function isAlchemyNetworkSupported(network: string): network is Supported
 export function isOfficiallySupported(network: string): boolean {
   const alchemyNetworkId = toAlchemyNetworkId(network);
   return OFFICIALLY_SUPPORTED_AA_NETWORKS.includes(alchemyNetworkId as any);
+}
+
+/**
+ * Check if network is actually configured in user's Alchemy dashboard
+ * 
+ * PRODUCTION STRATEGY:
+ * - All MAINNETS: Enabled for Alchemy AA (production transactions)
+ * - Ethereum Sepolia: Enabled for testing AA functionality
+ * - Other Sepolias: Disabled (use EOA/Pimlico for testing on those networks)
+ * 
+ * Use this instead of isOfficiallySupported for runtime AA decisions
+ */
+export function isConfiguredInAlchemyDashboard(network: string): boolean {
+  const alchemyNetworkId = toAlchemyNetworkId(network);
+  
+  // All mainnets have Alchemy AA enabled
+  const mainnets = [
+    'ethereum_mainnet',
+    'base_mainnet',
+    'optimism_mainnet',
+    'arbitrum_mainnet',
+  ];
+  
+  // Only Ethereum Sepolia for testing
+  const testnets = [
+    'ethereum_sepolia',
+  ];
+  
+  return [...mainnets, ...testnets].includes(alchemyNetworkId);
 }
 
 /**

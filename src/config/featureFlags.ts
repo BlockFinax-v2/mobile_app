@@ -46,7 +46,8 @@ export interface FeatureFlags {
  * Toggle these to enable/disable features during migration.
  */
 export const FEATURE_FLAGS: FeatureFlags = {
-  // Phase 2: Start with Alchemy disabled, test manually
+  // Phase 2: RE-ENABLED with improved error handling
+  // Will fallback to Pimlico if Alchemy fails to initialize
   USE_ALCHEMY_AA: true,
 
   // Phase 3: Enable for specific screens during gradual rollout

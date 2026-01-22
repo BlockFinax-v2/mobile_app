@@ -23,6 +23,7 @@ import { GOVERNANCE_FACET_ABI } from "@/contracts/GovernanceFacet.abi";
  * Network-specific Diamond contract addresses
  */
 export const DIAMOND_ADDRESSES: Record<number, string> = {
+  11155111: "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284", // Ethereum Sepolia
   4202: "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34", // Lisk Sepolia
   84532: "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711", // Base Sepolia
 };
@@ -118,8 +119,15 @@ class MultiTokenStakingService {
   private getProvider(chainId: number): ethers.providers.JsonRpcProvider {
     if (!this.providers.has(chainId)) {
       const rpcUrls: Record<number, string> = {
-        4202: "https://rpc.sepolia-api.lisk.com",
-        84532: "https://sepolia.base.org",
+        // Mainnets
+        1: "https://eth.llamarpc.com", // Ethereum Mainnet
+        8453: "https://mainnet.base.org", // Base Mainnet
+        1135: "https://rpc.api.lisk.com", // Lisk Mainnet
+        
+        // Testnets
+        11155111: "https://ethereum-sepolia-rpc.publicnode.com", // Ethereum Sepolia
+        84532: "https://sepolia.base.org", // Base Sepolia
+        4202: "https://rpc.sepolia-api.lisk.com", // Lisk Sepolia
       };
 
       const rpcUrl = rpcUrls[chainId];

@@ -157,7 +157,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
       {
         symbol: "USDT",
         name: "Tether USD",
-        address: "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
+        address: "0x523C8591Fbe215B5aF0bEad65e65dF783A37BCBC",
         decimals: 6,
       },
     ],
@@ -177,12 +177,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         decimals: 6,
       },
-      {
-        symbol: "USDT",
-        name: "Tether USD",
-        address: "0xf175520C52418dfE19C8098071a252da48Cd1C19",
-        decimals: 6,
-      },
+      // USDT removed - contract not working on Base Sepolia
     ],
   },
   "lisk-sepolia": {
