@@ -11,7 +11,7 @@
  * - Arbitrum (Mainnet, Sepolia)
  * - Polygon (Mainnet, Amoy)
  * 
- * Custom chains (Avalanche, BSC, Lisk) may not work with AA and will fallback to EOA.
+ * Custom chains (Avalanche, Lisk) may not work with AA and will fallback to EOA.
  */
 
 import { 
@@ -25,7 +25,7 @@ import {
   arbitrum, arbitrumSepolia,
   // Helper for custom chains
   defineAlchemyChain,
-  // Note: Avalanche, BSC, Lisk not in @account-kit/infra - using custom configs
+  // Note: Avalanche, Lisk not in @account-kit/infra - using custom configs
   // These chains may not support Alchemy Account Abstraction
 } from '@account-kit/infra';
 import type { Chain } from 'viem';
@@ -54,7 +54,7 @@ export function fromAlchemyNetworkId(networkId: string): string {
  * Defines which stablecoins are supported for transactions across the app.
  * Add new stablecoins here to enable them app-wide.
  */
-export const SUPPORTED_STABLECOINS = ['USDC', 'USDT', 'DAI'] as const;
+export const SUPPORTED_STABLECOINS = ['USDC', 'USDT'] as const;
 export type SupportedStablecoin = typeof SUPPORTED_STABLECOINS[number];
 
 /**
@@ -66,24 +66,21 @@ export const PRIMARY_TRANSACTION_TOKEN: SupportedStablecoin = 'USDC';
 /**
  * Stablecoin contract addresses per network
  * 
- * Format: [network_id]: { USDC: address, USDT: address, DAI: address }
+ * Format: [network_id]: { USDC: address, USDT: address }
  */
 export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStablecoin, string>>> = {
   // ========== ETHEREUM ==========
   ethereum_mainnet: {
     USDC: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     USDT: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
-    DAI: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
   },
   ethereum_sepolia: {
     USDC: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Sepolia USDC
     USDT: '0x7169D38820dfd117C3FA1f22a697dBA58d90BA06', // Sepolia USDT
-    DAI: '0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6',  // Sepolia DAI
   },
   ethereum_goerli: {
     USDC: '0x07865c6E87B9F70255377e024ace6630C1Eaa37F',
     USDT: '0x509Ee0d083DdF8AC028f2a56731412edD63223B9',
-    DAI: '0x73967c6a0904aA032C103b4104747E88c566B1A2',
   },
 
   // ========== BASE ==========
@@ -93,13 +90,13 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   },
   base_sepolia: {
     USDC: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia USDC
+    USDT: '0xf175520C52418dfE19C8098071a252da48Cd1C19', // Base Sepolia USDT
   },
 
   // ========== OPTIMISM ==========
   optimism_mainnet: {
     USDC: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', // Native USDC on Optimism
     USDT: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58',
-    DAI: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
   },
   optimism_sepolia: {
     USDC: '0x5fd84259d66Cd46123540766Be93DFE6D43130D7', // Optimism Sepolia USDC
@@ -109,7 +106,6 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   arbitrum_mainnet: {
     USDC: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', // Native USDC on Arbitrum
     USDT: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
-    DAI: '0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1',
   },
   arbitrum_sepolia: {
     USDC: '0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d', // Arbitrum Sepolia USDC
@@ -119,27 +115,14 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   avalanche_mainnet: {
     USDC: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // Native USDC on Avalanche
     USDT: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7',
-    DAI: '0xd586E7F844cEa2F87f50152665BCbc2C279D8d70',
   },
   avalanche_fuji: {
     USDC: '0x5425890298aed601595a70AB815c96711a31Bc65', // Avalanche Fuji USDC
   },
 
-  // ========== BSC (Binance Smart Chain) ==========
-  bsc_mainnet: {
-    USDC: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // BSC USDC
-    USDT: '0x55d398326f99059fF775485246999027B3197955', // BSC-USD (Binance-Peg)
-    DAI: '0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3',
-  },
-  bsc_testnet: {
-    USDC: '0x64544969ed7EBf5f083679233325356EbE738930', // BSC Testnet USDC
-    USDT: '0x337610d27c682E347C9cD60BD4b3b107C9d34dDd',
-  },
-
   // ========== FANTOM ==========
   fantom_mainnet: {
     USDC: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75', // Bridged USDC
-    DAI: '0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E',
   },
 
   // ========== CELO ==========
@@ -151,7 +134,6 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
   // ========== GNOSIS ==========
   gnosis_mainnet: {
     USDC: '0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83', // USDC on Gnosis
-    DAI: '0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d',
   },
 
   // ========== LINEA ==========
@@ -177,41 +159,6 @@ export const STABLECOIN_ADDRESSES: Record<string, Partial<Record<SupportedStable
     USDC: '0x28C2dAfEC0047f4358413Db0E80b2b0B3fDF3462', // Lisk Sepolia USDC
   },
 };
-
-/**
- * BSC Chain Configuration
- * BSC is not in @account-kit/infra, so we define it manually using defineAlchemyChain
- */
-export const bscChain = defineAlchemyChain({
-  chain: {
-    id: 56,
-    name: 'BNB Smart Chain',
-    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-    rpcUrls: {
-      default: { http: ['https://bsc-dataseed.binance.org'] },
-    },
-    blockExplorers: {
-      default: { name: 'BscScan', url: 'https://bscscan.com' },
-    },
-  },
-  rpcBaseUrl: 'https://bsc-dataseed.binance.org',
-});
-
-export const bscTestnetChain = defineAlchemyChain({
-  chain: {
-    id: 97,
-    name: 'BNB Smart Chain Testnet',
-    nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
-    rpcUrls: {
-      default: { http: ['https://data-seed-prebsc-1-s1.binance.org:8545'] },
-    },
-    blockExplorers: {
-      default: { name: 'BscScan', url: 'https://testnet.bscscan.com' },
-    },
-    testnet: true,
-  },
-  rpcBaseUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
-});
 
 /**
  * Lisk Chain Configuration
@@ -310,10 +257,6 @@ export const ALCHEMY_CHAINS: Record<string, Chain> = {
   avalanche_mainnet: avalancheChain,
   avalanche_fuji: avalancheFujiChain,
   
-  // BSC (Custom)
-  bsc_mainnet: bscChain,
-  bsc_testnet: bscTestnetChain,
-  
   // Lisk (Custom)
   lisk_mainnet: liskChain,
   lisk_sepolia: liskSepoliaChain,
@@ -351,7 +294,7 @@ export function isAlchemyNetworkSupported(network: string): network is Supported
 
 /**
  * Check if a network is officially supported by Alchemy for Account Abstraction
- * Returns false for custom chains (Avalanche, BSC, Lisk) that may not work with AA
+ * Returns false for custom chains (Avalanche, Lisk) that may not work with AA
  */
 export function isOfficiallySupported(network: string): boolean {
   const alchemyNetworkId = toAlchemyNetworkId(network);
@@ -402,7 +345,6 @@ export function getAvailableStablecoins(network: string): Array<{
   const STABLECOIN_DECIMALS: Record<SupportedStablecoin, number> = {
     USDC: 6,
     USDT: 6,
-    DAI: 18,
   };
   
   return Object.entries(networkStablecoins)
@@ -573,24 +515,6 @@ export const NETWORK_CONFIGS: Record<string, {
     explorerUrl: 'https://testnet.snowtrace.io',
     isTestnet: true,
     nativeCurrency: { name: 'AVAX', symbol: 'AVAX', decimals: 18 },
-  },
-
-  // BSC
-  bsc_mainnet: {
-    name: 'BNB Smart Chain',
-    chainId: 56,
-    rpcUrl: 'https://bsc-dataseed.binance.org',
-    explorerUrl: 'https://bscscan.com',
-    isTestnet: false,
-    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
-  },
-  bsc_testnet: {
-    name: 'BSC Testnet',
-    chainId: 97,
-    rpcUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545',
-    explorerUrl: 'https://testnet.bscscan.com',
-    isTestnet: true,
-    nativeCurrency: { name: 'tBNB', symbol: 'tBNB', decimals: 18 },
   },
 
   // Lisk

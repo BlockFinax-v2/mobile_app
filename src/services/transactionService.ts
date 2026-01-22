@@ -3,7 +3,7 @@
  * 
  * Handles all blockchain transaction operations including:
  * - Native token transfers (ETH, BNB)
- * - ERC-20 token transfers (USDT, USDC, DAI, etc.)
+ * - ERC-20 token transfers (USDT, USDC, etc.)
  * - Gas estimation and management
  * - Transaction broadcasting and monitoring
  * - Account Abstraction (AA) integration with automatic routing

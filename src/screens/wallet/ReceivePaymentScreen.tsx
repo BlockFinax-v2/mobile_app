@@ -39,7 +39,7 @@ export const ReceivePaymentScreen: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentMessage, setPaymentMessage] = useState("");
   const [currentNetworkId, setCurrentNetworkId] = useState<SupportedNetworkId>(
-    selectedNetwork.id
+    selectedNetwork.id,
   );
   const [selectedToken, setSelectedToken] = useState<TokenInfo | null>(null);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
@@ -74,7 +74,7 @@ export const ReceivePaymentScreen: React.FC = () => {
       const preferredToken =
         availableTokens.find((t) => t.symbol === "USDC") ||
         availableTokens.find(
-          (t) => t.address !== "0x0000000000000000000000000000000000000000"
+          (t) => t.address !== "0x0000000000000000000000000000000000000000",
         ) ||
         availableTokens[0];
 
@@ -174,7 +174,7 @@ export const ReceivePaymentScreen: React.FC = () => {
     if (!paymentAmount || !selectedToken) {
       Alert.alert(
         "Missing Information",
-        "Please enter an amount and select a token"
+        "Please enter an amount and select a token",
       );
       return;
     }
@@ -234,13 +234,13 @@ export const ReceivePaymentScreen: React.FC = () => {
       Vibration.vibrate(100);
       Alert.alert(
         "✅ Payment Request Created!",
-        `Request for ${paymentAmount} ${selectedToken.symbol} on ${selectedNetwork.name} has been created and will expire in 24 hours.`
+        `Request for ${paymentAmount} ${selectedToken.symbol} on ${selectedNetwork.name} has been created and will expire in 24 hours.`,
       );
     } catch (error) {
       console.error("Failed to create payment request:", error);
       Alert.alert(
         "Error",
-        "Failed to create payment request. Please try again."
+        "Failed to create payment request. Please try again.",
       );
     } finally {
       setIsCreatingRequest(false);
@@ -282,14 +282,10 @@ export const ReceivePaymentScreen: React.FC = () => {
         return "ethereum";
       case "MATIC":
         return "triangle";
-      case "BNB":
-        return "alpha-b-circle";
       case "USDC":
         return "currency-usd-circle";
       case "USDT":
         return "currency-usd";
-      case "DAI":
-        return "alpha-d-circle";
       default:
         return "currency-usd-circle-outline";
     }
@@ -301,14 +297,10 @@ export const ReceivePaymentScreen: React.FC = () => {
         return "#627EEA";
       case "MATIC":
         return "#8247E5";
-      case "BNB":
-        return "#F3BA2F";
       case "USDC":
         return "#2775CA";
       case "USDT":
         return "#26A17B";
-      case "DAI":
-        return "#F5AC37";
       default:
         return palette.neutralMid;
     }
@@ -583,7 +575,7 @@ export const ReceivePaymentScreen: React.FC = () => {
                   {
                     month: "short",
                     day: "numeric",
-                  }
+                  },
                 );
 
                 return (
@@ -611,12 +603,12 @@ export const ReceivePaymentScreen: React.FC = () => {
                               Vibration.vibrate(50);
                               Alert.alert(
                                 "Copied!",
-                                "Payment data copied to clipboard"
+                                "Payment data copied to clipboard",
                               );
                             },
                           },
                           { text: "Cancel", style: "cancel" },
-                        ]
+                        ],
                       );
                     }}
                   >

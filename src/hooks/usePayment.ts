@@ -239,8 +239,8 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
     let filteredTokens = allTokens;
     
     if (stableParams?.restrictToStablecoins) {
-      // Only allow stablecoins (USDC, USDT, DAI)
-      const stablecoinSymbols = ["USDC", "USDT", "DAI"];
+      // Only allow stablecoins (USDC, USDT)
+      const stablecoinSymbols = ["USDC", "USDT"];
       filteredTokens = allTokens.filter(token => stablecoinSymbols.includes(token.symbol));
     } else if (stableParams?.allowedTokens && stableParams.allowedTokens.length > 0) {
       // Only allow specific tokens
@@ -272,7 +272,6 @@ export function usePayment(params?: PaymentParams): UsePaymentReturn {
         // For restricted flows (Trade Finance/Treasury), always prefer USDC first
         preferredToken = tokensWithBalance.find(t => t.symbol === "USDC") ||
                         tokensWithBalance.find(t => t.symbol === "USDT") ||
-                        tokensWithBalance.find(t => t.symbol === "DAI") ||
                         tokensWithBalance[0] || null;
       } else if (stableParams?.returnTo?.includes("Marketplace") || stableParams?.returnTo?.includes("Trade")) {
         // For marketplace/trade flows, prefer native token

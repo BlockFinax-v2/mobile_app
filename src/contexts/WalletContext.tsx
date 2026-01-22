@@ -39,10 +39,8 @@ export type SupportedNetworkId =
   | "ethereum-mainnet"
   | "base-mainnet"
   | "lisk-mainnet"
-  | "bsc-mainnet"
   // Testnets
   | "ethereum-sepolia"
-  | "bsc-testnet"
   | "base-sepolia"
   | "lisk-sepolia";
 
@@ -91,12 +89,6 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         address: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
         decimals: 6,
       },
-      {
-        symbol: "DAI",
-        name: "Dai Stablecoin",
-        address: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
-        decimals: 18,
-      },
     ],
   },
   "base-mainnet": {
@@ -115,16 +107,10 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         decimals: 6,
       },
       {
-        symbol: "USDbC",
-        name: "USD Base Coin",
-        address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA",
+        symbol: "USDT",
+        name: "Tether USD",
+        address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2",
         decimals: 6,
-      },
-      {
-        symbol: "DAI",
-        name: "Dai Stablecoin",
-        address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
-        decimals: 18,
       },
     ],
   },
@@ -138,39 +124,16 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     isTestnet: false,
     stablecoins: [
       {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x176211869cA2b568f2A7D4EE941E073a821EE1ff",
+        decimals: 6,
+      },
+      {
         symbol: "USDT",
         name: "Tether USD",
         address: "0x05D032ac25d322df992303dCa074EE7392C117b9",
         decimals: 6,
-      },
-    ],
-  },
-  "bsc-mainnet": {
-    id: "bsc-mainnet",
-    name: "BNB Smart Chain",
-    chainId: 56,
-    rpcUrl: "https://bsc-dataseed1.binance.org",
-    explorerUrl: "https://bscscan.com",
-    primaryCurrency: "BNB",
-    isTestnet: false,
-    stablecoins: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
-        decimals: 18,
-      },
-      {
-        symbol: "USDT",
-        name: "Tether USD",
-        address: "0x55d398326f99059fF775485246999027B3197955",
-        decimals: 18,
-      },
-      {
-        symbol: "DAI",
-        name: "Dai Stablecoin",
-        address: "0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3",
-        decimals: 18,
       },
     ],
   },
@@ -196,29 +159,6 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         name: "Tether USD",
         address: "0x7169D38820dfd117C3FA1f22a697dBA58d90BA06",
         decimals: 6,
-      },
-    ],
-  },
-  "bsc-testnet": {
-    id: "bsc-testnet",
-    name: "BSC Testnet",
-    chainId: 97,
-    rpcUrl: "https://bsc-testnet-rpc.publicnode.com",
-    explorerUrl: "https://testnet.bscscan.com",
-    primaryCurrency: "BNB",
-    isTestnet: true,
-    stablecoins: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x64544969ed7EBf5f083679233325356EbE738930",
-        decimals: 18,
-      },
-      {
-        symbol: "USDT",
-        name: "Tether USD",
-        address: "0x337610d27c682E347C9cD60BD4b3b107C9d34dDd",
-        decimals: 18,
       },
     ],
   },
@@ -371,7 +311,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     Date | undefined
   >();
   const [selectedNetwork, setSelectedNetwork] = useState<WalletNetwork>(
-    NETWORKS["base-sepolia"]
+    NETWORKS["base-sepolia"],
   );
   const [transactions, setTransactions] = useState<RealTransaction[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
@@ -385,16 +325,19 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
 
   // Smart Account (AA) state
-  const [smartAccountAddress, setSmartAccountAddress] = useState<string | undefined>();
+  const [smartAccountAddress, setSmartAccountAddress] = useState<
+    string | undefined
+  >();
   const [isSmartAccountEnabled, setIsSmartAccountEnabled] = useState(true); // Enabled by default
   const [isSmartAccountDeployed, setIsSmartAccountDeployed] = useState(false);
-  const [isInitializingSmartAccount, setIsInitializingSmartAccount] = useState(false);
+  const [isInitializingSmartAccount, setIsInitializingSmartAccount] =
+    useState(false);
 
   const mainnetNetworks = useMemo(() => getMainnetNetworks(), []);
   const testnetNetworks = useMemo(() => getTestnetNetworks(), []);
   const getNetworkById = useCallback(
     (networkId: SupportedNetworkId) => NETWORKS[networkId],
-    []
+    [],
   );
 
   const balanceRefreshRef = useRef<boolean>(false);
@@ -414,7 +357,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       setSettings(nextSettings);
       await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(nextSettings));
     },
-    [setSettings]
+    [setSettings],
   );
 
   const updateSettings = useCallback(
@@ -422,7 +365,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const merged = { ...defaultSettings, ...settings, ...nextSettings };
       await persistSettings(merged);
     },
-    [persistSettings, settings]
+    [persistSettings, settings],
   );
 
   // Helper function to fetch balance with RPC fallbacks
@@ -442,7 +385,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
           console.log(
             `💰 ${forceRefresh ? "Force" : ""} fetching balance via RPC ${
               i + 1
-            }/${rpcEndpoints.length}: ${rpcUrl}`
+            }/${rpcEndpoints.length}: ${rpcUrl}`,
           );
 
           const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
@@ -454,21 +397,21 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
           const tokens = await getAllTokenBalances(
             address,
             selectedNetwork,
-            provider
+            provider,
           );
 
           // Calculate real USD values using price service
           const primaryUsdValue = await priceService.calculateUSDValue(
             selectedNetwork.primaryCurrency,
             formatted,
-            selectedNetwork
+            selectedNetwork,
           );
 
           // Calculate USD values for tokens (excluding native token to avoid double counting)
           // Native token USD value is already calculated in primaryUsdValue
           const nonNativeTokens = tokens.filter(
             (token) =>
-              token.address !== "0x0000000000000000000000000000000000000000"
+              token.address !== "0x0000000000000000000000000000000000000000",
           );
 
           const tokensWithUSD = await Promise.all(
@@ -476,19 +419,19 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
               const usdValue = await priceService.calculateUSDValue(
                 token.symbol,
                 token.balance,
-                selectedNetwork
+                selectedNetwork,
               );
               return {
                 ...token,
                 usdValue,
               };
-            })
+            }),
           );
 
           // Calculate total USD value from stablecoins only
           const totalTokenUsdValue = tokensWithUSD.reduce(
             (sum, token) => sum + (token.usdValue || 0),
-            0
+            0,
           );
           const totalUsdValue = primaryUsdValue + totalTokenUsdValue;
 
@@ -521,10 +464,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
       // If all RPCs failed, throw the last error
       throw new Error(
-        `All RPC endpoints failed. Last error: ${lastError?.message}`
+        `All RPC endpoints failed. Last error: ${lastError?.message}`,
       );
     },
-    [address, selectedNetwork]
+    [address, selectedNetwork],
   );
 
   const refreshBalance = useCallback(async () => {
@@ -553,7 +496,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
 
       if (lastBalanceUpdate && timeSinceLastUpdate < adaptiveThrottle) {
         console.log(
-          `⏰ Balance updated recently (${timeSinceLastUpdate}ms < ${adaptiveThrottle}ms), skipping refresh`
+          `⏰ Balance updated recently (${timeSinceLastUpdate}ms < ${adaptiveThrottle}ms), skipping refresh`,
         );
         performanceMonitor.endOperation(opId, true);
         return;
@@ -582,7 +525,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       performanceMonitor.endOperation(
         opId,
         false,
-        error instanceof Error ? error.message : String(error)
+        error instanceof Error ? error.message : String(error),
       );
       // Don't reset balances to zero on error, keep existing data
       // This prevents the flickering issue that creates bad UX
@@ -671,7 +614,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const addresses = [address];
       if (smartAccountAddress && smartAccountAddress !== address) {
         addresses.push(smartAccountAddress);
-        console.log(`🔍 Fetching transactions for EOA (${address}) and Smart Account (${smartAccountAddress})`);
+        console.log(
+          `🔍 Fetching transactions for EOA (${address}) and Smart Account (${smartAccountAddress})`,
+        );
       }
 
       // Fetch transactions for all addresses
@@ -680,46 +625,57 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         const txs = await realTransactionService.getTransactionHistory(
           addr,
           selectedNetwork,
-          { limit: 20 } // Get last 20 transactions per address
+          { limit: 20 }, // Get last 20 transactions per address
         );
         allTransactions.push(...txs);
       }
 
       // Remove duplicates and sort by timestamp
-      const uniqueTransactions = allTransactions.filter((tx, index, self) =>
-        index === self.findIndex((t) => t.hash === tx.hash)
+      const uniqueTransactions = allTransactions.filter(
+        (tx, index, self) =>
+          index === self.findIndex((t) => t.hash === tx.hash),
       );
-      uniqueTransactions.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+      uniqueTransactions.sort(
+        (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
+      );
 
       // Limit to 20 total transactions
       const limitedTransactions = uniqueTransactions.slice(0, 20);
 
-      console.log(`✅ Real transactions loaded: ${limitedTransactions.length} (from ${addresses.length} address${addresses.length > 1 ? 'es' : ''})`);
-      
+      console.log(
+        `✅ Real transactions loaded: ${limitedTransactions.length} (from ${addresses.length} address${addresses.length > 1 ? "es" : ""})`,
+      );
+
       // Merge with existing transactions in state (which includes pending/local transactions)
-      setTransactions(prevTxs => {
+      setTransactions((prevTxs) => {
         // Keep pending transactions and local transactions that aren't in the new list
-        const pendingTxs = prevTxs.filter(tx => 
-          tx.status === 'pending' || !limitedTransactions.some(newTx => newTx.hash === tx.hash)
+        const pendingTxs = prevTxs.filter(
+          (tx) =>
+            tx.status === "pending" ||
+            !limitedTransactions.some((newTx) => newTx.hash === tx.hash),
         );
-        
+
         // Combine and remove duplicates
         const combined = [...pendingTxs, ...limitedTransactions];
-        const unique = combined.filter((tx, index, self) =>
-          index === self.findIndex((t) => t.hash === tx.hash || t.id === tx.id)
+        const unique = combined.filter(
+          (tx, index, self) =>
+            index ===
+            self.findIndex((t) => t.hash === tx.hash || t.id === tx.id),
         );
-        
+
         // Sort by timestamp (most recent first)
         unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-        
+
         // Persist merged transactions to storage
-        secureStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(unique)).catch(error => {
-          console.error('❌ Failed to persist transactions:', error);
-        });
-        
+        secureStorage
+          .setItem(TRANSACTIONS_KEY, JSON.stringify(unique))
+          .catch((error) => {
+            console.error("❌ Failed to persist transactions:", error);
+          });
+
         return unique;
       });
-      
+
       setLastTransactionUpdate(now);
     } catch (error) {
       console.error("Failed to refresh transactions", error);
@@ -751,7 +707,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     try {
       // Try to load from mnemonic first
       const mnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      
+
       if (mnemonic) {
         const wallet = ethers.Wallet.fromMnemonic(mnemonic);
         setAddress(wallet.address);
@@ -760,12 +716,12 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         await refreshBalance();
         return true;
       }
-      
+
       // If no mnemonic, try encrypted private key (for social auth/instant wallets)
-      const password = await secureStorage.getSecureItem('blockfinax.password');
+      const password = await secureStorage.getSecureItem("blockfinax.password");
       if (password) {
         const privateKey = await secureStorage.getDecryptedPrivateKey(password);
-        
+
         if (privateKey) {
           const wallet = new ethers.Wallet(privateKey);
           setAddress(wallet.address);
@@ -777,7 +733,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       }
 
       // No wallet found
-      console.log("No mnemonic or private key found, wallet cannot be hydrated");
+      console.log(
+        "No mnemonic or private key found, wallet cannot be hydrated",
+      );
       setIsUnlocked(false);
       return false;
     } catch (error) {
@@ -805,59 +763,74 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   }, [refreshTransactions]);
 
   // Add pending transaction immediately to UI (optimistic update)
-  const addPendingTransaction = useCallback(async (tx: Partial<RealTransaction>) => {
-    console.log('═══════════════════════════════════════════════');
-    console.log('💫 addPendingTransaction CALLED');
-    console.log('═══════════════════════════════════════════════');
-    console.log('📥 Input transaction:', JSON.stringify(tx, null, 2));
-    console.log('Current transactions count:', transactions.length);
-    
-    const newTransaction: RealTransaction = {
-      id: tx.id || tx.hash || `pending-${Date.now()}`,
-      hash: tx.hash || '',
-      from: tx.from || address || '',
-      to: tx.to || '',
-      value: tx.value || '0',
-      tokenSymbol: tx.tokenSymbol || selectedNetwork.primaryCurrency,
-      tokenAddress: tx.tokenAddress,
-      type: tx.type || 'send',
-      status: tx.status || 'pending',
-      timestamp: tx.timestamp || new Date(),
-      blockNumber: tx.blockNumber,
-      gasUsed: tx.gasUsed,
-      gasPrice: tx.gasPrice,
-      description: tx.description || `${tx.type === 'send' ? 'Sent' : 'Received'} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
-      amount: tx.amount || `${tx.type === 'send' ? '-' : '+'}${tx.value} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
-    };
+  const addPendingTransaction = useCallback(
+    async (tx: Partial<RealTransaction>) => {
+      console.log("═══════════════════════════════════════════════");
+      console.log("💫 addPendingTransaction CALLED");
+      console.log("═══════════════════════════════════════════════");
+      console.log("📥 Input transaction:", JSON.stringify(tx, null, 2));
+      console.log("Current transactions count:", transactions.length);
 
-    console.log('🔧 Constructed transaction:', JSON.stringify(newTransaction, null, 2));
+      const newTransaction: RealTransaction = {
+        id: tx.id || tx.hash || `pending-${Date.now()}`,
+        hash: tx.hash || "",
+        from: tx.from || address || "",
+        to: tx.to || "",
+        value: tx.value || "0",
+        tokenSymbol: tx.tokenSymbol || selectedNetwork.primaryCurrency,
+        tokenAddress: tx.tokenAddress,
+        type: tx.type || "send",
+        status: tx.status || "pending",
+        timestamp: tx.timestamp || new Date(),
+        blockNumber: tx.blockNumber,
+        gasUsed: tx.gasUsed,
+        gasPrice: tx.gasPrice,
+        description:
+          tx.description ||
+          `${tx.type === "send" ? "Sent" : "Received"} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
+        amount:
+          tx.amount ||
+          `${tx.type === "send" ? "-" : "+"}${tx.value} ${tx.tokenSymbol || selectedNetwork.primaryCurrency}`,
+      };
 
-    // Add to the beginning of transactions array (most recent first)
-    setTransactions(prevTxs => {
-      console.log('📊 Previous transactions count:', prevTxs.length);
-      
-      // Check if transaction already exists
-      const exists = prevTxs.some(t => t.hash === newTransaction.hash || t.id === newTransaction.id);
-      if (exists) {
-        console.log('⚠️ Transaction already exists in list, skipping add');
-        return prevTxs;
-      }
-      
-      const newTxs = [newTransaction, ...prevTxs];
-      console.log('✅ Added pending transaction to list!');
-      console.log('📊 New transactions count:', newTxs.length);
-      
-      // Persist to storage
-      secureStorage.setItem(TRANSACTIONS_KEY, JSON.stringify(newTxs)).then(() => {
-        console.log('💾 Transactions persisted to storage');
-      }).catch(error => {
-        console.error('❌ Failed to persist transactions:', error);
+      console.log(
+        "🔧 Constructed transaction:",
+        JSON.stringify(newTransaction, null, 2),
+      );
+
+      // Add to the beginning of transactions array (most recent first)
+      setTransactions((prevTxs) => {
+        console.log("📊 Previous transactions count:", prevTxs.length);
+
+        // Check if transaction already exists
+        const exists = prevTxs.some(
+          (t) => t.hash === newTransaction.hash || t.id === newTransaction.id,
+        );
+        if (exists) {
+          console.log("⚠️ Transaction already exists in list, skipping add");
+          return prevTxs;
+        }
+
+        const newTxs = [newTransaction, ...prevTxs];
+        console.log("✅ Added pending transaction to list!");
+        console.log("📊 New transactions count:", newTxs.length);
+
+        // Persist to storage
+        secureStorage
+          .setItem(TRANSACTIONS_KEY, JSON.stringify(newTxs))
+          .then(() => {
+            console.log("💾 Transactions persisted to storage");
+          })
+          .catch((error) => {
+            console.error("❌ Failed to persist transactions:", error);
+          });
+
+        console.log("═══════════════════════════════════════════════");
+        return newTxs;
       });
-      
-      console.log('═══════════════════════════════════════════════');
-      return newTxs;
-    });
-  }, [address, selectedNetwork, transactions.length]);
+    },
+    [address, selectedNetwork, transactions.length],
+  );
 
   // Simple initialization function for app startup
   const initializeWalletData = useCallback(async () => {
@@ -874,29 +847,35 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const savedTransactions = await secureStorage.getItem(TRANSACTIONS_KEY);
       if (savedTransactions) {
         try {
-          const parsedTransactions = JSON.parse(savedTransactions) as RealTransaction[];
+          const parsedTransactions = JSON.parse(
+            savedTransactions,
+          ) as RealTransaction[];
           // Convert timestamp strings back to Date objects
-          const transactionsWithDates = parsedTransactions.map(tx => ({
+          const transactionsWithDates = parsedTransactions.map((tx) => ({
             ...tx,
-            timestamp: new Date(tx.timestamp)
+            timestamp: new Date(tx.timestamp),
           }));
           setTransactions(transactionsWithDates);
-          console.log(`📥 Loaded ${transactionsWithDates.length} transactions from storage`);
+          console.log(
+            `📥 Loaded ${transactionsWithDates.length} transactions from storage`,
+          );
         } catch (error) {
-          console.error('❌ Failed to parse saved transactions:', error);
+          console.error("❌ Failed to parse saved transactions:", error);
         }
       }
 
       // Check if we have a wallet (either mnemonic or encrypted private key)
       const existingMnemonic = await secureStorage.getSecureItem(MNEMONIC_KEY);
-      const existingPrivateKey = await secureStorage.getSecureItem('blockfinax.privateKey.encrypted');
-      
-      console.log('🔍 Checking wallet existence:', {
+      const existingPrivateKey = await secureStorage.getSecureItem(
+        "blockfinax.privateKey.encrypted",
+      );
+
+      console.log("🔍 Checking wallet existence:", {
         hasMnemonic: !!existingMnemonic,
         hasEncryptedKey: !!existingPrivateKey,
-        hasWallet: Boolean(existingMnemonic || existingPrivateKey)
+        hasWallet: Boolean(existingMnemonic || existingPrivateKey),
       });
-      
+
       setHasWallet(Boolean(existingMnemonic || existingPrivateKey));
 
       // Initialize biometric capability and settings
@@ -945,20 +924,27 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
           "Secure Your Wallet",
           "Create a password to encrypt your wallet",
           [
-            { text: "Cancel", onPress: () => reject(new Error("User cancelled")), style: "cancel" },
-            { 
-              text: "Create", 
+            {
+              text: "Cancel",
+              onPress: () => reject(new Error("User cancelled")),
+              style: "cancel",
+            },
+            {
+              text: "Create",
               onPress: (pwd?: string) => {
                 if (pwd && pwd.length >= 8) {
                   resolve(pwd);
                 } else {
-                  Alert.alert("Error", "Password must be at least 8 characters");
+                  Alert.alert(
+                    "Error",
+                    "Password must be at least 8 characters",
+                  );
                   reject(new Error("Password too short"));
                 }
-              }
+              },
             },
           ],
-          "secure-text"
+          "secure-text",
         );
       });
 
@@ -976,26 +962,32 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       if (isBiometricAvailable) {
         Alert.alert(
           "Enable Biometric Authentication?",
-          `Use ${Platform.OS === 'ios' ? 'Face ID/Touch ID' : 'fingerprint'} to unlock your wallet and sign transactions securely.`,
+          `Use ${Platform.OS === "ios" ? "Face ID/Touch ID" : "fingerprint"} to unlock your wallet and sign transactions securely.`,
           [
             { text: "Skip", style: "cancel" },
-            { 
-              text: "Enable", 
+            {
+              text: "Enable",
               onPress: async () => {
                 try {
                   await biometricService.enableBiometricAuth(password);
                   setIsBiometricEnabled(true);
                   const newSettings = { ...settings, enableBiometrics: true };
                   setSettings(newSettings);
-                  await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+                  await secureStorage.setItem(
+                    SETTINGS_KEY,
+                    JSON.stringify(newSettings),
+                  );
                   Alert.alert("Success", "Biometric authentication enabled!");
                 } catch (error) {
                   console.error("Failed to enable biometrics:", error);
-                  Alert.alert("Error", "Failed to enable biometric authentication");
+                  Alert.alert(
+                    "Error",
+                    "Failed to enable biometric authentication",
+                  );
                 }
-              }
+              },
             },
-          ]
+          ],
         );
       }
     } finally {
@@ -1028,7 +1020,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
           }
           await secureStorage.setSecureItem(
             MNEMONIC_KEY,
-            hdWallet.mnemonic.phrase
+            hdWallet.mnemonic.phrase,
           );
         } else if (privateKey) {
           wallet = new ethers.Wallet(privateKey.trim());
@@ -1049,55 +1041,61 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         if (isBiometricAvailable) {
           Alert.alert(
             "Enable Biometric Authentication?",
-            `Use ${Platform.OS === 'ios' ? 'Face ID/Touch ID' : 'fingerprint'} to unlock your wallet and sign transactions securely.`,
+            `Use ${Platform.OS === "ios" ? "Face ID/Touch ID" : "fingerprint"} to unlock your wallet and sign transactions securely.`,
             [
               { text: "Skip", style: "cancel" },
-              { 
-                text: "Enable", 
+              {
+                text: "Enable",
                 onPress: async () => {
                   try {
                     await biometricService.enableBiometricAuth(password);
                     setIsBiometricEnabled(true);
                     const newSettings = { ...settings, enableBiometrics: true };
                     setSettings(newSettings);
-                    await secureStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+                    await secureStorage.setItem(
+                      SETTINGS_KEY,
+                      JSON.stringify(newSettings),
+                    );
                     Alert.alert("Success", "Biometric authentication enabled!");
                   } catch (error) {
                     console.error("Failed to enable biometrics:", error);
-                    Alert.alert("Error", "Failed to enable biometric authentication");
+                    Alert.alert(
+                      "Error",
+                      "Failed to enable biometric authentication",
+                    );
                   }
-                }
+                },
               },
-            ]
+            ],
           );
         }
       } finally {
         setIsLoading(false);
       }
     },
-    [refreshBalance, isBiometricAvailable, settings]
+    [refreshBalance, isBiometricAvailable, settings],
   );
 
   const unlockWallet = useCallback(
     async (password: string) => {
-      console.log('[WalletContext] 🔓 Unlock wallet attempt');
-      
+      console.log("[WalletContext] 🔓 Unlock wallet attempt");
+
       const savedPassword = await secureStorage.getSecureItem(PASSWORD_KEY);
-      
-      console.log('[WalletContext] Password check:', {
+
+      console.log("[WalletContext] Password check:", {
         hasSavedPassword: !!savedPassword,
-        passwordsMatch: savedPassword === password
+        passwordsMatch: savedPassword === password,
       });
-      
+
       if (savedPassword && savedPassword !== password) {
-        console.error('[WalletContext] ❌ Password mismatch');
+        console.error("[WalletContext] ❌ Password mismatch");
         throw new Error("Invalid password provided.");
       }
 
-      console.log('[WalletContext] 💧 Hydrating wallet...');
+      console.log("[WalletContext] 💧 Hydrating wallet...");
       await hydrateWallet();
 
-      console.log('[WalletContext] ✅ Wallet unlocked, loading data...');
+      console.log("[WalletContext] ✅ Wallet unlocked, loading data...");
       // Load data after unlock
       forceRefreshBalance();
       refreshTransactions();
@@ -1118,7 +1116,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       refreshTransactions,
       address,
       selectedNetwork.chainId,
-    ]
+    ],
   );
 
   const unlockWithBiometrics = useCallback(async () => {
@@ -1146,7 +1144,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         throw error;
       }
     },
-    [settings]
+    [settings],
   );
 
   const disableBiometricAuth = useCallback(async () => {
@@ -1203,10 +1201,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
             }
           }, 100); // Short delay for instant UI feedback
         },
-        3000
+        3000,
       );
     },
-    [isUnlocked, forceRefreshBalance, refreshTransactions]
+    [isUnlocked, forceRefreshBalance, refreshTransactions],
   );
 
   const switchToken = useCallback(
@@ -1235,7 +1233,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         setIsRefreshingBalance(false);
       }
     },
-    [isUnlocked, forceRefreshBalance]
+    [isUnlocked, forceRefreshBalance],
   );
 
   const resetWalletData = useCallback(async () => {
@@ -1271,7 +1269,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   const initializeSmartAccount = useCallback(async () => {
     // This will be called by AlchemySmartAccountContext
     // We just expose this method for manual initialization if needed
-    console.log('[WalletContext] Smart account initialization requested');
+    console.log("[WalletContext] Smart account initialization requested");
     setIsInitializingSmartAccount(true);
     // The actual initialization happens in AlchemySmartAccountContext
     // which will call setSmartAccountInfo when ready
@@ -1280,18 +1278,24 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   /**
    * Set smart account information from AlchemySmartAccountContext
    */
-  const setSmartAccountInfo = useCallback((address: string, isDeployed: boolean) => {
-    console.log('[WalletContext] Setting smart account info:', { address, isDeployed });
-    setSmartAccountAddress(address);
-    setIsSmartAccountDeployed(isDeployed);
-    setIsInitializingSmartAccount(false);
-  }, []);
+  const setSmartAccountInfo = useCallback(
+    (address: string, isDeployed: boolean) => {
+      console.log("[WalletContext] Setting smart account info:", {
+        address,
+        isDeployed,
+      });
+      setSmartAccountAddress(address);
+      setIsSmartAccountDeployed(isDeployed);
+      setIsInitializingSmartAccount(false);
+    },
+    [],
+  );
 
   /**
    * Clear smart account information
    */
   const clearSmartAccountInfo = useCallback(() => {
-    console.log('[WalletContext] Clearing smart account info');
+    console.log("[WalletContext] Clearing smart account info");
     setSmartAccountAddress(undefined);
     setIsSmartAccountDeployed(false);
     setIsInitializingSmartAccount(false);
@@ -1309,7 +1313,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       testnetNetworks,
       getNetworkById,
     }),
-    [mainnetNetworks, testnetNetworks, getNetworkById]
+    [mainnetNetworks, testnetNetworks, getNetworkById],
   );
 
   // Memoize functions separately to avoid unnecessary re-renders
@@ -1357,7 +1361,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       initializeSmartAccount,
       setSmartAccountInfo,
       clearSmartAccountInfo,
-    ]
+    ],
   );
 
   const value = useMemo<WalletContextValue>(
@@ -1410,7 +1414,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       // Pre-memoized stable objects
       networkHelpers,
       walletActions,
-    ]
+    ],
   );
 
   // Log performance summary on unmount for debugging
@@ -1451,7 +1455,7 @@ export function getStablecoinsForNetwork(networkId: SupportedNetworkId) {
 
 export function getStablecoinBySymbol(
   networkId: SupportedNetworkId,
-  symbol: string
+  symbol: string,
 ) {
   const network = NETWORKS[networkId];
   return network?.stablecoins?.find((coin) => coin.symbol === symbol);

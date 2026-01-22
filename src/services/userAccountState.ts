@@ -22,7 +22,7 @@ export interface UserAccountState {
   deploymentDate: string | null;
   
   // Preferences
-  preferredGasToken: string; // 'USDC', 'USDT', 'DAI', 'native'
+  preferredGasToken: string; // 'USDC', 'USDT', 'native'
   autoUseSponsorship: boolean; // Automatically use sponsored gas when available
   
   // Stats

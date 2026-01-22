@@ -41,15 +41,8 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
     {
       symbol: 'USDT',
       name: 'Tether USD (Bridged)',
-      address: '0x7E2db2968f80E5cACFB0bd93C724d0447a6b6D8c', // Common testnet USDT
+      address: '0x7e2db2968f80e5cacfb0bd93c724d0447a6b6d8c', // Common testnet USDT (lowercase to avoid checksum)
       decimals: 6,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin (Bridged)',
-      address: '0x4F96Fe3b7A6Cf9725f59d353F723c1bDb64CA6Aa', // Common testnet DAI
-      decimals: 18,
       targetPeg: 1.0,
     },
   ],
@@ -72,14 +65,6 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
       priceFeedAddress: '0x3E7d1eAB13ad0104d2750B8863b489D65364e32D',
       targetPeg: 1.0,
     },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin',
-      address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
-      decimals: 18,
-      priceFeedAddress: '0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9',
-      targetPeg: 1.0,
-    },
   ],
 
   // Ethereum Sepolia (Testnet)
@@ -99,13 +84,6 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
       decimals: 6,
       targetPeg: 1.0,
     },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin',
-      address: '0x68194a729C2450ad26072b3D33ADaCbcef39D574', // Sepolia DAI
-      decimals: 18,
-      targetPeg: 1.0,
-    },
   ],
 
   // Base Mainnet
@@ -119,17 +97,10 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
       targetPeg: 1.0,
     },
     {
-      symbol: 'USDbC',
-      name: 'USD Base Coin',
-      address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
+      symbol: 'USDT',
+      name: 'Tether USD',
+      address: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
       decimals: 6,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin',
-      address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb',
-      decimals: 18,
       targetPeg: 1.0,
     },
   ],
@@ -146,67 +117,8 @@ export const NETWORK_STABLECOINS: Record<number, StablecoinConfig[]> = {
     {
       symbol: 'USDT',
       name: 'Tether USD',
-      address: '0xf3e622265cad2C68330A46346d6E2C4Bde19A251', // Base Sepolia USDT
+      address: '0xf3e622265cad2c68330a46346d6e2c4bde19a251', // Base Sepolia USDT (lowercase to avoid checksum)
       decimals: 6,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'DAI',
-      name: 'Dai Stablecoin',
-      address: '0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb', // Base Sepolia DAI
-      decimals: 18,
-      targetPeg: 1.0,
-    },
-  ],
-
-  // BSC Mainnet
-  56: [
-    {
-      symbol: 'USDC',
-      name: 'USD Coin',
-      address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
-      decimals: 18,
-      priceFeedAddress: '0x51597f405303C4377E36123cBc172b13269EA163',
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'USDT',
-      name: 'Tether USD',
-      address: '0x55d398326f99059fF775485246999027B3197955',
-      decimals: 18,
-      priceFeedAddress: '0xB97Ad0E74fa7d920791E90258A6E2085088b4320',
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'BUSD',
-      name: 'Binance USD',
-      address: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
-      decimals: 18,
-      targetPeg: 1.0,
-    },
-  ],
-
-  // BSC Testnet
-  97: [
-    {
-      symbol: 'USDC',
-      name: 'USD Coin',
-      address: '0x64544969ed7EBf5f083679233325356EbE738930', // BSC Testnet USDC
-      decimals: 18,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'USDT',
-      name: 'Tether USD',
-      address: '0x337610d27c682E347C9cD60BD4b3b107C9d34dDd', // BSC Testnet USDT
-      decimals: 18,
-      targetPeg: 1.0,
-    },
-    {
-      symbol: 'BUSD',
-      name: 'Binance USD',
-      address: '0xeD24FC36d5Ee211Ea25A80239Fb8C4Cfd80f12Ee', // BSC Testnet BUSD
-      decimals: 18,
       targetPeg: 1.0,
     },
   ],

@@ -2,7 +2,7 @@
  * Multi-Token Multi-Network Staking Service
  * 
  * Integrated with upgraded Diamond contracts supporting:
- * - Multiple stablecoins (USDC, USDT, DAI)
+ * - Multiple stablecoins (USDC, USDT)
  * - Multiple networks (Lisk Sepolia, Base Sepolia)
  * - Multi-token staking via LiquidityPoolFacet
  * - Token management via GovernanceFacet

@@ -128,12 +128,8 @@ class PriceService {
   private mapSymbolsToCoinIds(symbols: string[]): string[] {
     const symbolMap: { [key: string]: string } = {
       'eth': 'ethereum',
-      'bnb': 'binancecoin',
       'usdc': 'usd-coin',
       'usdt': 'tether',
-      'dai': 'dai',
-      'usdb': 'usd-base-coin',
-      'usdbc': 'usd-base-coin',
     };
 
     return symbols.map(symbol => 
@@ -147,12 +143,8 @@ class PriceService {
   private getFallbackPrices(): { [key: string]: number } {
     return {
       'eth': 2500,
-      'bnb': 240,
       'usdc': 1.00,
       'usdt': 1.00,
-      'dai': 1.00,
-      'usdb': 1.00,
-      'usdbc': 1.00,
     };
   }
 
@@ -160,7 +152,7 @@ class PriceService {
    * Check if a token is a stablecoin
    */
   private isStablecoin(symbol: string): boolean {
-    const stablecoins = ['usdc', 'usdt', 'dai', 'usdb', 'usdbc', 'busd', 'tusd'];
+    const stablecoins = ['usdc', 'usdt'];
     return stablecoins.includes(symbol.toLowerCase());
   }
 

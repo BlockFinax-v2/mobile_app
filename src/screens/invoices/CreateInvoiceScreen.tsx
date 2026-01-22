@@ -24,13 +24,15 @@ interface InvoiceItem {
 
 export const CreateInvoiceScreen: React.FC = () => {
   const navigation = useNavigation();
-  
+
   // Form state
   const [clientName, setClientName] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [clientWallet, setClientWallet] = useState("");
   const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [issueDate, setIssueDate] = useState(new Date().toISOString().split("T")[0]);
+  const [issueDate, setIssueDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
   const [dueDate, setDueDate] = useState("");
   const [items, setItems] = useState<InvoiceItem[]>([
     { description: "", quantity: "1", rate: "", amount: "0" },
@@ -38,10 +40,13 @@ export const CreateInvoiceScreen: React.FC = () => {
   const [notes, setNotes] = useState("");
   const [selectedCurrency, setSelectedCurrency] = useState("USDC");
 
-  const currencies = ["USDC", "USDT", "DAI", "WETH", "WBTC"];
+  const currencies = ["USDC", "USDT", "WETH", "WBTC"];
 
   const addItem = () => {
-    setItems([...items, { description: "", quantity: "1", rate: "", amount: "0" }]);
+    setItems([
+      ...items,
+      { description: "", quantity: "1", rate: "", amount: "0" },
+    ]);
   };
 
   const removeItem = (index: number) => {
@@ -50,22 +55,29 @@ export const CreateInvoiceScreen: React.FC = () => {
     }
   };
 
-  const updateItem = (index: number, field: keyof InvoiceItem, value: string) => {
+  const updateItem = (
+    index: number,
+    field: keyof InvoiceItem,
+    value: string,
+  ) => {
     const updatedItems = [...items];
     updatedItems[index][field] = value;
-    
+
     // Calculate amount when quantity or rate changes
     if (field === "quantity" || field === "rate") {
       const quantity = parseFloat(updatedItems[index].quantity) || 0;
       const rate = parseFloat(updatedItems[index].rate) || 0;
       updatedItems[index].amount = (quantity * rate).toFixed(2);
     }
-    
+
     setItems(updatedItems);
   };
 
   const calculateTotal = () => {
-    return items.reduce((total, item) => total + parseFloat(item.amount || "0"), 0);
+    return items.reduce(
+      (total, item) => total + parseFloat(item.amount || "0"),
+      0,
+    );
   };
 
   const handleCreateInvoice = () => {
@@ -89,7 +101,7 @@ export const CreateInvoiceScreen: React.FC = () => {
           text: "OK",
           onPress: () => navigation.goBack(),
         },
-      ]
+      ],
     );
   };
 
@@ -197,7 +209,8 @@ export const CreateInvoiceScreen: React.FC = () => {
                 <Text
                   style={[
                     styles.currencyText,
-                    selectedCurrency === currency && styles.selectedCurrencyText,
+                    selectedCurrency === currency &&
+                      styles.selectedCurrencyText,
                   ]}
                 >
                   {currency}
@@ -240,20 +253,24 @@ export const CreateInvoiceScreen: React.FC = () => {
                   </TouchableOpacity>
                 )}
               </View>
-              
+
               <Input
                 label="Description"
                 value={item.description}
-                onChangeText={(value) => updateItem(index, "description", value)}
+                onChangeText={(value) =>
+                  updateItem(index, "description", value)
+                }
                 placeholder="Describe the service or product"
               />
-              
+
               <View style={styles.itemRow}>
                 <View style={styles.quantityField}>
                   <Input
                     label="Qty"
                     value={item.quantity}
-                    onChangeText={(value) => updateItem(index, "quantity", value)}
+                    onChangeText={(value) =>
+                      updateItem(index, "quantity", value)
+                    }
                     placeholder="1"
                     keyboardType="numeric"
                   />
