@@ -31,6 +31,7 @@ import { useWallet } from "../../contexts/WalletContext";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { MessagesStackParamList } from "../../navigation/types";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type ChatScreenNavigationProp = StackNavigationProp<
   MessagesStackParamList,
@@ -90,6 +91,7 @@ export const ChatScreen: React.FC = () => {
   // Set navigation options
   useEffect(() => {
     navigation.setOptions({
+      headerShown:true,
       headerTitle: () => (
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerContactName}>{displayName}</Text>
@@ -125,7 +127,6 @@ export const ChatScreen: React.FC = () => {
     });
   }, [navigation, displayName, isOnline]);
 
-  // Handle typing indicators
   useEffect(() => {
     if (conversationId && message.trim()) {
       sendTypingIndicator(conversationId, true);
@@ -585,7 +586,7 @@ export const ChatScreen: React.FC = () => {
   };
 
   return (
-    <Screen preset="fixed">
+    <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
       <View style={styles.container}>
         <KeyboardAvoidingView
           style={styles.keyboardView}
@@ -601,9 +602,7 @@ export const ChatScreen: React.FC = () => {
             contentContainerStyle={styles.messagesContainer}
             showsVerticalScrollIndicator={false}
             ListFooterComponent={renderTypingIndicator}
-            onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: true })
-            }
+            onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
           />
 
           {/* Input Area */}
@@ -670,7 +669,7 @@ export const ChatScreen: React.FC = () => {
           </View>
         </KeyboardAvoidingView>
       </View>
-    </Screen>
+    </SafeAreaView>
   );
 };
 
