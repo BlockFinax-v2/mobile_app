@@ -6,11 +6,12 @@ import { DebugTool } from "@/components/ui/DebugTool";
 import { useWallet } from "@/contexts/WalletContext";
 import { RootStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Animated, StyleSheet, View } from "react-native";
+import { Alert, Animated, StyleSheet, View, Pressable } from "react-native";
+import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 
 type UnlockForm = {
   password: string;
@@ -19,10 +20,28 @@ type UnlockForm = {
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 export const UnlockWalletScreen: React.FC = () => {
+  const eyeScale = useRef(new Animated.Value(1)).current;
+
+  const animateEye = () => {
+    Animated.sequence([
+      Animated.timing(eyeScale, {
+        toValue: 0.85,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(eyeScale, {
+        toValue: 1,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+
   const {
     unlockWallet,
     unlockWithBiometrics,
-    settings,
+    // settings,
     isBiometricAvailable,
     isBiometricEnabled,
   } = useWallet();
@@ -122,6 +141,7 @@ export const UnlockWalletScreen: React.FC = () => {
             rules={{ required: true }}
             render={({ field: { onChange, value }, fieldState }) => (
               <Input
+                position="right"
                 label="Password"
                 value={value}
                 onChangeText={onChange}
@@ -130,16 +150,27 @@ export const UnlockWalletScreen: React.FC = () => {
                 autoCorrect={false}
                 placeholder="Enter wallet password"
                 error={fieldState.error ? "Password is required" : undefined}
+                icon={
+                  <Pressable
+                    onPress={() => {
+                      animateEye();
+                      setSecureText(prev => !prev);
+                    }}
+                  >
+                    <Animated.View style={{ transform: [{ scale: eyeScale }] }}>
+                      <MaterialCommunityIcons
+                        name={secureText ? "eye-off-outline" : "eye-outline"}
+                        size={22}
+                        color={palette.neutralMid}
+                      />
+                    </Animated.View>
+                  </Pressable>
+                }
               />
+
             )}
           />
         </Animated.View>
-
-        <Button
-          label={secureText ? "Show Password" : "Hide Password"}
-          variant="outline"
-          onPress={() => setSecureText((prev) => !prev)}
-        />
 
         <Button
           label="Unlock Wallet"
