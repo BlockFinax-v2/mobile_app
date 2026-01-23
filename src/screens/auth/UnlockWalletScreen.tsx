@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   unlockButton: {
-    marginTop: 24,
+    marginTop: 4,
   },
   biometricButton: {
     marginTop: 12,

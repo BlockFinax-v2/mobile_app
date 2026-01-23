@@ -384,7 +384,7 @@ export default function DashboardHomeScreen() {
           <View style={styles.userInfo}>
             <Text style={styles.welcomeText}>Welcome back</Text>
             <Text style={styles.userAddress}>
-              {accountDisplay || "BlockFinaX User"}
+              {typeof accountDisplay === "string" ? accountDisplay : "BlockFinaX User"}
             </Text>
           </View>
           <View style={styles.headerIcons}>
@@ -420,7 +420,7 @@ export default function DashboardHomeScreen() {
                 style={[
                   styles.refreshButton,
                   (isRefreshingBalance || isRefreshingTransactions) &&
-                    styles.refreshButtonActive,
+                  styles.refreshButtonActive,
                 ]}
               >
                 <MaterialCommunityIcons
@@ -619,7 +619,7 @@ export default function DashboardHomeScreen() {
                 })
               }
             >
-              <Text style={styles.viewAllText}>View All</Text>
+              <Text style={styles.viewAllText}>{transactions.length === 0 ? " " : "View All"}</Text>
             </Pressable>
           </View>
 
@@ -817,17 +817,34 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start", // Changed to flex-start to align with the text layout
-    paddingVertical: spacing.sm,
+    alignItems: "flex-start",
+
+    paddingVertical: spacing.xl,
+
+    borderWidth: 0.5,
+    borderRadius: 15,
+    borderColor: palette.primaryBlue,
+    paddingBlock: 15,
+    backgroundColor: "#fff",
+
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.5,
+    shadowRadius: 2,
+    elevation: 1,
+
+    overflow: "visible",
   },
   userInfo: {
     flex: 1,
     gap: 2,
+    paddingLeft: 5
   },
   welcomeText: {
     fontSize: 14,
     color: palette.neutralMid,
     fontWeight: "500",
+    paddingLeft: 4
   },
   userAddress: {
     fontSize: 20,
@@ -835,8 +852,13 @@ const styles = StyleSheet.create({
     color: palette.neutralDark,
   },
   headerIcons: {
+    display: "flex",
     flexDirection: "row",
     gap: spacing.sm,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingTop: 8,
+    paddingRight:10
   },
   iconButton: {
     position: "relative",
@@ -994,11 +1016,27 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.md,
+    borderWidth: 0.05,
+    borderRadius: 20,
+    borderColor: palette.primaryBlue,
+    paddingBlock: 15,
+    backgroundColor: "#fff",
+    padding: 2,
+
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+
+
+    overflow: "visible",
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: palette.neutralDark,
+    paddingLeft: 12
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1051,7 +1089,21 @@ const styles = StyleSheet.create({
     color: palette.neutralDark,
   },
   quickActionsGrid: {
+
     gap: spacing.lg,
+    borderWidth: 0.5,
+    borderRadius: 20,
+    borderColor: palette.primaryBlue,
+    paddingBlock: 15,
+    backgroundColor: "#fff",
+
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+
+    overflow: "visible",
   },
   quickActionsRow: {
     flexDirection: "row",
