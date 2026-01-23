@@ -15,6 +15,7 @@ type InputProps = TextInputProps & {
   error?: string;
   helperText?: string;
   icon?: React.ReactNode;
+  position?: "right" | "left"
 };
 
 export const Input: React.FC<InputProps> = ({
@@ -23,6 +24,7 @@ export const Input: React.FC<InputProps> = ({
   helperText,
   icon,
   style,
+  position="left",
   ...rest
 }) => {
   const [isFocused, setIsFocused] = useState(false);
@@ -67,7 +69,7 @@ export const Input: React.FC<InputProps> = ({
           isFocused && styles.inputContainerFocused,
         ]}
       >
-        {icon && <View style={styles.iconContainer}>{icon}</View>}
+        {icon && position =="left" && <View style={styles.iconContainer}>{icon}</View>}
         <TextInput
           style={[styles.input, style]}
           placeholderTextColor={palette.neutralLight}
@@ -75,6 +77,7 @@ export const Input: React.FC<InputProps> = ({
           onBlur={handleBlur}
           {...rest}
         />
+        {icon && position == "right" && <View style={styles.iconContainer}>{icon}</View>}
       </Animated.View>
       {hasError ? <Text style={styles.error}>{error}</Text> : null}
       {!hasError && helperText ? (
