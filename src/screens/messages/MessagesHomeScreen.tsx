@@ -1,4 +1,3 @@
-import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import {
   useCommunication,
@@ -27,6 +26,7 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { dummyConversations } from ".";
 
 type MessagesNavigationProp = StackNavigationProp<
   MessagesStackParamList,
@@ -97,7 +97,7 @@ export const MessagesHomeScreen: React.FC = () => {
   };
 
   // Filter conversations based on search query
-  const filteredConversations = conversations.filter((conv) => {
+  const filteredConversations = dummyConversations.filter((conv) => {
     const otherParticipant = conv.participants.find((p) => p !== address);
     const contact = otherParticipant
       ? getContactByAddress(otherParticipant)
@@ -111,7 +111,6 @@ export const MessagesHomeScreen: React.FC = () => {
     );
   });
 
-  // Filter call history based on search query
   const filteredCallHistory = callHistory.filter((call) => {
     const otherParticipant =
       call.fromAddress === address ? call.toAddress : call.fromAddress;
