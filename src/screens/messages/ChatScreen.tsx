@@ -24,7 +24,6 @@ import { Audio } from "expo-av";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 
-import { Screen } from "../../components/ui/Screen";
 import { useCommunication } from "../../contexts/CommunicationContext";
 import type { Message } from "../../contexts/CommunicationContext";
 import { useWallet } from "../../contexts/WalletContext";
