@@ -8,12 +8,13 @@ import {
 } from "@/contexts/CommunicationContext";
 import { useWallet } from "@/contexts/WalletContext";
 import { MessagesStackParamList } from "@/navigation/types";
-import { colors } from "@/theme/colors";
+import { colors,palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
+
 import {
   Alert,
   FlatList,
@@ -365,8 +366,8 @@ export const MessagesHomeScreen: React.FC = () => {
             {isOnline
               ? "Online"
               : lastSeen
-              ? `Last seen ${formatTimeAgo(lastSeen)}`
-              : "Offline"}
+                ? `Last seen ${formatTimeAgo(lastSeen)}`
+                : "Offline"}
           </Text>
           {item.notes && (
             <Text style={styles.contactNotes} numberOfLines={1}>
@@ -428,8 +429,8 @@ export const MessagesHomeScreen: React.FC = () => {
     const getCallStatusText = () => {
       const duration = item.duration
         ? `${Math.floor(item.duration / 60)}:${(item.duration % 60)
-            .toString()
-            .padStart(2, "0")}`
+          .toString()
+          .padStart(2, "0")}`
         : null;
 
       if (item.status === "missed") {
@@ -566,33 +567,14 @@ export const MessagesHomeScreen: React.FC = () => {
                     : colors.textSecondary
                 }
               />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "messages" && styles.activeTabText,
-                ]}
-              >
+              <Text style={[styles.tabText, activeTab === "messages" && styles.activeTabText]}>
                 Messages
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "calls" && styles.activeTab]}
-              onPress={() => setActiveTab("calls")}
-            >
-              <MaterialCommunityIcons
-                name="phone"
-                size={20}
-                color={
-                  activeTab === "calls" ? colors.primary : colors.textSecondary
-                }
-              />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === "calls" && styles.activeTabText,
-                ]}
-              >
+            <TouchableOpacity style={[styles.tab, activeTab === "calls" && styles.activeTab]} onPress={() => setActiveTab("calls")}>
+              <MaterialCommunityIcons name="phone" size={20} color={activeTab === "calls" ? colors.primary : colors.textSecondary} />
+              <Text style={[styles.tabText, activeTab === "calls" && styles.activeTabText,]}>
                 Calls
               </Text>
             </TouchableOpacity>
@@ -986,8 +968,21 @@ const styles = StyleSheet.create({
   },
   tabContainer: {
     flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    height: 45,
+    padding: 4,
+    justifyContent: "space-between",
+    backgroundColor: "#cfe1e63f",
+
+    margin: 4,
+    borderWidth: 0.2,
+    borderRadius: 4,
+    borderColor: palette.prima,
+    shadowColor: "#000",
+    
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+
   },
   tab: {
     flexDirection: "row",
