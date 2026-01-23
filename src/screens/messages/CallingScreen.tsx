@@ -9,6 +9,9 @@ import {
   StatusBar,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { colors } from "../../theme/colors";
+import { spacing } from "../../theme/spacing";
+import { useCommunication } from "../../contexts/CommunicationContext";
 
 // RTCView replacement for Expo compatibility
 const RTCView: React.FC<{
@@ -32,9 +35,6 @@ const RTCView: React.FC<{
   </View>
 );
 
-import { colors } from "../../theme/colors";
-import { spacing } from "../../theme/spacing";
-import { useCommunication } from "../../contexts/CommunicationContext";
 
 interface CallingScreenProps {
   contactAddress: string;
@@ -55,8 +55,9 @@ export const CallingScreen: React.FC<CallingScreenProps> = ({
   onDecline,
   onEndCall,
 }) => {
-  const { contacts, currentCall, localStream, remoteStream } =
-    useCommunication();
+  const { contacts, currentCall, localStream,
+    // remoteStream
+  } = useCommunication();
 
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);

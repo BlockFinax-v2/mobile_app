@@ -26,7 +26,7 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { dummyConversations } from ".";
+import { dummyCalls, dummyConversations } from ".";
 
 type MessagesNavigationProp = StackNavigationProp<
   MessagesStackParamList,
@@ -111,7 +111,7 @@ export const MessagesHomeScreen: React.FC = () => {
     );
   });
 
-  const filteredCallHistory = callHistory.filter((call) => {
+  const filteredCallHistory = dummyCalls.filter((call) => {
     const otherParticipant =
       call.fromAddress === address ? call.toAddress : call.fromAddress;
     if (!otherParticipant) return false;
@@ -566,7 +566,7 @@ export const MessagesHomeScreen: React.FC = () => {
             />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search conversations..."
+              placeholder={activeTab === "messages"?"Search conversations":"Search call History"}
               value={searchQuery}
               onChangeText={setSearchQuery}
               placeholderTextColor={colors.textSecondary}
