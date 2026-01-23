@@ -170,11 +170,7 @@ const WalletNavigator = () => (
 
 const MessagesNavigator = () => (
   <MessagesStack.Navigator screenOptions={stackScreenOptions}>
-    <MessagesStack.Screen
-      name="MessagesHome"
-      component={MessagesHomeScreen}
-      options={{ title: "BlockFinaX Chat" }}
-    />
+    <MessagesStack.Screen name="MessagesHome" component={MessagesHomeScreen} options={{ title: "BlockFinaX Chat" }} />
     <MessagesStack.Screen
       name="Chat"
       component={ChatScreen}

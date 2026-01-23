@@ -26,6 +26,7 @@ import {
   RefreshControl,
   Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type MessagesNavigationProp = StackNavigationProp<
   MessagesStackParamList,
@@ -503,7 +504,7 @@ export const MessagesHomeScreen: React.FC = () => {
   };
 
   return (
-    <Screen>
+    <SafeAreaView edges={["top"]} style={{flex:1}}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
@@ -522,45 +523,22 @@ export const MessagesHomeScreen: React.FC = () => {
               </View>
             </View>
             <View style={styles.headerActions}>
-              <TouchableOpacity
-                style={styles.headerButton}
-                onPress={() => navigation.navigate("Dialer")}
-              >
-                <MaterialCommunityIcons
-                  name="dialpad"
-                  size={24}
-                  color={colors.primary}
-                />
+              <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate("Dialer")}>
+                <MaterialCommunityIcons name="dialpad" size={24} color={colors.primary}/>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.headerButton}
-                onPress={() => setShowContactModal(true)}
-              >
-                <MaterialCommunityIcons
-                  name="account-group"
-                  size={24}
-                  color={colors.primary}
-                />
+              <TouchableOpacity style={styles.headerButton} onPress={() => setShowContactModal(true)}>
+                <MaterialCommunityIcons name="account-group" size={24} color={colors.primary}/>
               </TouchableOpacity>
               <TouchableOpacity style={styles.headerButton}>
-                <MaterialCommunityIcons
-                  name="cog"
-                  size={24}
-                  color={colors.primary}
-                />
+                <MaterialCommunityIcons name="cog" size={24} color={colors.primary}/>
               </TouchableOpacity>
             </View>
           </View>
 
           {/* Tabs */}
           <View style={styles.tabContainer}>
-            <TouchableOpacity
-              style={[styles.tab, activeTab === "messages" && styles.activeTab]}
-              onPress={() => setActiveTab("messages")}
-            >
-              <MaterialCommunityIcons
-                name="message-text"
-                size={20}
+            <TouchableOpacity style={[styles.tab, activeTab === "messages" && styles.activeTab]} onPress={() => setActiveTab("messages")}>
+              <MaterialCommunityIcons name="message-text" size={20}
                 color={
                   activeTab === "messages"
                     ? colors.primary
@@ -914,7 +892,7 @@ export const MessagesHomeScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
-    </Screen>
+    </SafeAreaView>
   );
 };
 
@@ -974,9 +952,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#cfe1e63f",
 
     margin: 4,
-    borderWidth: 0.2,
+    borderWidth: 0.3,
     borderRadius: 4,
-    borderColor: palette.prima,
+    borderColor: palette.primaryBlue,
     shadowColor: "#000",
     
     shadowOffset: { width: 0, height: 1 },
@@ -987,10 +965,13 @@ const styles = StyleSheet.create({
   tab: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent:"center",
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: 8,
-    gap: spacing.xs,
+    gap: spacing.md,
+    width: "45%",
+   
   },
   activeTab: {
     backgroundColor: colors.primary + "20",
