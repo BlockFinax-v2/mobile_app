@@ -16,15 +16,22 @@ import {
   View,
   TextInput,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { WalletStackParamList } from "@/navigation/types";
 import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
+import { NetworkSelector } from "@/components/ui/NetworkSelector";
+import { TokenSelector, TokenInfo } from "@/components/ui/TokenSelector";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
-import { useWallet } from "@/contexts/WalletContext";
+import {
+  useWallet,
+  SupportedNetworkId,
+  getAllSupportedTokens,
+} from "@/contexts/WalletContext";
 import {
   stakingService,
   StakeInfo,
@@ -34,13 +41,10 @@ import {
   Proposal,
   DAOStats,
   DAOConfig,
-} from "@/services/stakingService";
-import {
-  multiTokenStakingService,
-  MultiTokenUserStakes,
+  AllStakesInfo,
   TokenStakeInfo,
-  MultiTokenPoolStats,
-} from "@/services/multiTokenStakingService";
+  RevocationStatus,
+} from "@/services/stakingService";
 import { isStakingSupportedOnNetwork } from "@/services/multiNetworkStakingService";
 import {
   getSupportedStablecoins,
@@ -58,6 +62,8 @@ import {
   SkeletonProposalCard,
   SkeletonList,
 } from "@/components/ui/SkeletonLoader";
+import { FinancierRevocationPanel } from "@/components/treasury/FinancierRevocationPanel";
+import { CustomDeadlineModal } from "@/components/treasury/CustomDeadlineModal";
 
 type NavigationProp = StackNavigationProp<
   WalletStackParamList,
@@ -107,8 +113,18 @@ export function TreasuryPortalScreen() {
 
   // Financier state
   const [isApplyingFinancier, setIsApplyingFinancier] = useState(false);
-  const [isEligibleFinancier, setIsEligibleFinancier] = useState(false);
+  const [isFinancier, setIsFinancier] = useState(false);
   const [stakeAsFinancier, setStakeAsFinancier] = useState(false);
+
+  // Revocation state
+  const [revocationStatus, setRevocationStatus] =
+    useState<RevocationStatus | null>(null);
+  const [isRevocationPending, setIsRevocationPending] = useState(false);
+  const [showRevocationModal, setShowRevocationModal] = useState(false);
+
+  // Custom deadline state
+  const [customDeadlineDays, setCustomDeadlineDays] = useState(0);
+  const [showCustomDeadlineModal, setShowCustomDeadlineModal] = useState(false);
 
   // Multi-token state
   const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
@@ -118,7 +134,7 @@ export function TreasuryPortalScreen() {
     [],
   );
   const [multiTokenStakes, setMultiTokenStakes] =
-    useState<MultiTokenUserStakes | null>(null);
+    useState<AllStakesInfo | null>(null);
   const [tokenBalances, setTokenBalances] = useState<Record<string, string>>(
     {},
   );
@@ -146,6 +162,12 @@ export function TreasuryPortalScreen() {
   const isInitialMount = useRef(true);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isInitializing = useRef(false); // Prevent concurrent initialization
+
+  // Network and Token Selector state
+  const [showNetworkSelector, setShowNetworkSelector] = useState(false);
+  const [currentNetworkId, setCurrentNetworkId] = useState<SupportedNetworkId>(
+    selectedNetwork.id,
+  );
   const isInitialized = useRef(false); // Track if service is already initialized
 
   // Initialize staking service with user's actual wallet credentials
@@ -168,6 +190,12 @@ export function TreasuryPortalScreen() {
         "Initializing staking service with user's wallet credentials...",
       );
 
+      // Set current network in staking service
+      stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+      console.log(
+        `[StakingService] Configured for network: ${selectedNetwork.name} (chainId: ${selectedNetwork.chainId})`,
+      );
+
       const signer = await stakingService.getSigner();
       const signerAddress = await signer.getAddress();
       console.log("Staking service connected with user wallet:", signerAddress);
@@ -179,7 +207,69 @@ export function TreasuryPortalScreen() {
     } finally {
       isInitializing.current = false;
     }
-  }, [isUnlocked]);
+  }, [isUnlocked, selectedNetwork]);
+
+  // Available tokens for current network
+  const availableTokens = useMemo(() => {
+    return getAllSupportedTokens(currentNetworkId);
+  }, [currentNetworkId]);
+
+  // Network selection handler
+  const handleNetworkSelect = useCallback(
+    async (networkId: SupportedNetworkId) => {
+      setCurrentNetworkId(networkId);
+      setShowNetworkSelector(false);
+
+      // Switch wallet network if needed
+      const networkToSwitch = [
+        {
+          id: "lisk-sepolia" as SupportedNetworkId,
+          name: "Lisk Sepolia",
+          chainId: 4202,
+          rpcUrl: "https://rpc.sepolia-api.lisk.com",
+        },
+        {
+          id: "base-sepolia" as SupportedNetworkId,
+          name: "Base Sepolia",
+          chainId: 84532,
+          rpcUrl: "https://sepolia.base.org",
+        },
+        {
+          id: "sepolia" as SupportedNetworkId,
+          name: "Sepolia",
+          chainId: 11155111,
+          rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+        },
+      ].find((n) => n.id === networkId);
+
+      if (networkToSwitch && selectedNetwork.id !== networkId) {
+        try {
+          await switchNetwork(networkToSwitch.id);
+          // Reload data after network switch
+          await loadMultiTokenData();
+          await loadStakingData();
+        } catch (error) {
+          console.error("Failed to switch network:", error);
+        }
+      }
+    },
+    [selectedNetwork.id, switchNetwork],
+  );
+
+  // Token selection handler
+  const handleTokenSelect = useCallback(
+    (token: TokenInfo) => {
+      // Find the corresponding StablecoinConfig
+      const stablecoinConfig = supportedTokens.find(
+        (t) => t.address.toLowerCase() === token.address.toLowerCase(),
+      );
+      if (stablecoinConfig) {
+        setSelectedToken(stablecoinConfig);
+      }
+      setShowTokenSelector(false);
+    },
+    [supportedTokens],
+  );
 
   // Load multi-token balances and stakes across ALL supported networks
   const loadMultiTokenData = useCallback(async () => {
@@ -217,16 +307,13 @@ export function TreasuryPortalScreen() {
         }
       }
 
-      // Load data for each supported network
-      // Note: Current contracts only support single-token (USDC) staking
-      // Multi-token support (USDT, DAI) requires deploying MultiTokenStakingFacet
-      // For now, we only load Lisk Sepolia which has the basic staking
-      const activeChainIds = [4202, 84532]; // Lisk Sepolia and Base Sepolia with multi-token staking
+      // Load data for each supported network with multi-token staking
+      const activeChainIds = [11155111, 4202, 84532]; // Ethereum Sepolia, Lisk Sepolia, Base Sepolia
 
-      console.log("[Multi-Token] ⚠️ Using legacy single-token mode");
       console.log(
-        "[Multi-Token] To enable multi-token: deploy MultiTokenStakingFacet and add tokens",
+        "[Multi-Token] Loading data from all networks with Diamond contracts",
       );
+      console.log(`[Multi-Token] Active chains: ${activeChainIds.join(", ")}`);
 
       for (const chainId of activeChainIds) {
         const networkTokens = getSupportedStablecoins(chainId);
@@ -243,61 +330,63 @@ export function TreasuryPortalScreen() {
         );
 
         try {
-          // Load user stakes for this network using new service
-          const stakesData = await multiTokenStakingService.getAllUserStakes(
-            address,
-            chainId,
-          );
+          // Load user stakes for this network using unified stakingService
+          const stakesData = await stakingService.getAllStakesForUser(address);
 
           console.log(
             `[Multi-Token] Stakes data for chain ${chainId}:`,
             JSON.stringify(stakesData, null, 2),
           );
           console.log(
-            `[Multi-Token] Stakes array length:`,
-            stakesData?.stakes?.length || 0,
+            `[Multi-Token] Total USD from contract:`,
+            stakesData?.totalUsdValue || "0",
           );
-          console.log(`[Multi-Token] Stakes array:`, stakesData?.stakes);
 
-          // Process each stake from new service structure
-          if (
-            stakesData &&
-            stakesData.stakes &&
-            Array.isArray(stakesData.stakes)
-          ) {
+          // Use totalUsdValue directly from contract (already formatted from 18 decimals)
+          networkUserTotalUSD = parseFloat(stakesData?.totalUsdValue || "0");
+
+          // Process each token stake for display purposes
+          if (stakesData && stakesData.tokens && stakesData.tokens.length > 0) {
             console.log(
-              `[Multi-Token] Processing ${stakesData.stakes.length} stakes for chain ${chainId}`,
+              `[Multi-Token] Processing ${stakesData.tokens.length} tokens for chain ${chainId}`,
             );
 
-            for (const stake of stakesData.stakes) {
+            for (let i = 0; i < stakesData.tokens.length; i++) {
+              const tokenAddr = stakesData.tokens[i];
+              const amount = stakesData.amounts[i];
+              const usdValue = parseFloat(stakesData.usdEquivalents[i]);
+
+              // Find token config for symbol
+              const tokenConfig = networkTokens.find(
+                (t) => t.address.toLowerCase() === tokenAddr.toLowerCase(),
+              );
+              const tokenSymbol = tokenConfig?.symbol || "Unknown";
+
               console.log(`[Multi-Token] Examining stake:`, {
-                tokenSymbol: stake.tokenSymbol,
-                amount: stake.amount,
-                active: stake.active,
-                usdValue: stake.usdValue,
+                tokenSymbol,
+                amount,
+                usdValue,
               });
 
-              if (stake.active && parseFloat(stake.amount) > 0) {
+              if (parseFloat(amount) > 0) {
                 networkUserStakes.push({
-                  symbol: stake.tokenSymbol,
-                  amount: stake.amount,
-                  usdValue: stake.usdValue,
+                  symbol: tokenSymbol,
+                  amount,
+                  usdValue,
                 });
-                networkUserTotalUSD += stake.usdValue;
 
                 console.log(
-                  `[Multi-Token] ✅ Active stake found: ${stake.amount} ${stake.tokenSymbol} = $${stake.usdValue}`,
+                  `[Multi-Token] ✅ Active stake found: ${amount} ${tokenSymbol} = $${usdValue}`,
                 );
               } else {
                 console.log(
-                  `[Multi-Token] ⏭️ Skipping stake (active: ${stake.active}, amount: ${stake.amount})`,
+                  `[Multi-Token] ⏭️ Skipping zero stake for ${tokenSymbol}`,
                 );
               }
             }
           } else {
             console.log(
-              `[Multi-Token] ⚠️ No valid stakes array for chain ${chainId}. stakesData:`,
-              stakesData,
+              `[Multi-Token] ⚠️ No tokens in stakes for chain ${chainId}`,
             );
           }
 
@@ -311,30 +400,18 @@ export function TreasuryPortalScreen() {
           }
 
           // Load pool stats for this network
-          for (const token of networkTokens) {
-            try {
-              const totalStaked =
-                await multiTokenStakingService.getTotalStakedForToken(
-                  token.address,
-                  chainId,
-                );
-              if (parseFloat(totalStaked) > 0) {
-                const usdValue = await convertToUSD(
-                  parseFloat(totalStaked),
-                  token.symbol,
-                  chainId,
-                );
-                globalPoolTotalUSD += usdValue;
-                console.log(
-                  `[Multi-Token] Pool ${token.symbol} on chain ${chainId}: ${totalStaked} = $${usdValue}`,
-                );
-              }
-            } catch (error) {
-              console.error(
-                `Failed to load pool stats for ${token.symbol} on chain ${chainId}:`,
-                error,
-              );
-            }
+          try {
+            const poolStats = await stakingService.getPoolStats();
+            const poolTotalUSD = parseFloat(poolStats.totalStaked || "0");
+            globalPoolTotalUSD += poolTotalUSD;
+            console.log(
+              `[Multi-Token] Pool total USD on chain ${chainId}: $${poolTotalUSD}`,
+            );
+          } catch (error) {
+            console.error(
+              `Failed to load pool stats for chain ${chainId}:`,
+              error,
+            );
           }
         } catch (error) {
           console.error(`Failed to load data for chain ${chainId}:`, error);
@@ -351,10 +428,7 @@ export function TreasuryPortalScreen() {
       setGlobalPoolTotalUSD(globalPoolTotalUSD);
 
       // Load current network-specific data
-      const stakes = await multiTokenStakingService.getAllUserStakes(
-        address,
-        selectedNetwork.chainId,
-      );
+      const stakes = await stakingService.getAllStakesForUser(address);
       setMultiTokenStakes(stakes);
 
       // Load balances for all supported tokens on current network
@@ -372,11 +446,8 @@ export function TreasuryPortalScreen() {
       await Promise.all(
         currentNetworkTokensList.map(async (token) => {
           try {
-            const balance = await multiTokenStakingService.getTokenBalance(
-              address,
-              token.address,
-              selectedNetwork.chainId,
-            );
+            // Use getUSDCBalance for default token, ethers contract for others
+            const balance = await stakingService.getUSDCBalance(address);
             balances[token.address] = balance;
             console.log(`[Balance] ${token.symbol} balance: ${balance}`);
           } catch (error) {
@@ -388,43 +459,33 @@ export function TreasuryPortalScreen() {
       setTokenBalances(balances);
       console.log("[Balance] All balances loaded:", balances);
 
-      // Load pool-wide token statistics
+      // Load pool-wide token statistics using unified service
+      const poolStatsData = await stakingService.getPoolStats();
       const poolStats: {
         [tokenAddress: string]: { amount: string; usdValue: number };
       } = {};
       let totalUSD = 0;
 
-      await Promise.all(
-        currentNetworkTokensList.map(async (token) => {
-          try {
-            // Get total staked for this token from contract
-            const totalStaked =
-              await multiTokenStakingService.getTotalStakedForToken(
-                token.address,
-                selectedNetwork.chainId,
-              );
+      // For each supported token, use pool stats
+      currentNetworkTokensList.forEach((token) => {
+        try {
+          // Use total staked from pool stats
+          const totalStaked = poolStatsData.totalStaked;
+          const usdValue = parseFloat(totalStaked);
 
-            // Convert to USD
-            const usdValue = await convertToUSD(
-              parseFloat(totalStaked),
-              token.symbol,
-              selectedNetwork.chainId,
-            );
-
-            poolStats[token.address] = {
-              amount: totalStaked,
-              usdValue: usdValue,
-            };
-            totalUSD += usdValue;
-          } catch (error) {
-            console.error(
-              `Failed to load pool stats for ${token.symbol}:`,
-              error,
-            );
-            poolStats[token.address] = { amount: "0", usdValue: 0 };
-          }
-        }),
-      );
+          poolStats[token.address] = {
+            amount: totalStaked,
+            usdValue: usdValue,
+          };
+          totalUSD += usdValue;
+        } catch (error) {
+          console.error(
+            `Failed to load pool stats for ${token.symbol}:`,
+            error,
+          );
+          poolStats[token.address] = { amount: "0", usdValue: 0 };
+        }
+      });
 
       setPoolTokenStats(poolStats);
       setTotalPoolUSD(totalUSD);
@@ -480,7 +541,7 @@ export function TreasuryPortalScreen() {
         setStakingConfig(cachedData.config);
         setUsdcBalance(cachedData.balance);
         setCurrentAPR(cachedData.apr);
-        setIsEligibleFinancier(cachedData.isEligible);
+        setIsFinancier(cachedData.isEligible);
         setIsLoading(false);
         setDataVersion((v) => v + 1);
         return;
@@ -510,7 +571,7 @@ export function TreasuryPortalScreen() {
             TaskPriority.LOW,
           ),
           asyncQueue.enqueue(
-            () => stakingService.isEligibleFinancier(address),
+            () => stakingService.isFinancier(address),
             TaskPriority.HIGH,
           ),
         ],
@@ -522,7 +583,7 @@ export function TreasuryPortalScreen() {
       setStakingConfig(config);
       setUsdcBalance(balance);
       setCurrentAPR(apr);
-      setIsEligibleFinancier(isEligible);
+      setIsFinancier(isEligible);
 
       // Cache the results (5 minute TTL)
       performanceCache.set(
@@ -651,8 +712,15 @@ export function TreasuryPortalScreen() {
       switchNetwork("ethereum-sepolia").catch((error) => {
         console.error("Failed to switch network:", error);
       });
+    } else {
+      // Network changed and is supported - update staking service network and reinitialize
+      console.log(
+        `[Network Change] Updating staking service to ${selectedNetwork.name} (chainId: ${currentChainId})`,
+      );
+      stakingService.setNetwork(currentChainId, selectedNetwork);
+      isInitialized.current = false; // Force reinitialization on next use
     }
-  }, [selectedNetwork.chainId, isUnlocked, switchNetwork]);
+  }, [selectedNetwork.chainId, isUnlocked, switchNetwork, selectedNetwork]);
 
   // 🚀 OPTIMIZED: Load data only when needed based on active tab
   useEffect(() => {
@@ -848,14 +916,18 @@ export function TreasuryPortalScreen() {
 
       setStakingProgress(`Staking ${stakeAmount} ${selectedToken.symbol}...`);
 
-      // Use new multi-token staking service
-      const txHash = await multiTokenStakingService.stakeToken(
-        selectedToken.address,
-        stakeAmount,
-        customDeadline,
-        selectedNetwork.chainId,
-        stakeAsFinancier,
-      );
+      // Use unified staking service with progress callback
+      if (stakeAsFinancier) {
+        await stakingService.stakeAsFinancier(stakeAmount, (stage, message) => {
+          setStakingProgress(message);
+          console.log(`Stake as Financier - ${stage}: ${message}`);
+        });
+      } else {
+        await stakingService.stake(stakeAmount, (stage, message) => {
+          setStakingProgress(message);
+          console.log(`Stake - ${stage}: ${message}`);
+        });
+      }
 
       setStakeAmount(""); // Clear input
       setStakeAsFinancier(false); // Reset checkbox
@@ -869,7 +941,7 @@ export function TreasuryPortalScreen() {
 
       Alert.alert(
         "Stake Submitted",
-        `Successfully staked ${stakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
+        `Successfully staked ${stakeAmount} ${selectedToken.symbol}!`,
         [{ text: "OK" }],
       );
     } catch (error: any) {
@@ -902,14 +974,21 @@ export function TreasuryPortalScreen() {
     }
 
     // Find the stake for the selected token
-    const tokenStake = multiTokenStakes?.stakes.find(
-      (s) =>
-        s.tokenAddress.toLowerCase() === selectedToken.address.toLowerCase(),
+    const tokenIndex = multiTokenStakes?.tokens.findIndex(
+      (tokenAddr) =>
+        tokenAddr.toLowerCase() === selectedToken.address.toLowerCase(),
     );
 
+    const tokenStakeAmount =
+      tokenIndex !== undefined && tokenIndex >= 0 && multiTokenStakes
+        ? multiTokenStakes.amounts[tokenIndex]
+        : "0";
+
     if (
-      !tokenStake ||
-      parseFloat(unstakeAmount) > parseFloat(tokenStake.amount)
+      !multiTokenStakes ||
+      tokenIndex === undefined ||
+      tokenIndex < 0 ||
+      parseFloat(unstakeAmount) > parseFloat(tokenStakeAmount)
     ) {
       Alert.alert("Error", "Cannot unstake more than your staked amount");
       return;
@@ -923,13 +1002,11 @@ export function TreasuryPortalScreen() {
         unstakeAmount,
         selectedToken.symbol,
       );
-      console.log("Token stake info:", tokenStake);
+      console.log("Token stake amount:", tokenStakeAmount);
 
-      const txHash = await multiTokenStakingService.unstakeToken(
-        selectedToken.address,
-        unstakeAmount,
-        selectedNetwork.chainId,
-      );
+      await stakingService.unstake(unstakeAmount, (stage, message) => {
+        console.log(`Unstake - ${stage}: ${message}`);
+      });
 
       setUnstakeAmount(""); // Clear input
 
@@ -941,7 +1018,7 @@ export function TreasuryPortalScreen() {
 
       Alert.alert(
         "Unstake Submitted",
-        `Successfully unstaked ${unstakeAmount} ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
+        `Successfully unstaked ${unstakeAmount} ${selectedToken.symbol}!`,
         [{ text: "OK" }],
       );
     } catch (error: any) {
@@ -970,10 +1047,9 @@ export function TreasuryPortalScreen() {
 
       console.log("Attempting to claim rewards for", selectedToken.symbol);
 
-      const txHash = await multiTokenStakingService.claimTokenRewards(
-        selectedToken.address,
-        selectedNetwork.chainId,
-      );
+      await stakingService.claimRewards((stage, message) => {
+        console.log(`Claim Rewards - ${stage}: ${message}`);
+      });
 
       // Performance: Invalidate cache
       performanceCache.invalidatePattern(`staking:${address}`);
@@ -983,7 +1059,7 @@ export function TreasuryPortalScreen() {
 
       Alert.alert(
         "Claim Submitted",
-        `Successfully claimed rewards for ${selectedToken.symbol}!\n\nTransaction: ${txHash}`,
+        `Successfully claimed rewards for ${selectedToken.symbol}!`,
         [{ text: "OK" }],
       );
     } catch (error: any) {
@@ -992,7 +1068,7 @@ export function TreasuryPortalScreen() {
     } finally {
       setIsTransacting(false);
     }
-  }, [selectedToken, address, selectedNetwork.chainId, loadMultiTokenData]);
+  }, [selectedToken, address, loadMultiTokenData]);
 
   const handleEmergencyWithdraw = useCallback(async () => {
     // Check if user has an active stake
@@ -1287,11 +1363,11 @@ export function TreasuryPortalScreen() {
 
   const pendingRewardsAmount = useMemo(() => {
     // Calculate total pending rewards across all tokens
-    if (!multiTokenStakes?.stakes) return 0;
-    return multiTokenStakes.stakes.reduce((total, stake) => {
-      return total + parseFloat(stake.pendingRewards || "0");
+    if (!multiTokenStakes?.pendingRewards) return 0;
+    return multiTokenStakes.pendingRewards.reduce((total, reward) => {
+      return total + parseFloat(reward || "0");
     }, 0);
-  }, [multiTokenStakes?.stakes]);
+  }, [multiTokenStakes?.pendingRewards]);
 
   return (
     <Screen>
@@ -1322,6 +1398,90 @@ export function TreasuryPortalScreen() {
               color={isLoading ? colors.textSecondary : colors.primary}
             />
           </TouchableOpacity>
+        </View>
+
+        {/* Network & Token Selection Card */}
+        <View style={styles.selectionCard}>
+          <Text style={styles.selectionLabel}>Network & Token</Text>
+
+          {/* Network Selector */}
+          <Pressable
+            style={styles.selectorButton}
+            onPress={() => setShowNetworkSelector(true)}
+          >
+            <View style={styles.selectorLeft}>
+              <View
+                style={[
+                  styles.networkIcon,
+                  {
+                    backgroundColor:
+                      selectedNetwork.chainId === 4202
+                        ? "#0066FF"
+                        : selectedNetwork.chainId === 84532
+                          ? "#0052FF"
+                          : "#627EEA",
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="ethereum"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </View>
+              <View>
+                <Text style={styles.selectorTitle}>{selectedNetwork.name}</Text>
+                <Text style={styles.selectorSubtitle}>
+                  Chain ID: {selectedNetwork.chainId}
+                </Text>
+              </View>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-down"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+
+          {/* Token Selector */}
+          <Pressable
+            style={styles.selectorButton}
+            onPress={() => setShowTokenSelector(true)}
+          >
+            <View style={styles.selectorLeft}>
+              <View
+                style={[
+                  styles.tokenIcon,
+                  {
+                    backgroundColor: selectedToken
+                      ? selectedToken.symbol === "USDC"
+                        ? "#2775CA"
+                        : "#50AF95"
+                      : colors.textSecondary,
+                  },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="currency-usd"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </View>
+              <View>
+                <Text style={styles.selectorTitle}>
+                  {selectedToken ? selectedToken.symbol : "Select Token"}
+                </Text>
+                <Text style={styles.selectorSubtitle}>
+                  {selectedToken ? selectedToken.name : "Choose token to stake"}
+                </Text>
+              </View>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-down"
+              size={20}
+              color={colors.textSecondary}
+            />
+          </Pressable>
         </View>
 
         {/* Navigation Tabs */}
@@ -1581,11 +1741,13 @@ export function TreasuryPortalScreen() {
                             color={colors.primary}
                           />
                           <Text style={styles.quickStatValue}>
-                            {multiTokenStakes?.totalVotingPower
-                              ? parseFloat(
-                                  multiTokenStakes.totalVotingPower || "0",
-                                ).toFixed(0)
+                            {multiTokenStakes?.totalUsdValue
+                              ? (
+                                  parseFloat(multiTokenStakes.totalUsdValue) /
+                                  1000
+                                ).toFixed(1)
                               : "0"}
+                            %
                           </Text>
                           <Text style={styles.quickStatLabel}>
                             Voting Power
@@ -1970,6 +2132,37 @@ export function TreasuryPortalScreen() {
                           </View>
                         </View>
                       )}
+
+                      {/* Financier Revocation Panel */}
+                      {isFinancier && (
+                        <FinancierRevocationPanel
+                          userAddress={address || ""}
+                          isFinancier={isFinancier}
+                          onRevocationComplete={() => {
+                            // Refresh financier status after revocation
+                            loadStakingData();
+                          }}
+                        />
+                      )}
+
+                      {/* Custom Deadline Management */}
+                      {isFinancier && (
+                        <View style={styles.customDeadlineSection}>
+                          <TouchableOpacity
+                            style={styles.customDeadlineButton}
+                            onPress={() => setShowCustomDeadlineModal(true)}
+                          >
+                            <MaterialCommunityIcons
+                              name="calendar-clock"
+                              size={20}
+                              color={colors.primary}
+                            />
+                            <Text style={styles.customDeadlineButtonText}>
+                              Set Custom Lock Period
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </>
                   )}
                 </>
@@ -1981,7 +2174,7 @@ export function TreasuryPortalScreen() {
         {activeTab === "create" && (
           <>
             {/* Financier Check for Create Proposal */}
-            {!isEligibleFinancier ? (
+            {!isFinancier ? (
               <View style={styles.section}>
                 <View style={styles.financierPrompt}>
                   <MaterialCommunityIcons
@@ -2217,7 +2410,7 @@ export function TreasuryPortalScreen() {
         {activeTab === "vote" && (
           <>
             {/* Financier Check for Voting */}
-            {!isEligibleFinancier ? (
+            {!isFinancier ? (
               <View style={styles.section}>
                 <View style={styles.financierPrompt}>
                   <MaterialCommunityIcons
@@ -2441,7 +2634,7 @@ export function TreasuryPortalScreen() {
         {activeTab === "pool" && (
           <>
             {/* Financier Check for Pool Guarantee */}
-            {!isEligibleFinancier ? (
+            {!isFinancier ? (
               <View style={styles.section}>
                 <View style={styles.financierPrompt}>
                   <MaterialCommunityIcons
@@ -2776,6 +2969,47 @@ export function TreasuryPortalScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Network Selector Modal */}
+      <NetworkSelector
+        visible={showNetworkSelector}
+        onClose={() => setShowNetworkSelector(false)}
+        onSelectNetwork={handleNetworkSelect}
+        selectedNetworkId={currentNetworkId}
+      />
+
+      {/* Token Selector Modal */}
+      <TokenSelector
+        visible={showTokenSelector}
+        onClose={() => setShowTokenSelector(false)}
+        onSelectToken={handleTokenSelect}
+        selectedToken={
+          selectedToken
+            ? {
+                address: selectedToken.address,
+                symbol: selectedToken.symbol,
+                name: selectedToken.name,
+                decimals: selectedToken.decimals,
+                balance: tokenBalances[selectedToken.address] || "0",
+              }
+            : undefined
+        }
+        networkId={currentNetworkId}
+        showBalances={true}
+      />
+
+      {/* Custom Deadline Modal */}
+      <CustomDeadlineModal
+        visible={showCustomDeadlineModal}
+        currentDeadline={customDeadlineDays}
+        isFinancier={isFinancier}
+        onClose={() => setShowCustomDeadlineModal(false)}
+        onSuccess={() => {
+          setShowCustomDeadlineModal(false);
+          // Refresh staking data to reflect new deadline
+          loadStakingData();
+        }}
+      />
     </Screen>
   );
 }
@@ -2808,6 +3042,61 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: colors.textSecondary,
+  },
+  // Network & Token Selection Styles
+  selectionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  selectionLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  selectorButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border || "#E0E0E0",
+  },
+  selectorLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    flex: 1,
+  },
+  networkIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tokenIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectorTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  selectorSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   // Tab Navigation Styles
   tabContainer: {
@@ -4164,5 +4453,29 @@ const styles = StyleSheet.create({
     textAlign: "center",
     textTransform: "uppercase",
     letterSpacing: 0.5,
+  },
+  // Custom Deadline Section Styles
+  customDeadlineSection: {
+    marginTop: spacing.lg,
+    paddingTop: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.surface,
+  },
+  customDeadlineButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.primary + "15",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + "30",
+  },
+  customDeadlineButtonText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
   },
 });

@@ -7,6 +7,14 @@ import {
   Application,
   DraftCertificate,
 } from "@/contexts/TradeFinanceContext";
+import {
+  useWallet,
+  SupportedNetworkId,
+  getAllSupportedTokens,
+} from "@/contexts/WalletContext";
+import { NetworkSelector } from "@/components/ui/NetworkSelector";
+import { TokenSelector, TokenInfo } from "@/components/ui/TokenSelector";
+import { StablecoinConfig } from "@/config/stablecoinPrices";
 import { TradeStackParamList } from "@/navigation/types";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -25,6 +33,7 @@ import {
   ToastAndroid,
   Platform,
   Dimensions,
+  Pressable,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -80,6 +89,8 @@ export const TradeFinanceScreen = () => {
   const [userRole, setUserRole] = useState<"buyer" | "seller">("buyer");
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [showNetworkSelector, setShowNetworkSelector] = useState(false);
+  const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [selectedCertificate, setSelectedCertificate] =
     useState<DraftCertificate | null>(null);
   const [selectedApplication, setSelectedApplication] =
@@ -146,8 +157,8 @@ export const TradeFinanceScreen = () => {
               prev.map((app) =>
                 app.id === applicationId
                   ? { ...app, status: "Awaiting Certificate" }
-                  : app
-              )
+                  : app,
+              ),
             );
             showToast("Fee payment successful! Certificate issuance pending.");
             break;
@@ -156,11 +167,11 @@ export const TradeFinanceScreen = () => {
             // Update application status after invoice payment
             setApplications((prev) =>
               prev.map((app) =>
-                app.id === applicationId ? { ...app, status: "Fee Paid" } : app
-              )
+                app.id === applicationId ? { ...app, status: "Fee Paid" } : app,
+              ),
             );
             showToast(
-              "Invoice payment successful! Transaction is being processed."
+              "Invoice payment successful! Transaction is being processed.",
             );
             break;
 
@@ -170,11 +181,11 @@ export const TradeFinanceScreen = () => {
               prev.map((app) =>
                 app.id === applicationId
                   ? { ...app, status: "Invoice Settled" }
-                  : app
-              )
+                  : app,
+              ),
             );
             showToast(
-              "Settlement payment successful! Certificate will be issued."
+              "Settlement payment successful! Certificate will be issued.",
             );
             break;
         }
@@ -245,8 +256,8 @@ export const TradeFinanceScreen = () => {
                         stage.status === "completed"
                           ? colors.success
                           : application.currentStage === stage.id
-                          ? colors.primary
-                          : colors.border,
+                            ? colors.primary
+                            : colors.border,
                     },
                   ]}
                 >
@@ -287,8 +298,54 @@ export const TradeFinanceScreen = () => {
     );
   };
 
+  // Network and Token Selector Handlers
+  const { selectedNetwork } = useWallet();
+  const [currentNetworkId, setCurrentNetworkId] =
+    useState<SupportedNetworkId | null>(selectedNetwork?.id || null);
+  const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
+    null,
+  );
+
+  const availableTokens = React.useMemo(() => {
+    if (!currentNetworkId) return [];
+    return getAllSupportedTokens(currentNetworkId);
+  }, [currentNetworkId]);
+
+  const handleNetworkSelect = React.useCallback(
+    (networkId: SupportedNetworkId) => {
+      setCurrentNetworkId(networkId);
+      setShowNetworkSelector(false);
+
+      // Auto-select first token for new network
+      const tokens = getAllSupportedTokens(networkId);
+      if (tokens.length > 0) {
+        const firstToken: StablecoinConfig = {
+          symbol: tokens[0].symbol,
+          name: tokens[0].name,
+          address: tokens[0].address,
+          decimals: tokens[0].decimals,
+          targetPeg: 1.0,
+        };
+        setSelectedToken(firstToken);
+      }
+    },
+    [],
+  );
+
+  const handleTokenSelect = React.useCallback((token: TokenInfo) => {
+    const stablecoinConfig: StablecoinConfig = {
+      symbol: token.symbol,
+      name: token.name,
+      address: token.address,
+      decimals: token.decimals,
+      targetPeg: 1.0,
+    };
+    setSelectedToken(stablecoinConfig);
+    setShowTokenSelector(false);
+  }, []);
+
   const handleDocumentPick = async (
-    type: "proformaInvoice" | "salesContract"
+    type: "proformaInvoice" | "salesContract",
   ) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -310,7 +367,7 @@ export const TradeFinanceScreen = () => {
         showToast(
           `${
             type === "proformaInvoice" ? "Proforma Invoice" : "Sales Contract"
-          } uploaded successfully`
+          } uploaded successfully`,
         );
       }
     } catch (error) {
@@ -326,7 +383,7 @@ export const TradeFinanceScreen = () => {
       if (permission.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please grant camera roll permissions to upload images."
+          "Please grant camera roll permissions to upload images.",
         );
         return;
       }
@@ -351,7 +408,7 @@ export const TradeFinanceScreen = () => {
         showToast(
           `${
             type === "proformaInvoice" ? "Proforma Invoice" : "Sales Contract"
-          } uploaded successfully`
+          } uploaded successfully`,
         );
       }
     } catch (error) {
@@ -371,7 +428,7 @@ export const TradeFinanceScreen = () => {
       "guaranteeAmount",
     ];
     const missingFields = requiredFields.filter(
-      (field) => !applicationForm[field as keyof PoolGuaranteeForm]
+      (field) => !applicationForm[field as keyof PoolGuaranteeForm],
     );
 
     if (missingFields.length > 0) {
@@ -382,7 +439,7 @@ export const TradeFinanceScreen = () => {
     if (!applicationForm.proformaInvoice || !applicationForm.salesContract) {
       Alert.alert(
         "Missing Documents",
-        "Please upload both Proforma Invoice and Sales Contract."
+        "Please upload both Proforma Invoice and Sales Contract.",
       );
       return;
     }
@@ -425,7 +482,7 @@ export const TradeFinanceScreen = () => {
             24 *
             60 *
             60 *
-            1000
+            1000,
       ).toLocaleDateString("en-US"),
       financingDuration: parseInt(applicationForm.financingDuration) || 90,
       issuanceFee: `${(
@@ -463,7 +520,7 @@ export const TradeFinanceScreen = () => {
             24 *
             60 *
             60 *
-            1000
+            1000,
       ).toLocaleDateString("en-US"),
       status: "SENT TO SELLER",
       issuanceFee: `${(
@@ -508,7 +565,7 @@ Status: AWAITING SELLER APPROVAL`,
             showToast("Application submitted successfully!");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -521,8 +578,8 @@ Status: AWAITING SELLER APPROVAL`,
         prev.map((draft) =>
           draft.id === draftId
             ? { ...draft, status: "AWAITING FEE PAYMENT" }
-            : draft
-        )
+            : draft,
+        ),
       );
 
       // Create a real application for the buyer when seller approves
@@ -564,7 +621,7 @@ Status: AWAITING SELLER APPROVAL`,
       }
 
       showToast(
-        "Draft approved successfully! Buyer will be notified to pay the issuance fee."
+        "Draft approved successfully! Buyer will be notified to pay the issuance fee.",
       );
     } else {
       setDrafts((prev) => prev.filter((draft) => draft.id !== draftId));
@@ -619,12 +676,12 @@ Status: AWAITING SELLER APPROVAL`,
       prev.map((app) =>
         app.id === selectedApplication.id
           ? { ...app, status: "Invoice Settled" }
-          : app
-      )
+          : app,
+      ),
     );
 
     showToast(
-      "Invoice settlement successful! Certificate will be issued by treasury delegators."
+      "Invoice settlement successful! Certificate will be issued by treasury delegators.",
     );
   };
 
@@ -1275,6 +1332,65 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
             Decentralized liquidity pool for trade financing - replacing
             traditional LC/DLC bank guarantees
           </Text>
+        </View>
+
+        {/* Network and Token Selection */}
+        <View style={styles.selectionCard}>
+          <Pressable
+            style={styles.selectorButton}
+            onPress={() => setShowNetworkSelector(true)}
+          >
+            <View style={styles.networkIcon}>
+              <MaterialCommunityIcons
+                name="web"
+                size={24}
+                color={colors.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.selectorTitle}>Network</Text>
+              <Text style={styles.selectorSubtitle}>
+                {currentNetworkId
+                  ? currentNetworkId === "lisk-sepolia"
+                    ? "Lisk Sepolia"
+                    : currentNetworkId === "base-sepolia"
+                      ? "Base Sepolia"
+                      : currentNetworkId === "ethereum-sepolia"
+                        ? "Ethereum Sepolia"
+                        : "Select Network"
+                  : "Select Network"}
+              </Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+
+          <Pressable
+            style={styles.selectorButton}
+            onPress={() => setShowTokenSelector(true)}
+          >
+            <View style={styles.tokenIcon}>
+              <MaterialCommunityIcons
+                name="currency-usd"
+                size={24}
+                color={colors.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.selectorTitle}>Token</Text>
+              <Text style={styles.selectorSubtitle}>
+                {selectedToken?.symbol || "Select Token"}
+              </Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={24}
+              color={colors.textSecondary}
+            />
+          </Pressable>
         </View>
 
         {renderOverviewTab()}
@@ -1990,6 +2106,31 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Network Selector Modal */}
+      <NetworkSelector
+        visible={showNetworkSelector}
+        onClose={() => setShowNetworkSelector(false)}
+        onSelectNetwork={handleNetworkSelect}
+      />
+
+      {/* Token Selector Modal */}
+      <TokenSelector
+        visible={showTokenSelector}
+        onClose={() => setShowTokenSelector(false)}
+        onSelectToken={handleTokenSelect}
+        selectedToken={
+          selectedToken
+            ? {
+                symbol: selectedToken.symbol,
+                name: selectedToken.name,
+                address: selectedToken.address,
+                decimals: selectedToken.decimals,
+              }
+            : undefined
+        }
+        networkId={currentNetworkId || "lisk-sepolia"}
+      />
     </Screen>
   );
 };
@@ -3409,6 +3550,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: spacing.xs,
+  },
+  selectionCard: {
+    backgroundColor: palette.white,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: 12,
+    padding: spacing.md,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  selectorButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  networkIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: `${colors.primary}15`,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.md,
+  },
+  tokenIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: `${colors.primary}15`,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.md,
+  },
+  selectorTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: 2,
+  },
+  selectorSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 });
 

@@ -1458,6 +1458,12 @@ export function getStablecoinBySymbol(
 
 export function getAllSupportedTokens(networkId: SupportedNetworkId) {
   const network = NETWORKS[networkId];
+
+  // Return empty array if network not found
+  if (!network) {
+    return [];
+  }
+
   const tokens = [
     {
       symbol: network.primaryCurrency,

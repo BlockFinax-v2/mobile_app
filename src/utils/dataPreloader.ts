@@ -14,7 +14,7 @@ export interface PreloadedData {
     stakingConfig: any;
     usdcBalance: string;
     currentAPR: number;
-    isEligibleFinancier: boolean;
+    isFinancier: boolean;
   } | null;
   governance: {
     proposals: any[];
@@ -108,7 +108,7 @@ class DataPreloader {
           TaskPriority.NORMAL
         ),
         asyncQueue.enqueue(
-          () => stakingService.isEligibleFinancier(address),
+          () => stakingService.isFinancier(address),
           TaskPriority.CRITICAL
         ),
       ]);
@@ -119,7 +119,7 @@ class DataPreloader {
         stakingConfig: config,
         usdcBalance: balance,
         currentAPR: apr,
-        isEligibleFinancier: isEligible,
+        isFinancier: isEligible,
       };
 
       // Cache staking data (5 minutes)
