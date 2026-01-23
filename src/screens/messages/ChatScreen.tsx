@@ -31,7 +31,6 @@ import { useWallet } from "../../contexts/WalletContext";
 import { colors } from "../../theme/colors";
 import { spacing } from "../../theme/spacing";
 import { MessagesStackParamList } from "../../navigation/types";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 type ChatScreenNavigationProp = StackNavigationProp<
   MessagesStackParamList,
@@ -91,7 +90,7 @@ export const ChatScreen: React.FC = () => {
   // Set navigation options
   useEffect(() => {
     navigation.setOptions({
-      headerShown:true,
+      headerShown: true,
       headerTitle: () => (
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerContactName}>{displayName}</Text>
@@ -381,7 +380,7 @@ export const ChatScreen: React.FC = () => {
       const status = await recording.getStatusAsync();
 
       if (!contactAddress) return;
-      
+
       if (uri && status.durationMillis) {
         const duration = Math.round((status.durationMillis || 0) / 1000);
         await sendMessage(contactAddress, "Voice message", "voice", {
@@ -586,15 +585,15 @@ export const ChatScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
-      <View style={styles.container}>
-        <KeyboardAvoidingView
-          style={styles.keyboardView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-        >
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      >
+        <View style={styles.container}>
           {/* Messages */}
-          <FlatList
+        <FlatList
+          style={{flex:1}}
             ref={flatListRef}
             data={messages}
             keyExtractor={(item, index) => `message-${item.id}-${index}`}
@@ -667,9 +666,8 @@ export const ChatScreen: React.FC = () => {
               )}
             </View>
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </SafeAreaView>
+        </View>
+      </KeyboardAvoidingView>
   );
 };
 
@@ -692,6 +690,7 @@ const styles = StyleSheet.create({
   headerStatus: {
     fontSize: 12,
     color: colors.primary,
+    paddingLeft: 10
   },
   headerActions: {
     flexDirection: "row",
@@ -789,13 +788,13 @@ const styles = StyleSheet.create({
   textInputContainer: {
     flex: 1,
     flexDirection: "row",
-    alignItems: "flex-end",
+    // alignItems: "flex-end",
     backgroundColor: colors.background,
     borderRadius: 20,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    minHeight: 40,
-    maxHeight: 100,
+    // minHeight: 40,
+    // maxHeight: 100,
   },
   textInput: {
     flex: 1,
@@ -803,6 +802,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 20,
     marginRight: spacing.sm,
+     paddingVertical: 0,
   },
   emojiButton: {
     padding: spacing.xs,
