@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/Input";
 import { NetworkSelector } from "@/components/ui/NetworkSelector";
 import { Text } from "@/components/ui/Text";
 import { TokenSelector } from "@/components/ui/TokenSelector";
+import { CompactNetworkTokenSelector } from "@/components/ui/CompactNetworkTokenSelector";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import React from "react";
@@ -117,128 +118,18 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
   return (
     <View style={[styles.container, style]}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        {showHeader && (
-          <View style={styles.header}>
-            <View style={styles.headerContent}>
-              <MaterialCommunityIcons
-                name="send-circle"
-                size={32}
-                color={palette.primaryBlue}
-              />
-              <Text style={styles.title}>
-                {headerTitle || paymentParams?.title || "Send Payment"}
-              </Text>
-              <Text style={styles.subtitle}>
-                {headerSubtitle ||
-                  paymentParams?.description ||
-                  "Send crypto to any wallet address"}
-              </Text>
-            </View>
-          </View>
-        )}
-
         {/* Network & Token Selection */}
-        <View style={styles.selectionCard}>
-          <Text style={styles.selectionLabel}>Network & Token</Text>
-
-          {/* Network Selector */}
-          <Pressable
-            style={styles.selectorButton}
-            onPress={actions.toggleNetworkSelector}
-            disabled={paymentParams?.allowNetworkSwitch === false}
-          >
-            <View style={styles.selectorLeft}>
-              <View
-                style={[styles.networkIcon, { backgroundColor: networkColor }]}
-              >
-                <MaterialCommunityIcons
-                  name={networkIcon as any}
-                  size={20}
-                  color={palette.white}
-                />
-              </View>
-              <View>
-                <Text style={styles.selectorTitle}>
-                  {state.selectedNetwork.name}
-                </Text>
-                <Text style={styles.selectorSubtitle}>
-                  Chain ID: {state.selectedNetwork.chainId}
-                </Text>
-              </View>
-            </View>
-            {paymentParams?.allowNetworkSwitch !== false && (
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={20}
-                color={palette.neutralMid}
-              />
-            )}
-          </Pressable>
-
-          {/* Token Selector */}
-          <Pressable
-            style={styles.selectorButton}
-            onPress={actions.toggleTokenSelector}
-            disabled={paymentParams?.allowTokenSwitch === false}
-          >
-            <View style={styles.selectorLeft}>
-              <View
-                style={[
-                  styles.tokenIcon,
-                  {
-                    backgroundColor: state.selectedToken
-                      ? getTokenColor(state.selectedToken.symbol)
-                      : palette.neutralMid,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={
-                    state.selectedToken
-                      ? (getTokenIcon(state.selectedToken.symbol) as any)
-                      : "help"
-                  }
-                  size={20}
-                  color={palette.white}
-                />
-              </View>
-              <View>
-                <Text style={styles.selectorTitle}>
-                  {state.selectedToken
-                    ? state.selectedToken.symbol
-                    : "Select Token"}
-                </Text>
-                <Text style={styles.selectorSubtitle}>
-                  {state.isRefreshingBalance
-                    ? "Loading balance..."
-                    : state.selectedToken && availableBalance
-                      ? `Balance: ${availableBalance} ${state.selectedToken.symbol}`
-                      : "Choose a token to send"}
-                </Text>
-              </View>
-            </View>
-            {paymentParams?.allowTokenSwitch !== false && (
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={20}
-                color={palette.neutralMid}
-              />
-            )}
-          </Pressable>
-
-          {state.selectedNetwork.isTestnet && (
-            <View style={styles.testnetWarning}>
-              <MaterialCommunityIcons
-                name="alert-circle"
-                size={16}
-                color={palette.warningYellow}
-              />
-              <Text style={styles.testnetWarningText}>
-                Test Network - Tokens have no real value
-              </Text>
-            </View>
-          )}
+        <View style={styles.compactSelectorContainer}>
+          <CompactNetworkTokenSelector
+            selectedNetworkId={state.selectedNetwork.id}
+            selectedToken={state.selectedToken}
+            onNetworkChange={actions.selectNetwork}
+            onTokenChange={actions.selectToken}
+            disabled={
+              paymentParams?.allowNetworkSwitch === false ||
+              paymentParams?.allowTokenSwitch === false
+            }
+          />
         </View>
 
         {/* Recipient Address */}
@@ -381,7 +272,6 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.md,
   },
   header: {
     alignItems: "center",
@@ -401,6 +291,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: palette.neutralMid,
     textAlign: "center",
+  },
+  compactSelectorContainer: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg * 4,
+    marginBottom: spacing.lg,
   },
   selectionCard: {
     backgroundColor: palette.white,
@@ -472,6 +367,7 @@ const styles = StyleSheet.create({
     backgroundColor: palette.white,
     borderRadius: 16,
     padding: spacing.lg,
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   cardHeader: {

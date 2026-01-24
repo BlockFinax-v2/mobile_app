@@ -23,8 +23,8 @@ export const SendPaymentScreen: React.FC = () => {
   // Convert route params to payment params - memoized to prevent infinite re-renders
   const paymentParams: PaymentParams = useMemo(
     () => ({
-      title: "Send Payment",
-      description: "Send crypto to any wallet address",
+      // title: "Send Payment",
+      // description: "Send crypto to any wallet address",
       recipientAddress: route.params?.prefilledRecipient,
       amount: route.params?.prefilledAmount,
       tokenSymbol: route.params?.prefilledToken,
@@ -43,7 +43,7 @@ export const SendPaymentScreen: React.FC = () => {
       route.params?.prefilledMessage,
       route.params?.returnTo,
       route.params?.returnParams,
-    ]
+    ],
   );
 
   const handlePaymentSuccess = (transactionHash: string) => {
@@ -81,7 +81,7 @@ export const SendPaymentScreen: React.FC = () => {
             style: "cancel",
             onPress: () => navigation.goBack(),
           },
-        ]
+        ],
       );
     }
   };
@@ -91,7 +91,7 @@ export const SendPaymentScreen: React.FC = () => {
       // Return to the calling screen
       navigation.navigate(
         route.params.returnTo as any,
-        route.params?.returnParams
+        route.params?.returnParams,
       );
     } else {
       navigation.goBack();
@@ -109,7 +109,7 @@ export const SendPaymentScreen: React.FC = () => {
           style: "cancel",
           onPress: handlePaymentCancel,
         },
-      ]
+      ],
     );
   };
 

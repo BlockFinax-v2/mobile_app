@@ -7,11 +7,18 @@ import {
   StyleSheet,
   ScrollView,
   Alert,
+  ActivityIndicator,
+  Modal,
+  Pressable,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import * as WebBrowser from "expo-web-browser";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { uploadToIPFS } from "@/config/ipfs";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -31,7 +38,23 @@ interface PoolGuaranteeForm {
   contractDate: string;
   proformaInvoice: any;
   salesContract: any;
+  proformaInvoiceIpfs?: { hash: string; url: string };
+  salesContractIpfs?: { hash: string; url: string };
 }
+
+interface StoredDocument {
+  id: string;
+  title: string;
+  fileName: string;
+  fileUri: string;
+  ipfsHash: string;
+  ipfsUrl: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
+const DOCUMENTS_STORAGE_KEY = "@stored_documents";
 
 interface StepIndicatorProps {
   currentStep: number;
@@ -115,8 +138,6 @@ const StepIndicator: React.FC<StepIndicatorProps> = ({
 interface PoolGuaranteeApplicationFlowProps {
   onClose: () => void;
   onSubmit: (formData: PoolGuaranteeForm) => void;
-  onDocumentPick: (type: "proformaInvoice" | "salesContract") => void;
-  onImagePick: (type: "proformaInvoice" | "salesContract") => void;
   initialFormData?: PoolGuaranteeForm;
 }
 
@@ -124,7 +145,7 @@ const CACHE_KEY = "@pool_guarantee_draft";
 
 export const PoolGuaranteeApplicationFlow: React.FC<
   PoolGuaranteeApplicationFlowProps
-> = ({ onClose, onSubmit, onDocumentPick, onImagePick, initialFormData }) => {
+> = ({ onClose, onSubmit, initialFormData }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<PoolGuaranteeForm>(
     initialFormData || {
@@ -145,8 +166,15 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       contractDate: "",
       proformaInvoice: null,
       salesContract: null,
-    }
+    },
   );
+
+  const [storedDocuments, setStoredDocuments] = useState<StoredDocument[]>([]);
+  const [showDocumentSelector, setShowDocumentSelector] = useState(false);
+  const [activeDocumentType, setActiveDocumentType] = useState<
+    "proformaInvoice" | "salesContract" | null
+  >(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const stepTitles = [
     "Company Info",
@@ -159,12 +187,24 @@ export const PoolGuaranteeApplicationFlow: React.FC<
   // Load cached draft on mount
   useEffect(() => {
     loadDraft();
+    loadStoredDocuments();
   }, []);
 
   // Auto-save draft whenever formData changes
   useEffect(() => {
     saveDraft();
   }, [formData]);
+
+  const loadStoredDocuments = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      if (stored) {
+        setStoredDocuments(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error("Failed to load stored documents:", error);
+    }
+  };
 
   const loadDraft = async () => {
     try {
@@ -183,7 +223,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
     try {
       await AsyncStorage.setItem(
         CACHE_KEY,
-        JSON.stringify({ formData, currentStep })
+        JSON.stringify({ formData, currentStep }),
       );
     } catch (error) {
       console.log("Error saving draft:", error);
@@ -209,7 +249,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         ) {
           Alert.alert(
             "Missing Information",
-            "Please fill in all required company information fields."
+            "Please fill in all required company information fields.",
           );
           return false;
         }
@@ -218,7 +258,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         if (!formData.tradeDescription || !formData.guaranteeAmount) {
           Alert.alert(
             "Missing Information",
-            "Please provide trade description and guarantee amount."
+            "Please provide trade description and guarantee amount.",
           );
           return false;
         }
@@ -227,7 +267,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         if (!formData.collateralDescription || !formData.sellerWalletAddress) {
           Alert.alert(
             "Missing Information",
-            "Please provide collateral details and seller wallet address."
+            "Please provide collateral details and seller wallet address.",
           );
           return false;
         }
@@ -236,7 +276,14 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         if (!formData.proformaInvoice || !formData.salesContract) {
           Alert.alert(
             "Missing Documents",
-            "Please upload both Proforma Invoice and Sales Contract."
+            "Please upload both Proforma Invoice and Sales Contract.",
+          );
+          return false;
+        }
+        if (!formData.proformaInvoiceIpfs || !formData.salesContractIpfs) {
+          Alert.alert(
+            "Upload Required",
+            "Documents must be uploaded to IPFS. Please upload or select documents with IPFS links.",
           );
           return false;
         }
@@ -279,12 +326,172 @@ export const PoolGuaranteeApplicationFlow: React.FC<
           text: "Keep Draft",
           onPress: onClose,
         },
-      ]
+      ],
     );
   };
 
   const updateField = (field: keyof PoolGuaranteeForm, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  // Document upload and selection functions
+  const handleNewDocumentUpload = async (
+    type: "proformaInvoice" | "salesContract",
+  ) => {
+    setActiveDocumentType(type);
+    Alert.alert("Upload Document", "Choose upload method", [
+      {
+        text: "Choose File",
+        onPress: () => pickDocument(type),
+      },
+      {
+        text: "Take Photo",
+        onPress: () => pickImage(type),
+      },
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+    ]);
+  };
+
+  const pickDocument = async (type: "proformaInvoice" | "salesContract") => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf", "image/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        await uploadDocumentToIPFS(type, {
+          name: asset.name,
+          uri: asset.uri,
+          size: asset.size || 0,
+          mimeType: asset.mimeType || "application/octet-stream",
+        });
+      }
+    } catch (error) {
+      console.error("Document picker error:", error);
+      Alert.alert("Error", "Failed to pick document");
+    }
+  };
+
+  const pickImage = async (type: "proformaInvoice" | "salesContract") => {
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          "Permission Required",
+          "Please grant camera roll permissions to upload images.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const asset = result.assets[0];
+        await uploadDocumentToIPFS(type, {
+          name: `image_${Date.now()}.jpg`,
+          uri: asset.uri,
+          size: asset.fileSize || 0,
+          mimeType: "image/jpeg",
+        });
+      }
+    } catch (error) {
+      console.error("Image picker error:", error);
+      Alert.alert("Error", "Failed to pick image");
+    }
+  };
+
+  const uploadDocumentToIPFS = async (
+    type: "proformaInvoice" | "salesContract",
+    file: { name: string; uri: string; size: number; mimeType: string },
+  ) => {
+    setIsUploading(true);
+    try {
+      // Upload to IPFS
+      const { ipfsHash, ipfsUrl } = await uploadToIPFS(
+        file.uri,
+        file.name,
+        file.mimeType,
+      );
+
+      // Update form data with document info and IPFS data
+      setFormData((prev) => ({
+        ...prev,
+        [type]: {
+          name: file.name,
+          uri: file.uri,
+          size: file.size,
+          mimeType: file.mimeType,
+        },
+        [`${type}Ipfs`]: {
+          hash: ipfsHash,
+          url: ipfsUrl,
+        },
+      }));
+
+      Alert.alert(
+        "Upload Successful",
+        `Document uploaded to IPFS successfully!\n\nIPFS Hash: ${ipfsHash}`,
+      );
+    } catch (error) {
+      console.error("IPFS upload error:", error);
+      Alert.alert(
+        "Upload Failed",
+        "Failed to upload document to IPFS. Please try again.",
+      );
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSelectExistingDocument = (
+    type: "proformaInvoice" | "salesContract",
+  ) => {
+    setActiveDocumentType(type);
+    setShowDocumentSelector(true);
+  };
+
+  const handleDocumentSelected = (doc: StoredDocument) => {
+    if (!activeDocumentType) return;
+
+    // Use existing document's IPFS data
+    setFormData((prev) => ({
+      ...prev,
+      [activeDocumentType]: {
+        name: doc.fileName,
+        uri: doc.fileUri,
+        size: doc.fileSize,
+        mimeType: doc.fileType,
+      },
+      [`${activeDocumentType}Ipfs`]: {
+        hash: doc.ipfsHash,
+        url: doc.ipfsUrl,
+      },
+    }));
+
+    setShowDocumentSelector(false);
+    setActiveDocumentType(null);
+    Alert.alert(
+      "Document Selected",
+      `${doc.title} has been added to your application.`,
+    );
+  };
+
+  const viewDocument = async (ipfsUrl: string) => {
+    try {
+      await WebBrowser.openBrowserAsync(ipfsUrl);
+    } catch (error) {
+      Alert.alert("Error", "Failed to open document");
+    }
   };
 
   const renderStepContent = () => {
@@ -527,23 +734,44 @@ export const PoolGuaranteeApplicationFlow: React.FC<
           <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Required Documents</Text>
             <Text style={styles.stepDescription}>
-              Upload proforma invoice and sales contract
+              Upload or select proforma invoice and sales contract
             </Text>
 
+            {/* Proforma Invoice Section */}
             <View style={styles.documentSection}>
               <Text style={styles.documentLabel}>Proforma Invoice *</Text>
-              {formData.proformaInvoice ? (
+              {formData.proformaInvoice && formData.proformaInvoiceIpfs ? (
                 <View style={styles.uploadedFile}>
                   <MaterialCommunityIcons
                     name="file-check"
                     size={24}
-                    color={colors.primary}
+                    color={colors.success}
                   />
-                  <Text style={styles.uploadedFileName}>
-                    {formData.proformaInvoice.name}
-                  </Text>
+                  <View style={styles.uploadedFileInfo}>
+                    <Text style={styles.uploadedFileName}>
+                      {formData.proformaInvoice.name}
+                    </Text>
+                    <Text style={styles.uploadedFileHash} numberOfLines={1}>
+                      IPFS: {formData.proformaInvoiceIpfs.hash}
+                    </Text>
+                  </View>
                   <TouchableOpacity
-                    onPress={() => updateField("proformaInvoice", null)}
+                    onPress={() =>
+                      viewDocument(formData.proformaInvoiceIpfs!.url)
+                    }
+                    style={styles.viewDocButton}
+                  >
+                    <MaterialCommunityIcons
+                      name="eye"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      updateField("proformaInvoice", null);
+                      updateField("proformaInvoiceIpfs", undefined);
+                    }}
                   >
                     <MaterialCommunityIcons
                       name="close"
@@ -553,28 +781,41 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={styles.uploadButtons}>
+                <View style={styles.uploadOptionsContainer}>
                   <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => onDocumentPick("proformaInvoice")}
+                    style={styles.uploadOptionButton}
+                    onPress={() => handleNewDocumentUpload("proformaInvoice")}
+                    disabled={isUploading}
                   >
                     <MaterialCommunityIcons
-                      name="file-upload"
-                      size={24}
+                      name="cloud-upload"
+                      size={32}
                       color={colors.primary}
                     />
-                    <Text style={styles.uploadButtonText}>Choose Document</Text>
+                    <Text style={styles.uploadOptionTitle}>Upload New</Text>
+                    <Text style={styles.uploadOptionDescription}>
+                      Choose file or take photo
+                    </Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => onImagePick("proformaInvoice")}
+                    style={styles.uploadOptionButton}
+                    onPress={() =>
+                      handleSelectExistingDocument("proformaInvoice")
+                    }
+                    disabled={isUploading}
                   >
                     <MaterialCommunityIcons
-                      name="camera"
-                      size={24}
+                      name="folder-open"
+                      size={32}
                       color={colors.primary}
                     />
-                    <Text style={styles.uploadButtonText}>Take Photo</Text>
+                    <Text style={styles.uploadOptionTitle}>
+                      Select Existing
+                    </Text>
+                    <Text style={styles.uploadOptionDescription}>
+                      From Document Center
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -583,20 +824,41 @@ export const PoolGuaranteeApplicationFlow: React.FC<
               </Text>
             </View>
 
+            {/* Sales Contract Section */}
             <View style={styles.documentSection}>
               <Text style={styles.documentLabel}>Sales Contract *</Text>
-              {formData.salesContract ? (
+              {formData.salesContract && formData.salesContractIpfs ? (
                 <View style={styles.uploadedFile}>
                   <MaterialCommunityIcons
                     name="file-check"
                     size={24}
-                    color={colors.primary}
+                    color={colors.success}
                   />
-                  <Text style={styles.uploadedFileName}>
-                    {formData.salesContract.name}
-                  </Text>
+                  <View style={styles.uploadedFileInfo}>
+                    <Text style={styles.uploadedFileName}>
+                      {formData.salesContract.name}
+                    </Text>
+                    <Text style={styles.uploadedFileHash} numberOfLines={1}>
+                      IPFS: {formData.salesContractIpfs.hash}
+                    </Text>
+                  </View>
                   <TouchableOpacity
-                    onPress={() => updateField("salesContract", null)}
+                    onPress={() =>
+                      viewDocument(formData.salesContractIpfs!.url)
+                    }
+                    style={styles.viewDocButton}
+                  >
+                    <MaterialCommunityIcons
+                      name="eye"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      updateField("salesContract", null);
+                      updateField("salesContractIpfs", undefined);
+                    }}
                   >
                     <MaterialCommunityIcons
                       name="close"
@@ -606,28 +868,41 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                   </TouchableOpacity>
                 </View>
               ) : (
-                <View style={styles.uploadButtons}>
+                <View style={styles.uploadOptionsContainer}>
                   <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => onDocumentPick("salesContract")}
+                    style={styles.uploadOptionButton}
+                    onPress={() => handleNewDocumentUpload("salesContract")}
+                    disabled={isUploading}
                   >
                     <MaterialCommunityIcons
-                      name="file-upload"
-                      size={24}
+                      name="cloud-upload"
+                      size={32}
                       color={colors.primary}
                     />
-                    <Text style={styles.uploadButtonText}>Choose Document</Text>
+                    <Text style={styles.uploadOptionTitle}>Upload New</Text>
+                    <Text style={styles.uploadOptionDescription}>
+                      Choose file or take photo
+                    </Text>
                   </TouchableOpacity>
+
                   <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => onImagePick("salesContract")}
+                    style={styles.uploadOptionButton}
+                    onPress={() =>
+                      handleSelectExistingDocument("salesContract")
+                    }
+                    disabled={isUploading}
                   >
                     <MaterialCommunityIcons
-                      name="camera"
-                      size={24}
+                      name="folder-open"
+                      size={32}
                       color={colors.primary}
                     />
-                    <Text style={styles.uploadButtonText}>Take Photo</Text>
+                    <Text style={styles.uploadOptionTitle}>
+                      Select Existing
+                    </Text>
+                    <Text style={styles.uploadOptionDescription}>
+                      From Document Center
+                    </Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -635,6 +910,13 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                 PDF or Image (PNG, JPG) • Max 10MB
               </Text>
             </View>
+
+            {isUploading && (
+              <View style={styles.uploadingIndicator}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.uploadingText}>Uploading to IPFS...</Text>
+              </View>
+            )}
           </View>
         );
 
@@ -647,7 +929,18 @@ export const PoolGuaranteeApplicationFlow: React.FC<
             </Text>
 
             <View style={styles.reviewSection}>
-              <Text style={styles.reviewSectionTitle}>Company Information</Text>
+              <View style={styles.reviewSectionHeader}>
+                <Text style={styles.reviewSectionTitle}>
+                  Company Information
+                </Text>
+                <TouchableOpacity onPress={() => setCurrentStep(1)}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Company:</Text>
                 <Text style={styles.reviewValue}>{formData.companyName}</Text>
@@ -669,7 +962,16 @@ export const PoolGuaranteeApplicationFlow: React.FC<
             </View>
 
             <View style={styles.reviewSection}>
-              <Text style={styles.reviewSectionTitle}>Trade Details</Text>
+              <View style={styles.reviewSectionHeader}>
+                <Text style={styles.reviewSectionTitle}>Trade Details</Text>
+                <TouchableOpacity onPress={() => setCurrentStep(2)}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Description:</Text>
                 <Text style={styles.reviewValue} numberOfLines={3}>
@@ -697,7 +999,18 @@ export const PoolGuaranteeApplicationFlow: React.FC<
             </View>
 
             <View style={styles.reviewSection}>
-              <Text style={styles.reviewSectionTitle}>Collateral & Seller</Text>
+              <View style={styles.reviewSectionHeader}>
+                <Text style={styles.reviewSectionTitle}>
+                  Collateral & Seller
+                </Text>
+                <TouchableOpacity onPress={() => setCurrentStep(3)}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
+              </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Collateral:</Text>
                 <Text style={styles.reviewValue} numberOfLines={2}>
@@ -716,26 +1029,81 @@ export const PoolGuaranteeApplicationFlow: React.FC<
             </View>
 
             <View style={styles.reviewSection}>
-              <Text style={styles.reviewSectionTitle}>Documents</Text>
-              <View style={styles.reviewRow}>
-                <MaterialCommunityIcons
-                  name="file-check"
-                  size={20}
-                  color={colors.primary}
-                />
-                <Text style={styles.reviewValue}>
-                  {formData.proformaInvoice?.name || "No file"}
-                </Text>
+              <View style={styles.reviewSectionHeader}>
+                <Text style={styles.reviewSectionTitle}>Documents</Text>
+                <TouchableOpacity onPress={() => setCurrentStep(4)}>
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={18}
+                    color={colors.primary}
+                  />
+                </TouchableOpacity>
               </View>
-              <View style={styles.reviewRow}>
+
+              {/* Proforma Invoice */}
+              <View style={styles.documentReviewCard}>
                 <MaterialCommunityIcons
                   name="file-check"
-                  size={20}
-                  color={colors.primary}
+                  size={24}
+                  color={colors.success}
                 />
-                <Text style={styles.reviewValue}>
-                  {formData.salesContract?.name || "No file"}
-                </Text>
+                <View style={styles.documentReviewInfo}>
+                  <Text style={styles.documentReviewName}>
+                    {formData.proformaInvoice?.name || "No file"}
+                  </Text>
+                  {formData.proformaInvoiceIpfs && (
+                    <Text style={styles.documentReviewHash} numberOfLines={1}>
+                      IPFS: {formData.proformaInvoiceIpfs.hash}
+                    </Text>
+                  )}
+                </View>
+                {formData.proformaInvoiceIpfs && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      viewDocument(formData.proformaInvoiceIpfs!.url)
+                    }
+                    style={styles.viewDocIconButton}
+                  >
+                    <MaterialCommunityIcons
+                      name="eye"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Sales Contract */}
+              <View style={styles.documentReviewCard}>
+                <MaterialCommunityIcons
+                  name="file-check"
+                  size={24}
+                  color={colors.success}
+                />
+                <View style={styles.documentReviewInfo}>
+                  <Text style={styles.documentReviewName}>
+                    {formData.salesContract?.name || "No file"}
+                  </Text>
+                  {formData.salesContractIpfs && (
+                    <Text style={styles.documentReviewHash} numberOfLines={1}>
+                      IPFS: {formData.salesContractIpfs.hash}
+                    </Text>
+                  )}
+                </View>
+                {formData.salesContractIpfs && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      viewDocument(formData.salesContractIpfs!.url)
+                    }
+                    style={styles.viewDocIconButton}
+                  >
+                    <MaterialCommunityIcons
+                      name="eye"
+                      size={20}
+                      color={colors.primary}
+                    />
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
 
@@ -749,7 +1117,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                 <Text style={styles.feeCardTitle}>Issuance Fee</Text>
                 <Text style={styles.feeCardValue}>
                   {(parseFloat(formData.guaranteeAmount || "0") * 0.01).toFixed(
-                    2
+                    2,
                   )}{" "}
                   USDC (1%)
                 </Text>
@@ -757,6 +1125,19 @@ export const PoolGuaranteeApplicationFlow: React.FC<
                   Payable after seller approves the draft certificate
                 </Text>
               </View>
+            </View>
+
+            <View style={styles.submissionNotice}>
+              <MaterialCommunityIcons
+                name="shield-check"
+                size={24}
+                color={colors.success}
+              />
+              <Text style={styles.submissionNoticeText}>
+                Your application will be submitted with IPFS document links for
+                review by treasury financiers. The seller can immediately view
+                documents using the eye icon.
+              </Text>
             </View>
           </View>
         );
@@ -825,6 +1206,84 @@ export const PoolGuaranteeApplicationFlow: React.FC<
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Document Selector Modal */}
+      <Modal
+        visible={showDocumentSelector}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowDocumentSelector(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Document</Text>
+            <TouchableOpacity onPress={() => setShowDocumentSelector(false)}>
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalContent}>
+            {storedDocuments.length === 0 ? (
+              <View style={styles.emptyDocuments}>
+                <MaterialCommunityIcons
+                  name="file-outline"
+                  size={64}
+                  color={colors.textSecondary}
+                />
+                <Text style={styles.emptyDocumentsText}>
+                  No documents found
+                </Text>
+                <Text style={styles.emptyDocumentsSubtext}>
+                  Upload documents in Document Center first
+                </Text>
+              </View>
+            ) : (
+              storedDocuments.map((doc) => (
+                <TouchableOpacity
+                  key={doc.id}
+                  style={styles.documentSelectorCard}
+                  onPress={() => handleDocumentSelected(doc)}
+                >
+                  <MaterialCommunityIcons
+                    name={
+                      doc.fileType.startsWith("image/")
+                        ? "file-image"
+                        : doc.fileType === "application/pdf"
+                          ? "file-pdf-box"
+                          : "file-document"
+                    }
+                    size={32}
+                    color={colors.primary}
+                  />
+                  <View style={styles.documentSelectorInfo}>
+                    <Text style={styles.documentSelectorTitle}>
+                      {doc.title}
+                    </Text>
+                    <Text style={styles.documentSelectorFileName}>
+                      {doc.fileName}
+                    </Text>
+                    <Text style={styles.documentSelectorHash} numberOfLines={1}>
+                      IPFS: {doc.ipfsHash}
+                    </Text>
+                    <Text style={styles.documentSelectorDate}>
+                      Uploaded: {doc.uploadedAt}
+                    </Text>
+                  </View>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={24}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1134,5 +1593,178 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontSize: 16,
     fontWeight: "600",
+  },
+  uploadOptionsContainer: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  uploadOptionButton: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    padding: spacing.lg,
+    alignItems: "center",
+    backgroundColor: "white",
+  },
+  uploadOptionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginTop: spacing.sm,
+  },
+  uploadOptionDescription: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: spacing.xs / 2,
+    textAlign: "center",
+  },
+  uploadedFileInfo: {
+    flex: 1,
+    marginLeft: spacing.sm,
+  },
+  uploadedFileHash: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontFamily: "monospace",
+    marginTop: spacing.xs / 2,
+  },
+  viewDocButton: {
+    padding: spacing.xs,
+    marginRight: spacing.xs,
+  },
+  uploadingIndicator: {
+    alignItems: "center",
+    padding: spacing.xl,
+    backgroundColor: "#F0F9FF",
+    borderRadius: 12,
+    marginTop: spacing.lg,
+  },
+  uploadingText: {
+    fontSize: 14,
+    color: colors.primary,
+    marginTop: spacing.md,
+    fontWeight: "500",
+  },
+  reviewSectionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  documentReviewCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 8,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  documentReviewInfo: {
+    flex: 1,
+  },
+  documentReviewName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: colors.text,
+  },
+  documentReviewHash: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontFamily: "monospace",
+    marginTop: spacing.xs / 2,
+  },
+  viewDocIconButton: {
+    padding: spacing.xs,
+  },
+  submissionNotice: {
+    flexDirection: "row",
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  submissionNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 18,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: spacing.lg,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  modalContent: {
+    flex: 1,
+    padding: spacing.lg,
+  },
+  emptyDocuments: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl * 2,
+  },
+  emptyDocumentsText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginTop: spacing.md,
+  },
+  emptyDocumentsSubtext: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    textAlign: "center",
+  },
+  documentSelectorCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.md,
+  },
+  documentSelectorInfo: {
+    flex: 1,
+  },
+  documentSelectorTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  documentSelectorFileName: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs / 2,
+  },
+  documentSelectorHash: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    fontFamily: "monospace",
+    marginBottom: spacing.xs / 2,
+  },
+  documentSelectorDate: {
+    fontSize: 11,
+    color: colors.textSecondary,
   },
 });

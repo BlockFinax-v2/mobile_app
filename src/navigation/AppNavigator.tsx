@@ -14,7 +14,7 @@ import { ProfileHomeScreen } from "@/screens/profile/ProfileHomeScreen";
 import { SettingsScreen } from "@/screens/profile/SettingsScreen";
 import { RewardsHomeScreen } from "@/screens/rewards/RewardsHomeScreen";
 import { TradeFinanceScreen } from "@/screens/trade/TradeFinanceScreen";
-import { TreasuryPortalScreen } from "@/screens/treasury/TreasuryPortalScreen";
+import { TreasuryPortalScreenRedesigned } from "@/screens/treasury/TreasuryPortalScreenRedesigned";
 import { ReceivePaymentScreen } from "@/screens/wallet/ReceivePaymentScreen";
 import { SendPaymentScreen } from "@/screens/wallet/SendPaymentScreenNew";
 // Trade Finance Payment Components
@@ -112,7 +112,7 @@ const WalletNavigator = () => (
     />
     <WalletStack.Screen
       name="TreasuryPortal"
-      component={TreasuryPortalScreen}
+      component={TreasuryPortalScreenRedesigned}
       options={{
         headerShown: true,
         title: "Treasury Portal",

@@ -18,6 +18,7 @@ import {
   TextInput,
   ActivityIndicator,
   Pressable,
+  RefreshControl,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -65,6 +66,7 @@ import {
 } from "@/components/ui/SkeletonLoader";
 import { FinancierRevocationPanel } from "@/components/treasury/FinancierRevocationPanel";
 import { CustomDeadlineModal } from "@/components/treasury/CustomDeadlineModal";
+import { LinearGradient } from "expo-linear-gradient";
 
 type NavigationProp = StackNavigationProp<
   WalletStackParamList,
@@ -172,6 +174,11 @@ export function TreasuryPortalScreen() {
     selectedNetwork.id,
   );
   const isInitialized = useRef(false); // Track if service is already initialized
+
+  // Action mode for treasury operations
+  const [actionMode, setActionMode] = useState<"stake" | "unstake" | "revoke">(
+    "stake",
+  );
 
   // Initialize staking service with user's actual wallet credentials
   // 🚀 OPTIMIZED: Singleton pattern to prevent multiple initializations
@@ -1571,6 +1578,92 @@ export function TreasuryPortalScreen() {
                 )}
               </View>
 
+              {/* Action Mode Slider */}
+              <View style={styles.actionSliderSection}>
+                <Text style={styles.actionSliderLabel}>Action</Text>
+                <View style={styles.actionSliderContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.actionSliderOption,
+                      styles.actionSliderOptionLeft,
+                      actionMode === "stake" && styles.actionSliderOptionActive,
+                    ]}
+                    onPress={() => setActionMode("stake")}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons
+                      name="plus-circle"
+                      size={20}
+                      color={actionMode === "stake" ? "white" : colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.actionSliderText,
+                        actionMode === "stake" && styles.actionSliderTextActive,
+                      ]}
+                    >
+                      Stake
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.actionSliderOption,
+                      styles.actionSliderOptionMiddle,
+                      actionMode === "unstake" &&
+                        styles.actionSliderOptionActive,
+                    ]}
+                    onPress={() => setActionMode("unstake")}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons
+                      name="minus-circle"
+                      size={20}
+                      color={
+                        actionMode === "unstake" ? "white" : colors.primary
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.actionSliderText,
+                        actionMode === "unstake" &&
+                          styles.actionSliderTextActive,
+                      ]}
+                    >
+                      Unstake
+                    </Text>
+                  </TouchableOpacity>
+
+                  {isFinancier && (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionSliderOption,
+                        styles.actionSliderOptionRight,
+                        actionMode === "revoke" &&
+                          styles.actionSliderOptionActive,
+                      ]}
+                      onPress={() => setActionMode("revoke")}
+                      activeOpacity={0.7}
+                    >
+                      <MaterialCommunityIcons
+                        name="cancel"
+                        size={20}
+                        color={actionMode === "revoke" ? "white" : colors.error}
+                      />
+                      <Text
+                        style={[
+                          styles.actionSliderText,
+                          actionMode === "revoke" &&
+                            styles.actionSliderTextActive,
+                        ]}
+                      >
+                        Revoke
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
               {!isUnlocked ? (
                 <View style={styles.walletPrompt}>
                   <MaterialCommunityIcons
@@ -1582,99 +1675,128 @@ export function TreasuryPortalScreen() {
                     Connect your wallet to view staking information
                   </Text>
                 </View>
+              ) : isLoading ? (
+                <>
+                  <SkeletonStatsGrid />
+                  <View style={{ marginTop: spacing.lg }}>
+                    <Skeleton
+                      width="40%"
+                      height={16}
+                      style={{ marginBottom: spacing.md }}
+                    />
+                    <Skeleton
+                      width="100%"
+                      height={48}
+                      style={{ marginBottom: spacing.md }}
+                    />
+                    <Skeleton width="100%" height={48} />
+                  </View>
+                </>
               ) : (
                 <>
-                  {/* Show skeleton loaders while loading */}
-                  {isLoading ? (
-                    <>
-                      <SkeletonStatsGrid />
-                      <View style={{ marginTop: spacing.lg }}>
-                        <Skeleton
-                          width="40%"
-                          height={16}
-                          style={{ marginBottom: spacing.md }}
-                        />
-                        <Skeleton
-                          width="100%"
-                          height={48}
-                          style={{ marginBottom: spacing.md }}
-                        />
-                        <Skeleton width="100%" height={48} />
-                      </View>
-                    </>
-                  ) : (
-                    <>
-                      {/* Hero Card - Total Staked Across All Networks */}
-                      <View style={styles.heroCard}>
-                        <View style={styles.heroHeader}>
-                          <MaterialCommunityIcons
-                            name="cash-multiple"
-                            size={28}
-                            color={colors.primary}
-                          />
-                          <Text style={styles.heroTitle}>Portfolio Value</Text>
-                        </View>
-                        <Text style={styles.heroAmount}>
+                  {/* Compact Portfolio Card - All staking info in one place */}
+                  <View style={styles.portfolioCard}>
+                    <Text style={styles.portfolioCardTitle}>
+                      Portfolio Overview
+                    </Text>
+
+                    {/* Main Stats Grid - 2x3 layout */}
+                    <View style={styles.portfolioStatsGrid}>
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>
+                          Current Network
+                        </Text>
+                        <Text style={styles.portfolioStatValue}>
                           $
                           {(userTotalStakedUSD || 0).toLocaleString("en-US", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </Text>
-                        <Text style={styles.heroSubtext}>
-                          Total Staked Value
+                        <Text style={styles.portfolioStatHint}>
+                          Staked on {selectedNetwork.name}
                         </Text>
                       </View>
 
-                      {/* Quick Stats Grid */}
-                      <View style={styles.quickStatsGrid}>
-                        <View style={styles.quickStatCard}>
-                          <MaterialCommunityIcons
-                            name="vote"
-                            size={24}
-                            color={colors.primary}
-                          />
-                          <Text style={styles.quickStatValue}>
-                            {stakeInfo?.votingPower
-                              ? (
-                                  parseFloat(stakeInfo.votingPower) * 100
-                                ).toFixed(2)
-                              : "0.00"}
-                            %
-                          </Text>
-                          <Text style={styles.quickStatLabel}>
-                            Voting Power
-                          </Text>
-                        </View>
-
-                        <View style={styles.quickStatCard}>
-                          <MaterialCommunityIcons
-                            name="earth"
-                            size={24}
-                            color={colors.success}
-                          />
-                          <Text style={styles.quickStatValue}>
-                            $
-                            {(globalPoolTotalUSD || 0).toLocaleString("en-US", {
-                              maximumFractionDigits: 0,
-                            })}
-                          </Text>
-                          <Text style={styles.quickStatLabel}>Global Pool</Text>
-                        </View>
-
-                        <View style={styles.quickStatCard}>
-                          <MaterialCommunityIcons
-                            name="chart-line"
-                            size={24}
-                            color={colors.warning}
-                          />
-                          <Text style={styles.quickStatValue}>
-                            {(currentAPR || 0).toFixed(1)}%
-                          </Text>
-                          <Text style={styles.quickStatLabel}>Current APR</Text>
-                        </View>
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>
+                          Voting Power
+                        </Text>
+                        <Text style={styles.portfolioStatValue}>
+                          {userVotingPowerPercentage?.toFixed(2) || "0.00"}%
+                        </Text>
+                        <Text style={styles.portfolioStatHint}>
+                          Across all networks
+                        </Text>
                       </View>
 
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>
+                          Global Pool
+                        </Text>
+                        <Text style={styles.portfolioStatValue}>
+                          $
+                          {(globalPoolTotalUSD || 0).toLocaleString("en-US", {
+                            maximumFractionDigits: 0,
+                          })}
+                        </Text>
+                        <Text style={styles.portfolioStatHint}>
+                          Total across networks
+                        </Text>
+                      </View>
+
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>APR</Text>
+                        <Text
+                          style={[
+                            styles.portfolioStatValue,
+                            { color: colors.success },
+                          ]}
+                        >
+                          {(currentAPR || 0).toFixed(1)}%
+                        </Text>
+                        <Text style={styles.portfolioStatHint}>
+                          Current rate
+                        </Text>
+                      </View>
+
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>Balance</Text>
+                        <Text style={styles.portfolioStatValue}>
+                          {selectedToken
+                            ? tokenBalances[selectedToken.address] || "0"
+                            : usdcBalance}{" "}
+                          {selectedToken?.symbol || "USDC"}
+                        </Text>
+                        <Text style={styles.portfolioStatHint}>Available</Text>
+                      </View>
+
+                      <View style={styles.portfolioStatItem}>
+                        <Text style={styles.portfolioStatLabel}>Status</Text>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: stakeInfo?.isFinancier
+                                ? colors.primary
+                                : colors.success,
+                            },
+                          ]}
+                        >
+                          <Text style={styles.statusBadgeText}>
+                            {stakeInfo?.isFinancier ? "Financier" : "Staker"}
+                          </Text>
+                        </View>
+                        <Text style={styles.portfolioStatHint}>
+                          {stakeInfo?.active ? "Active" : "Inactive"}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Action-specific content based on slider selection */}
+                  {actionMode === "stake" && (
+                    <>
                       {/* Token Selector */}
                       <View style={styles.stakeInputSection}>
                         <Text style={styles.inputLabel}>Select Token</Text>
@@ -1870,193 +1992,197 @@ export function TreasuryPortalScreen() {
                           )}
                         </TouchableOpacity>
                       </View>
+                    </>
+                  )}
 
+                  {/* Unstake Mode Content */}
+                  {actionMode === "unstake" && stakeInfo?.active && (
+                    <>
                       {/* Unstake Section */}
-                      {stakeInfo?.active && (
-                        <View style={styles.unstakeSection}>
-                          <Text style={styles.inputLabel}>
-                            Unstake Amount (USDC)
-                          </Text>
-                          <View style={styles.inputContainer}>
-                            <TextInput
-                              style={[
-                                styles.amountInput,
-                                isTransacting && styles.inputDisabled,
-                              ]}
-                              value={unstakeAmount}
-                              onChangeText={setUnstakeAmount}
-                              placeholder="Enter amount to unstake"
-                              placeholderTextColor={colors.textSecondary}
-                              keyboardType="decimal-pad"
-                              editable={!isTransacting}
-                            />
-                            <TouchableOpacity
-                              style={[
-                                styles.maxButton,
-                                isTransacting && styles.maxButtonDisabled,
-                              ]}
-                              onPress={() => setUnstakeAmount(stakeInfo.amount)}
-                              disabled={isTransacting}
-                            >
-                              <Text style={styles.maxButtonText}>MAX</Text>
-                            </TouchableOpacity>
-                          </View>
+                      <View style={styles.unstakeSection}>
+                        <Text style={styles.inputLabel}>
+                          Unstake Amount (USDC)
+                        </Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={[
+                              styles.amountInput,
+                              isTransacting && styles.inputDisabled,
+                            ]}
+                            value={unstakeAmount}
+                            onChangeText={setUnstakeAmount}
+                            placeholder="Enter amount to unstake"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="decimal-pad"
+                            editable={!isTransacting}
+                          />
+                          <TouchableOpacity
+                            style={[
+                              styles.maxButton,
+                              isTransacting && styles.maxButtonDisabled,
+                            ]}
+                            onPress={() => setUnstakeAmount(stakeInfo.amount)}
+                            disabled={isTransacting}
+                          >
+                            <Text style={styles.maxButtonText}>MAX</Text>
+                          </TouchableOpacity>
+                        </View>
 
-                          {stakeInfo.timeUntilUnlock &&
-                            stakeInfo.timeUntilUnlock > 0 && (
-                              <Text style={styles.lockWarning}>
-                                ⚠️ Locked for{" "}
-                                {Math.ceil(stakeInfo.timeUntilUnlock / 86400)}{" "}
-                                more days
-                              </Text>
+                        {stakeInfo.timeUntilUnlock &&
+                          stakeInfo.timeUntilUnlock > 0 && (
+                            <Text style={styles.lockWarning}>
+                              ⚠️ Locked for{" "}
+                              {Math.ceil(stakeInfo.timeUntilUnlock / 86400)}{" "}
+                              more days
+                            </Text>
+                          )}
+
+                        <View style={styles.unstakeButtons}>
+                          <TouchableOpacity
+                            style={[
+                              styles.unstakeButton,
+                              isTransacting ||
+                              !unstakeAmount ||
+                              parseFloat(unstakeAmount) <= 0 ||
+                              Boolean(
+                                stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0,
+                              )
+                                ? styles.buttonDisabled
+                                : null,
+                            ]}
+                            onPress={handleUnstake}
+                            disabled={
+                              isTransacting ||
+                              !unstakeAmount ||
+                              parseFloat(unstakeAmount) <= 0 ||
+                              Boolean(
+                                stakeInfo?.timeUntilUnlock &&
+                                stakeInfo.timeUntilUnlock > 0,
+                              )
+                            }
+                          >
+                            {isTransacting && pendingTx?.type === "unstake" ? (
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.warning}
+                              />
+                            ) : (
+                              <MaterialCommunityIcons
+                                name="minus-circle"
+                                size={20}
+                                color={
+                                  stakeInfo?.timeUntilUnlock &&
+                                  stakeInfo.timeUntilUnlock > 0
+                                    ? colors.textSecondary
+                                    : colors.warning
+                                }
+                              />
                             )}
-
-                          <View style={styles.unstakeButtons}>
-                            <TouchableOpacity
+                            <Text
                               style={[
-                                styles.unstakeButton,
-                                isTransacting ||
-                                !unstakeAmount ||
-                                parseFloat(unstakeAmount) <= 0 ||
+                                styles.unstakeButtonText,
                                 Boolean(
                                   stakeInfo?.timeUntilUnlock &&
                                   stakeInfo.timeUntilUnlock > 0,
                                 )
-                                  ? styles.buttonDisabled
+                                  ? styles.buttonTextDisabled
                                   : null,
                               ]}
-                              onPress={handleUnstake}
-                              disabled={
-                                isTransacting ||
-                                !unstakeAmount ||
-                                parseFloat(unstakeAmount) <= 0 ||
-                                Boolean(
-                                  stakeInfo?.timeUntilUnlock &&
-                                  stakeInfo.timeUntilUnlock > 0,
-                                )
-                              }
                             >
-                              {isTransacting &&
-                              pendingTx?.type === "unstake" ? (
-                                <ActivityIndicator
-                                  size="small"
-                                  color={colors.warning}
-                                />
-                              ) : (
-                                <MaterialCommunityIcons
-                                  name="minus-circle"
-                                  size={20}
-                                  color={
-                                    stakeInfo?.timeUntilUnlock &&
+                              {isTransacting && pendingTx?.type === "unstake"
+                                ? "Unstaking..."
+                                : stakeInfo?.timeUntilUnlock &&
                                     stakeInfo.timeUntilUnlock > 0
-                                      ? colors.textSecondary
-                                      : colors.warning
-                                  }
-                                />
-                              )}
-                              <Text
-                                style={[
-                                  styles.unstakeButtonText,
-                                  Boolean(
-                                    stakeInfo?.timeUntilUnlock &&
-                                    stakeInfo.timeUntilUnlock > 0,
-                                  )
-                                    ? styles.buttonTextDisabled
-                                    : null,
-                                ]}
-                              >
-                                {isTransacting && pendingTx?.type === "unstake"
-                                  ? "Unstaking..."
-                                  : stakeInfo?.timeUntilUnlock &&
-                                      stakeInfo.timeUntilUnlock > 0
-                                    ? "Locked"
-                                    : "Unstake"}
-                              </Text>
-                            </TouchableOpacity>
+                                  ? "Locked"
+                                  : "Unstake"}
+                            </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity
-                              style={[
-                                styles.emergencyButton,
-                                (isTransacting ||
-                                  !stakeInfo?.active ||
-                                  parseFloat(stakeInfo?.amount || "0") <= 0) &&
-                                  styles.buttonDisabled,
-                              ]}
-                              onPress={handleEmergencyWithdraw}
-                              disabled={
-                                isTransacting ||
-                                !stakeInfo?.active ||
-                                parseFloat(stakeInfo?.amount || "0") <= 0
-                              }
-                            >
-                              {isTransacting &&
-                              pendingTx?.type === "emergency" ? (
-                                <ActivityIndicator
-                                  size="small"
-                                  color={colors.error}
-                                />
-                              ) : (
-                                <MaterialCommunityIcons
-                                  name="alert-circle"
-                                  size={20}
-                                  color={
-                                    !stakeInfo?.active ||
-                                    parseFloat(stakeInfo?.amount || "0") <= 0
-                                      ? colors.textSecondary
-                                      : colors.error
-                                  }
-                                />
-                              )}
-                              <Text
-                                style={[
-                                  styles.emergencyButtonText,
-                                  (!stakeInfo?.active ||
-                                    parseFloat(stakeInfo?.amount || "0") <=
-                                      0) &&
-                                    styles.buttonTextDisabled,
-                                ]}
-                              >
-                                {isTransacting &&
-                                pendingTx?.type === "emergency"
-                                  ? "Processing..."
-                                  : "Emergency"}
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      )}
-
-                      {/* Financier Revocation Panel */}
-                      {isFinancier && (
-                        <FinancierRevocationPanel
-                          userAddress={address || ""}
-                          isFinancier={isFinancier}
-                          onRevocationComplete={() => {
-                            // Refresh financier status after revocation
-                            loadStakingData();
-                          }}
-                        />
-                      )}
-
-                      {/* Custom Deadline Management */}
-                      {isFinancier && (
-                        <View style={styles.customDeadlineSection}>
                           <TouchableOpacity
-                            style={styles.customDeadlineButton}
-                            onPress={() => setShowCustomDeadlineModal(true)}
+                            style={[
+                              styles.emergencyButton,
+                              (isTransacting ||
+                                !stakeInfo?.active ||
+                                parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                                styles.buttonDisabled,
+                            ]}
+                            onPress={handleEmergencyWithdraw}
+                            disabled={
+                              isTransacting ||
+                              !stakeInfo?.active ||
+                              parseFloat(stakeInfo?.amount || "0") <= 0
+                            }
                           >
-                            <MaterialCommunityIcons
-                              name="calendar-clock"
-                              size={20}
-                              color={colors.primary}
-                            />
-                            <Text style={styles.customDeadlineButtonText}>
-                              Set Custom Lock Period
+                            {isTransacting &&
+                            pendingTx?.type === "emergency" ? (
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.error}
+                              />
+                            ) : (
+                              <MaterialCommunityIcons
+                                name="alert-circle"
+                                size={20}
+                                color={
+                                  !stakeInfo?.active ||
+                                  parseFloat(stakeInfo?.amount || "0") <= 0
+                                    ? colors.textSecondary
+                                    : colors.error
+                                }
+                              />
+                            )}
+                            <Text
+                              style={[
+                                styles.emergencyButtonText,
+                                (!stakeInfo?.active ||
+                                  parseFloat(stakeInfo?.amount || "0") <= 0) &&
+                                  styles.buttonTextDisabled,
+                              ]}
+                            >
+                              {isTransacting && pendingTx?.type === "emergency"
+                                ? "Processing..."
+                                : "Emergency"}
                             </Text>
                           </TouchableOpacity>
                         </View>
-                      )}
+                      </View>
                     </>
+                  )}
+
+                  {/* Revoke Financier Mode Content */}
+                  {actionMode === "revoke" && isFinancier && (
+                    <>
+                      {/* Financier Revocation Panel */}
+                      <FinancierRevocationPanel
+                        userAddress={address || ""}
+                        isFinancier={isFinancier}
+                        onRevocationComplete={() => {
+                          // Refresh financier status after revocation
+                          loadStakingData();
+                          setActionMode("stake"); // Switch back to stake mode
+                        }}
+                      />
+                    </>
+                  )}
+
+                  {/* Custom Deadline Management - Show for all modes if financier */}
+                  {isFinancier && (
+                    <View style={styles.customDeadlineSection}>
+                      <TouchableOpacity
+                        style={styles.customDeadlineButton}
+                        onPress={() => setShowCustomDeadlineModal(true)}
+                      >
+                        <MaterialCommunityIcons
+                          name="calendar-clock"
+                          size={20}
+                          color={colors.primary}
+                        />
+                        <Text style={styles.customDeadlineButtonText}>
+                          Set Custom Lock Period
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </>
               )}
@@ -2430,7 +2556,7 @@ export function TreasuryPortalScreen() {
                           </View>
                           <View
                             style={[
-                              styles.statusBadge,
+                              styles.proposalStatusBadge,
                               isActive
                                 ? styles.statusBadgeActive
                                 : styles.statusBadgePassed,
@@ -3021,6 +3147,121 @@ const styles = StyleSheet.create({
     color: "white",
   },
 
+  // Action Slider Styles (similar to Trade Finance role slider)
+  actionSliderSection: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  actionSliderLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  actionSliderContainer: {
+    flexDirection: "row",
+    backgroundColor: colors.border,
+    borderRadius: 12,
+    padding: 3,
+  },
+  actionSliderOption: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    borderRadius: 10,
+    backgroundColor: "transparent",
+  },
+  actionSliderOptionLeft: {
+    marginRight: 2,
+  },
+  actionSliderOptionMiddle: {
+    marginHorizontal: 1,
+  },
+  actionSliderOptionRight: {
+    marginLeft: 2,
+  },
+  actionSliderOptionActive: {
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  actionSliderText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  actionSliderTextActive: {
+    color: "white",
+  },
+
+  // Compact Portfolio Card Styles
+  portfolioCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  portfolioCardTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  portfolioStatsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md,
+  },
+  portfolioStatItem: {
+    width: "31%", // 3 columns with gaps
+    backgroundColor: "white",
+    borderRadius: 10,
+    padding: spacing.md,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  portfolioStatLabel: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: spacing.xs,
+  },
+  portfolioStatValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+    marginBottom: spacing.xs,
+  },
+  portfolioStatHint: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  statusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginVertical: spacing.xs,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "white",
+  },
+
   stakingCard: {
     margin: spacing.lg,
     marginTop: 0,
@@ -3199,7 +3440,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontWeight: "500",
   },
-  statusBadge: {
+  proposalStatusBadge: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: 16,
