@@ -237,7 +237,7 @@ export interface PoolStats {
 
 export interface StakingConfig {
   initialApr: number;
-  currentRewardRate: string;
+  currentRewardRate: number;
   minLockDuration: number;
   aprReductionPerThousand: number;
   emergencyWithdrawPenalty: number;
@@ -594,21 +594,24 @@ class StakingService {
       console.log("🔧 minFinancierLockDuration:", config.minFinancierLockDuration.toString());
       console.log("🔧 minNormalStakerLockDuration:", config.minNormalStakerLockDuration.toString());
       
+      // Contract returns APR values as plain percentages (e.g., 12 => 12%)
+      const initialAprRaw = Number(config.initialApr.toString());
+      const currentRewardRateRaw = Number(config.currentRewardRate.toString());
+
       const result = {
-        // initialApr is stored with 18 decimals in contract (e.g., 1200 * 10^18 for 12%)
-        initialApr: parseFloat(ethers.utils.formatEther(config.initialApr)) / 100,
-        currentRewardRate: ethers.utils.formatUnits(config.currentRewardRate, 18),
-        // Duration values are stored with 18 decimals in contract, need to convert
-        minLockDuration: parseInt(ethers.utils.formatEther(config.minLockDuration)),
-        // APR reduction and penalty are also stored with 18 decimals
-        aprReductionPerThousand: parseInt(ethers.utils.formatEther(config.aprReductionPerThousand)),
-        emergencyWithdrawPenalty: parseFloat(ethers.utils.formatEther(config.emergencyWithdrawPenalty)) / 100,
+        initialApr: Number.isFinite(initialAprRaw) ? initialAprRaw : 0,
+        currentRewardRate: Number.isFinite(currentRewardRateRaw) ? currentRewardRateRaw : 0,
+        // Duration values are plain seconds
+        minLockDuration: config.minLockDuration.toNumber(),
+        // Reduction/penalty are stored as integer basis points
+        aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
+        emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
         // minimumStake is stored as USD equivalent with 18 decimals (ethers.parseEther)
         minimumStake: ethers.utils.formatEther(config.minimumStake),
         minimumFinancierStake: ethers.utils.formatEther(config.minimumFinancierStake),
-        // Lock durations are also stored with 18 decimals
-        minFinancierLockDuration: parseInt(ethers.utils.formatEther(config.minFinancierLockDuration)),
-        minNormalStakerLockDuration: parseInt(ethers.utils.formatEther(config.minNormalStakerLockDuration)),
+        // Lock durations are plain seconds
+        minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
+        minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
       };
       
       console.log("🔧 Formatted result:", JSON.stringify(result, null, 2));
@@ -1895,12 +1898,9 @@ class StakingService {
   public async calculateCurrentAPR(): Promise<number> {
     try {
       const config = await this.getStakingConfig();
-      
-      // The current reward rate from config IS the current APR
-      // It's already adjusted by the contract based on total staked
-      const currentAPR = parseFloat(config.currentRewardRate);
-      
-      return Math.max(currentAPR, 1); // Minimum 1% APR
+
+      const candidate = Number(config.currentRewardRate) || Number(config.initialApr) || 0;
+      return Math.max(candidate, 0);
     } catch (error) {
       console.error("Error calculating current APR:", error);
       return 0;

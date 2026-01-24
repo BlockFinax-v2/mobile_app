@@ -14,6 +14,7 @@ interface ScreenProps {
   backgroundColor?: string;
   padded?: boolean;
   preset?: "fixed" | "scroll";
+  refreshControl?: React.ReactElement;
 }
 
 export const Screen: React.FC<ScreenProps> = ({
@@ -21,6 +22,7 @@ export const Screen: React.FC<ScreenProps> = ({
   backgroundColor = palette.surface,
   padded = true,
   preset = "fixed",
+  refreshControl,
 }) => {
   const contentContainerStyle = padded ? styles.padded : undefined;
 
@@ -30,6 +32,7 @@ export const Screen: React.FC<ScreenProps> = ({
         <ScrollView
           style={styles.container}
           contentContainerStyle={contentContainerStyle}
+          refreshControl={refreshControl}
         >
           {children}
         </ScrollView>

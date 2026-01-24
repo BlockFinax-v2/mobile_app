@@ -18,6 +18,7 @@ import {
   Pressable,
   Animated,
   Dimensions,
+  RefreshControl,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -42,6 +43,7 @@ import {
   DAOConfig,
   AllStakesInfo,
   RevocationStatus,
+  DIAMOND_ADDRESSES,
 } from "@/services/stakingService";
 import {
   getSupportedStablecoins,
@@ -50,6 +52,12 @@ import {
 } from "@/config/stablecoinPrices";
 
 const { width } = Dimensions.get("window");
+
+const POOL_READ_ABI = [
+  "function getTotalStakedUSD() view returns (uint256)",
+  "function getStakers() view returns (address[])",
+  "function getAllStakesForUser(address staker) view returns (address[] tokens,uint256[] amounts,uint256[] usdEquivalents,bool[] isFinancierFlags,uint256[] deadlines,uint256[] pendingRewards,uint256 totalUsdValue)",
+];
 
 type NavigationProp = StackNavigationProp<
   WalletStackParamList,
@@ -125,7 +133,14 @@ const StatCard = ({ icon, label, value, suffix }: any) => {
 export function TreasuryPortalScreenRedesigned() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
-  const { selectedNetwork, isUnlocked, address, switchNetwork } = useWallet();
+  const {
+    selectedNetwork,
+    isUnlocked,
+    address,
+    switchNetwork,
+    balances,
+    getNetworkById,
+  } = useWallet();
 
   // State management
   const [activeTab, setActiveTab] = useState<
@@ -146,15 +161,34 @@ export function TreasuryPortalScreenRedesigned() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isTransacting, setIsTransacting] = useState(false);
 
-  // Portfolio data
+  // Portfolio data (persist last good values until refreshed)
   const [userTotalStakedUSD, setUserTotalStakedUSD] = useState<number>(0);
   const [userVotingPowerPercentage, setUserVotingPowerPercentage] =
     useState<number>(0);
   const [globalPoolTotalUSD, setGlobalPoolTotalUSD] = useState<number>(0);
   const [currentAPR, setCurrentAPR] = useState(0);
-  const [tokenBalance, setTokenBalance] = useState("0");
+  const [availableBalances, setAvailableBalances] = useState<
+    Record<string, number>
+  >({});
   const [isFinancier, setIsFinancier] = useState(false);
-  const [stakeInfo, setStakeInfo] = useState<any>(null);
+  const [allStakesInfo, setAllStakesInfo] = useState<AllStakesInfo | null>(
+    null,
+  );
+  const [stakingConfig, setStakingConfig] = useState<StakingConfig | null>(
+    null,
+  );
+
+  // Governance state
+  const [proposalTitle, setProposalTitle] = useState("");
+  const [proposalDescription, setProposalDescription] = useState("");
+  const [proposalCategory, setProposalCategory] = useState<
+    "Treasury" | "Investment" | "Guarantee"
+  >("Treasury");
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [daoStats, setDAOStats] = useState<DAOStats | null>(null);
+  const [daoConfig, setDAOConfig] = useState<DAOConfig | null>(null);
+  const [isLoadingProposals, setIsLoadingProposals] = useState(false);
+  const [isApplyingFinancier, setIsApplyingFinancier] = useState(false);
 
   // Network configuration
   const networks = [
@@ -195,11 +229,14 @@ export function TreasuryPortalScreenRedesigned() {
     if (!isUnlocked || !address) return;
 
     try {
-      setIsLoading(true);
-      await Promise.all([
+      if (userTotalStakedUSD === 0 && globalPoolTotalUSD === 0) {
+        setIsLoading(true);
+      }
+
+      await Promise.allSettled([
         loadStakingData(),
-        loadBalances(),
         loadFinancierStatus(),
+        loadGovernanceData(),
       ]);
     } catch (error) {
       console.error("Error loading data:", error);
@@ -210,47 +247,185 @@ export function TreasuryPortalScreenRedesigned() {
 
   const loadStakingData = async () => {
     try {
-      const info = await stakingService.getStakeInfo(address!);
-      setStakeInfo(info);
+      // Keep the user's currently selected network so we can restore it after cross-network aggregation
+      const originalNetwork = selectedNetwork;
 
-      // Calculate totals from StakeInfo.amount
-      const totalStaked = parseFloat(
-        ethers.utils.formatUnits(info.amount || "0", 6),
-      );
-      setUserTotalStakedUSD(totalStaked);
+      // Aggregate across all deployed chains (Sepolia testnets for now)
+      const aggregationOrder: SupportedNetworkId[] = [
+        "ethereum-sepolia",
+        "lisk-sepolia",
+        "base-sepolia",
+      ];
 
-      // Get APR from config - use initialApr instead of baseAPR
+      let aggregatedUserTotalUSD = 0;
+      let aggregatedVotingPower = 0;
+      let votingNetworksCount = 0;
+      let aggregatedGlobalPoolUSD = 0;
+
+      // Build token metadata upfront for symbol lookups
+      const tokenMetaMap: Record<string, { symbol: string }> = {};
+      aggregationOrder.forEach((id) => {
+        const tokens = getAllSupportedTokens(id);
+        tokens.forEach((t) => {
+          tokenMetaMap[t.address.toLowerCase()] = { symbol: t.symbol };
+        });
+      });
+
+      const aggregatedStakedBySymbol: Record<string, number> = {};
+
+      try {
+        for (const networkId of aggregationOrder) {
+          const network = getNetworkById(networkId);
+          if (!network) continue;
+
+          // Point the staking service to this network for the query
+          stakingService.setNetwork(network.chainId, network);
+
+          // Per-network stakes for this user
+          const stakes = await stakingService.getAllStakesForUser(address);
+          const networkTotal = parseFloat(stakes.totalUsdValue || "0");
+          if (!Number.isNaN(networkTotal)) {
+            aggregatedUserTotalUSD += networkTotal;
+          }
+
+          // Accumulate staked token amounts by symbol (for MAX/availability UI)
+          stakes.tokens.forEach((tokenAddr, idx) => {
+            const meta = tokenMetaMap[tokenAddr.toLowerCase()];
+            const symbol = meta?.symbol || "TOKEN";
+            const amount = parseFloat(stakes.amounts[idx] || "0");
+            if (!Number.isNaN(amount)) {
+              aggregatedStakedBySymbol[symbol] =
+                (aggregatedStakedBySymbol[symbol] || 0) + amount;
+            }
+          });
+
+          // Global pool total (best-effort) using read-only calls
+          const diamondAddress = DIAMOND_ADDRESSES[network.chainId];
+          if (diamondAddress) {
+            try {
+              const provider = new ethers.providers.JsonRpcProvider(
+                network.rpcUrl,
+              );
+              const poolReader = new ethers.Contract(
+                diamondAddress,
+                POOL_READ_ABI,
+                provider,
+              );
+
+              // Preferred: getTotalStakedUSD if available
+              let networkPoolUSD = 0;
+              try {
+                const totalStakedUSD = await poolReader.getTotalStakedUSD();
+                networkPoolUSD = parseFloat(
+                  ethers.utils.formatEther(totalStakedUSD),
+                );
+              } catch (innerErr) {
+                // Fallback: sum all stakers' totalUsdValue (potentially heavier but acceptable on testnets)
+                try {
+                  const stakers: string[] = await poolReader.getStakers();
+                  let summed = 0;
+                  for (const staker of stakers) {
+                    const stakeData =
+                      await poolReader.getAllStakesForUser(staker);
+                    summed += parseFloat(
+                      ethers.utils.formatEther(stakeData.totalUsdValue),
+                    );
+                  }
+                  networkPoolUSD = summed;
+                } catch (fallbackErr) {
+                  console.warn(
+                    "Global pool fallback failed for",
+                    networkId,
+                    fallbackErr,
+                  );
+                }
+              }
+
+              if (!Number.isNaN(networkPoolUSD)) {
+                aggregatedGlobalPoolUSD += networkPoolUSD;
+              }
+            } catch (err) {
+              console.warn("Global pool lookup failed for", networkId, err);
+            }
+          }
+
+          // Voting power (per-network) via getStake
+          try {
+            const provider = new ethers.providers.JsonRpcProvider(
+              network.rpcUrl,
+            );
+            const diamondAddress = DIAMOND_ADDRESSES[network.chainId];
+            if (diamondAddress) {
+              const stakeContract = new ethers.Contract(
+                diamondAddress,
+                [
+                  "function getStake(address staker) view returns (uint256 amount, uint256 timestamp, uint256 votingPower, bool active, uint256 pendingRewards, uint256 timeUntilUnlock, uint256 deadline, bool financierStatus)",
+                ],
+                provider,
+              );
+              const stake = await stakeContract.getStake(address);
+              const vp = parseFloat(
+                ethers.utils.formatEther(stake.votingPower),
+              );
+              if (!Number.isNaN(vp)) {
+                aggregatedVotingPower += vp;
+                votingNetworksCount += 1;
+              }
+            }
+          } catch (err) {
+            console.warn("Voting power lookup failed for", networkId, err);
+          }
+        }
+      } finally {
+        // Restore staking service to the originally selected network for all subsequent transactions
+        stakingService.setNetwork(originalNetwork.chainId, originalNetwork);
+      }
+
+      // Fetch current-network stakes for transactional actions (stake/unstake)
+      const currentNetworkStakes =
+        await stakingService.getAllStakesForUser(address);
+      setAllStakesInfo(currentNetworkStakes);
+
+      // Persist aggregates for UI
+      setUserTotalStakedUSD(aggregatedUserTotalUSD);
+      if (Object.keys(aggregatedStakedBySymbol).length > 0) {
+        setAvailableBalances(aggregatedStakedBySymbol);
+      }
+
+      const poolTotal = aggregatedGlobalPoolUSD || aggregatedUserTotalUSD;
+      setGlobalPoolTotalUSD(poolTotal);
+
+      const votingPower =
+        votingNetworksCount > 0
+          ? (aggregatedVotingPower / votingNetworksCount) * 100
+          : 0;
+      setUserVotingPowerPercentage(votingPower);
+
+      // APR from current network config (use currentRewardRate if present, else initialApr)
       const config = await stakingService.getStakingConfig();
-      setCurrentAPR(config.initialApr / 100);
+      setStakingConfig(config);
+      const apr =
+        (config.currentRewardRate ?? 0) > 0
+          ? config.currentRewardRate
+          : (config.initialApr ?? 0);
+      setCurrentAPR(apr);
 
-      // Calculate voting power (example: based on stake percentage)
-      const poolTotal = globalPoolTotalUSD || 1000000; // fallback
-      setUserVotingPowerPercentage((totalStaked / poolTotal) * 100);
+      // Wallet balances (available funds) override the staked map when present
+      if (balances?.tokens?.length) {
+        const walletBalanceMap: Record<string, number> = {};
+        balances.tokens.forEach((t) => {
+          const amt = parseFloat(t.balance || "0");
+          if (!Number.isNaN(amt)) {
+            walletBalanceMap[t.symbol] = amt;
+          }
+        });
+        if (Object.keys(walletBalanceMap).length > 0) {
+          setAvailableBalances(walletBalanceMap);
+        }
+      }
     } catch (error) {
       console.error("Error loading staking data:", error);
-    }
-  };
-
-  const loadBalances = async () => {
-    if (!selectedToken || !address) return;
-
-    try {
-      // Get token balance using ethers provider
-      const signer = await stakingService.getSigner();
-      const provider = signer.provider;
-      if (!provider) throw new Error("Provider not available");
-
-      const tokenContract = new ethers.Contract(
-        selectedToken.address,
-        ["function balanceOf(address) view returns (uint256)"],
-        provider,
-      );
-      const balance = await tokenContract.balanceOf(address);
-      setTokenBalance(
-        ethers.utils.formatUnits(balance, selectedToken.decimals),
-      );
-    } catch (error) {
-      console.error("Error loading balance:", error);
+      // Preserve previous values to avoid blank UI
     }
   };
 
@@ -351,14 +526,169 @@ export function TreasuryPortalScreenRedesigned() {
     );
   };
 
+  const loadGovernanceData = async () => {
+    if (!address) return;
+
+    try {
+      setIsLoadingProposals(true);
+      stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+      const [allProposals, stats, config] = await Promise.all([
+        stakingService.getAllProposals(),
+        stakingService.getDAOStats(),
+        stakingService.getDAOConfig(),
+      ]);
+
+      setProposals(allProposals);
+      setDAOStats(stats);
+      setDAOConfig(config);
+    } catch (error) {
+      console.error("Error loading governance data:", error);
+    } finally {
+      setIsLoadingProposals(false);
+    }
+  };
+
+  const handleCreateProposal = async () => {
+    if (!proposalTitle.trim() || !proposalDescription.trim()) {
+      Alert.alert(
+        "Missing Information",
+        "Please fill in both title and description for your proposal.",
+      );
+      return;
+    }
+
+    const proposalId = `proposal-${Date.now()}-${Math.random()
+      .toString(36)
+      .substring(2, 11)}`;
+
+    Alert.alert(
+      "Submit Proposal",
+      `Submit proposal "${proposalTitle.trim()}" for voting?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Submit",
+          onPress: async () => {
+            try {
+              setIsTransacting(true);
+              stakingService.setNetwork(
+                selectedNetwork.chainId,
+                selectedNetwork,
+              );
+
+              const tx = await stakingService.createProposal(
+                proposalId,
+                proposalCategory,
+                proposalTitle.trim(),
+                proposalDescription.trim(),
+              );
+
+              Alert.alert(
+                "Proposal Submitted!",
+                `Tx Hash: ${tx.hash}\nIt will appear in the voting list once confirmed.`,
+              );
+
+              setProposalTitle("");
+              setProposalDescription("");
+              setProposalCategory("Treasury");
+
+              setTimeout(() => loadGovernanceData(), 2500);
+            } catch (error: any) {
+              console.error("Create proposal error:", error);
+              Alert.alert(
+                "Proposal Creation Failed",
+                error.message || "Failed to create proposal",
+              );
+            } finally {
+              setIsTransacting(false);
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleVoteOnProposal = async (proposalId: string, support: boolean) => {
+    try {
+      setIsTransacting(true);
+      stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+      const tx = await stakingService.voteOnProposal(proposalId, support);
+
+      Alert.alert(
+        "Vote Submitted!",
+        `Tx Hash: ${tx.hash}\nYou voted ${support ? "FOR" : "AGAINST"}.`,
+      );
+
+      setTimeout(() => loadGovernanceData(), 2000);
+    } catch (error: any) {
+      console.error("Vote error:", error);
+      Alert.alert("Vote Failed", error.message || "Failed to submit vote");
+    } finally {
+      setIsTransacting(false);
+    }
+  };
+
+  const handleApplyAsFinancier = async () => {
+    try {
+      setIsApplyingFinancier(true);
+      stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+
+      const minStake = parseFloat(stakingConfig?.minimumFinancierStake || "0");
+      const currentStake = parseFloat(allStakesInfo?.totalUsdValue || "0");
+
+      if (currentStake < minStake) {
+        Alert.alert(
+          "Insufficient Stake",
+          `You need at least ${minStake} staked to become a financier. Current: ${currentStake.toFixed(2)}.`,
+        );
+        setIsApplyingFinancier(false);
+        return;
+      }
+
+      const tx = await stakingService.applyAsFinancier();
+      Alert.alert(
+        "Application Submitted",
+        `Tx Hash: ${tx.hash}\nYou'll gain proposal and voting rights once confirmed.`,
+      );
+
+      setTimeout(() => {
+        loadFinancierStatus();
+        loadStakingData();
+      }, 2500);
+    } catch (error: any) {
+      console.error("Apply as financier error:", error);
+      Alert.alert("Application Failed", error.message || "Failed to apply");
+    } finally {
+      setIsApplyingFinancier(false);
+    }
+  };
+
+  const getTimeLeft = (deadline: number) => {
+    const now = Math.floor(Date.now() / 1000);
+    const diff = deadline - now;
+    if (diff <= 0) return "Ended";
+    const days = Math.floor(diff / 86400);
+    const hours = Math.floor((diff % 86400) / 3600);
+    if (days > 0) return `${days}d ${hours}h`;
+    return `${hours}h`;
+  };
+
   const handleMaxAmount = () => {
     if (actionMode === "stake") {
-      setStakeAmount(tokenBalance);
+      const balance = availableBalances[selectedToken?.symbol || ""] || 0;
+      setStakeAmount(balance.toString());
     } else {
-      const staked = parseFloat(
-        ethers.utils.formatUnits(stakeInfo?.amount || "0", 6),
-      );
-      setStakeAmount(staked.toString());
+      if (allStakesInfo && selectedToken) {
+        const tokenIdx = allStakesInfo.tokens.findIndex(
+          (addr) => addr.toLowerCase() === selectedToken.address.toLowerCase(),
+        );
+        if (tokenIdx >= 0) {
+          const staked = parseFloat(allStakesInfo.amounts[tokenIdx] || "0");
+          setStakeAmount(staked.toString());
+          return;
+        }
+      }
+      setStakeAmount("0");
     }
   };
 
@@ -474,12 +804,19 @@ export function TreasuryPortalScreenRedesigned() {
           <StatCard
             icon="shield-check"
             label="Global Pool"
-            value={`$${(globalPoolTotalUSD / 1000).toFixed(0)}k`}
+            value={globalPoolTotalUSD.toLocaleString("en-US", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           />
           <StatCard
             icon="wallet"
             label="Available"
-            value={parseFloat(tokenBalance).toFixed(0)}
+            value={
+              selectedToken
+                ? (availableBalances[selectedToken.symbol] || 0).toFixed(2)
+                : "0"
+            }
             suffix={selectedToken?.symbol}
           />
         </View>
@@ -657,7 +994,21 @@ export function TreasuryPortalScreenRedesigned() {
             </View>
             <View style={styles.inputInfo}>
               <Text style={styles.inputInfoText}>
-                Staked: {userTotalStakedUSD.toFixed(2)} {selectedToken?.symbol}
+                Staked:{" "}
+                {(() => {
+                  if (allStakesInfo && selectedToken) {
+                    const idx = allStakesInfo.tokens.findIndex(
+                      (addr) =>
+                        addr.toLowerCase() ===
+                        selectedToken.address.toLowerCase(),
+                    );
+                    if (idx >= 0) {
+                      const amt = parseFloat(allStakesInfo.amounts[idx] || "0");
+                      return `${amt.toFixed(2)} ${selectedToken.symbol}`;
+                    }
+                  }
+                  return `0.00 ${selectedToken?.symbol ?? ""}`;
+                })()}
               </Text>
             </View>
           </View>
@@ -703,31 +1054,305 @@ export function TreasuryPortalScreenRedesigned() {
     </View>
   );
 
-  const renderOtherTabs = () => (
-    <View style={styles.placeholderCard}>
-      <View style={styles.placeholderIcon}>
-        <MaterialCommunityIcons
-          name={
-            activeTab === "create"
-              ? "plus-circle"
-              : activeTab === "vote"
-                ? "vote"
-                : "shield-check"
-          }
-          size={32}
-          color="#9CA3AF"
-        />
+  const renderCreateTab = () => {
+    const minStake = parseFloat(stakingConfig?.minimumFinancierStake || "0");
+    const currentStake = parseFloat(allStakesInfo?.totalUsdValue || "0");
+
+    if (!isFinancier) {
+      const disabled =
+        isApplyingFinancier ||
+        Number.isNaN(minStake) ||
+        currentStake < minStake;
+      return (
+        <View style={styles.content}>
+          <View style={styles.sectionCard}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons
+                name="account-star"
+                size={24}
+                color={palette.primaryBlue}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Become a Financier</Text>
+                <Text style={styles.cardSubtitle}>
+                  Create proposals and gain governance rights.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Minimum stake</Text>
+              <Text style={styles.infoValue}>{minStake.toFixed(2)} USDC</Text>
+            </View>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>Your current stake</Text>
+              <Text style={styles.infoValue}>
+                {currentStake.toFixed(2)} USDC
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.ctaButton, disabled && styles.buttonDisabled]}
+              onPress={handleApplyAsFinancier}
+              disabled={disabled}
+            >
+              {isApplyingFinancier ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.ctaButtonText}>Apply as Financier</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.content}>
+        <View style={styles.sectionCard}>
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons
+              name="plus-circle"
+              size={24}
+              color={palette.primaryBlue}
+            />
+            <Text style={styles.cardTitle}>Create New Proposal</Text>
+          </View>
+
+          <Text style={styles.cardSubtitle}>
+            Submit a proposal for the treasury community to vote on.
+          </Text>
+
+          <Text style={styles.inputLabel}>Category</Text>
+          <View style={styles.pillRow}>
+            {(["Treasury", "Investment", "Guarantee"] as const).map((cat) => (
+              <Pressable
+                key={cat}
+                style={[
+                  styles.pill,
+                  proposalCategory === cat && styles.pillActive,
+                ]}
+                onPress={() => setProposalCategory(cat)}
+              >
+                <Text
+                  style={[
+                    styles.pillText,
+                    proposalCategory === cat && styles.pillTextActive,
+                  ]}
+                >
+                  {cat}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.inputLabel}>Title</Text>
+          <TextInput
+            style={styles.textInput}
+            value={proposalTitle}
+            onChangeText={setProposalTitle}
+            placeholder="Clear, concise proposal title"
+            placeholderTextColor="#9CA3AF"
+          />
+
+          <Text style={styles.inputLabel}>Description</Text>
+          <TextInput
+            style={styles.textArea}
+            value={proposalDescription}
+            onChangeText={setProposalDescription}
+            placeholder="Objectives, plan, and expected outcomes"
+            placeholderTextColor="#9CA3AF"
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+          />
+
+          <TouchableOpacity
+            style={[
+              styles.ctaButton,
+              (!proposalTitle.trim() || !proposalDescription.trim()) &&
+                styles.buttonDisabled,
+            ]}
+            onPress={handleCreateProposal}
+            disabled={
+              !proposalTitle.trim() ||
+              !proposalDescription.trim() ||
+              isTransacting
+            }
+          >
+            {isTransacting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.ctaButtonText}>Submit Proposal</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
-      <Text style={styles.placeholderTitle}>
-        {activeTab === "create" && "Create Proposal"}
-        {activeTab === "vote" && "Vote on Proposals"}
-        {activeTab === "pool" && "Pool Guarantee"}
-      </Text>
-      <Text style={styles.placeholderText}>
-        This section is under development
-      </Text>
+    );
+  };
+
+  const renderVoteTab = () => {
+    if (!isFinancier) {
+      return (
+        <View style={styles.content}>
+          <View style={styles.sectionCard}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons
+                name="vote"
+                size={24}
+                color={palette.primaryBlue}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Voting Requires Financier</Text>
+                <Text style={styles.cardSubtitle}>
+                  Apply as a financier to participate in governance.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={[styles.ctaButton, styles.buttonSecondary]}
+              onPress={() => setActiveTab("create")}
+            >
+              <Text style={styles.ctaButtonText}>See how to qualify</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.content}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Treasury Voting</Text>
+          <TouchableOpacity
+            onPress={loadGovernanceData}
+            disabled={isLoadingProposals}
+          >
+            <MaterialCommunityIcons
+              name="refresh"
+              size={20}
+              color={palette.primaryBlue}
+            />
+          </TouchableOpacity>
+        </View>
+
+        {isLoadingProposals ? (
+          <ActivityIndicator color={palette.primaryBlue} />
+        ) : proposals.length === 0 ? (
+          <View style={styles.placeholderCard}>
+            <MaterialCommunityIcons
+              name="vote-outline"
+              size={48}
+              color={palette.neutralMid}
+            />
+            <Text style={styles.placeholderTitle}>No proposals yet</Text>
+            <Text style={styles.placeholderText}>
+              Create one in the Create tab to get started.
+            </Text>
+          </View>
+        ) : (
+          proposals.map((proposal) => {
+            const totalVotes =
+              parseFloat(proposal.votesFor) + parseFloat(proposal.votesAgainst);
+            const forPct =
+              totalVotes > 0
+                ? (parseFloat(proposal.votesFor) / totalVotes) * 100
+                : 0;
+            const now = Math.floor(Date.now() / 1000);
+            const isActive =
+              proposal.votingDeadline > now && !proposal.executed;
+            const statusLabel = proposal.executed
+              ? "Executed"
+              : isActive
+                ? "Active"
+                : "Ended";
+
+            return (
+              <View key={proposal.id} style={styles.proposalCard}>
+                <View style={styles.proposalHeader}>
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>{proposal.category}</Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      isActive
+                        ? styles.statusBadgeActive
+                        : styles.statusBadgeEnded,
+                    ]}
+                  >
+                    <Text style={styles.statusBadgeText}>{statusLabel}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.proposalTitle}>{proposal.title}</Text>
+                <Text style={styles.proposalDescription} numberOfLines={3}>
+                  {proposal.description}
+                </Text>
+
+                <View style={styles.progressBar}>
+                  <View
+                    style={[styles.progressFill, { width: `${forPct}%` }]}
+                  />
+                </View>
+                <View style={styles.voteNumbers}>
+                  <Text style={styles.voteFor}>For: {proposal.votesFor}</Text>
+                  <Text style={styles.voteAgainst}>
+                    Against: {proposal.votesAgainst}
+                  </Text>
+                </View>
+
+                <Text style={styles.timeLeftText}>
+                  {getTimeLeft(proposal.votingDeadline)} left to vote
+                </Text>
+
+                {isActive && (
+                  <View style={styles.voteActions}>
+                    <TouchableOpacity
+                      style={[styles.voteButton, styles.voteButtonFor]}
+                      onPress={() => handleVoteOnProposal(proposal.id, true)}
+                      disabled={isTransacting}
+                    >
+                      <Text style={styles.voteButtonText}>Vote For</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.voteButton, styles.voteButtonAgainst]}
+                      onPress={() => handleVoteOnProposal(proposal.id, false)}
+                      disabled={isTransacting}
+                    >
+                      <Text style={styles.voteButtonText}>Vote Against</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            );
+          })
+        )}
+      </View>
+    );
+  };
+
+  const renderPoolTab = () => (
+    <View style={styles.content}>
+      <View style={styles.placeholderCard}>
+        <MaterialCommunityIcons
+          name="shield-check"
+          size={48}
+          color={palette.neutralMid}
+        />
+        <Text style={styles.placeholderTitle}>Pool Guarantee</Text>
+        <Text style={styles.placeholderText}>
+          Pool guarantee controls will appear here soon.
+        </Text>
+      </View>
     </View>
   );
+
+  const renderOtherTabs = () => {
+    if (activeTab === "create") return renderCreateTab();
+    if (activeTab === "vote") return renderVoteTab();
+    return renderPoolTab();
+  };
 
   if (!isUnlocked) {
     return (
@@ -745,7 +1370,18 @@ export function TreasuryPortalScreenRedesigned() {
   }
 
   return (
-    <Screen preset="scroll" backgroundColor={palette.surface}>
+    <Screen
+      preset="scroll"
+      backgroundColor={palette.surface}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          tintColor={palette.primaryBlue}
+          colors={[palette.primaryBlue]}
+        />
+      }
+    >
       <StatusBar style="dark" />
       {renderHeader()}
       {activeTab === "stake" ? renderStakeTab() : renderOtherTabs()}
@@ -1247,6 +1883,208 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: palette.errorRed,
     lineHeight: 18,
+  },
+  // Governance sections
+  sectionCard: {
+    backgroundColor: palette.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: palette.neutralMid,
+  },
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  infoLabel: {
+    fontSize: 13,
+    color: palette.neutralMid,
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  ctaButton: {
+    backgroundColor: palette.primaryBlue,
+    borderRadius: 12,
+    alignItems: "center",
+    paddingVertical: spacing.md,
+  },
+  ctaButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  buttonSecondary: {
+    backgroundColor: palette.neutralLighter,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  pillRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  pill: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    backgroundColor: palette.surface,
+  },
+  pillActive: {
+    backgroundColor: palette.primaryBlue,
+    borderColor: palette.primaryBlue,
+  },
+  pillText: {
+    color: palette.neutralDark,
+    fontWeight: "600",
+  },
+  pillTextActive: {
+    color: "#FFFFFF",
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    borderRadius: 12,
+    padding: spacing.md,
+    backgroundColor: palette.surface,
+    color: palette.neutralDark,
+    fontSize: 15,
+  },
+  textArea: {
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    borderRadius: 12,
+    padding: spacing.md,
+    backgroundColor: palette.surface,
+    minHeight: 140,
+    color: palette.neutralDark,
+    fontSize: 15,
+  },
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  proposalCard: {
+    backgroundColor: palette.white,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    borderRadius: 16,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  proposalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  badge: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: palette.surface,
+  },
+  badgeText: {
+    color: palette.primaryBlue,
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  statusBadgeActive: {
+    backgroundColor: "#DCFCE7",
+  },
+  statusBadgeEnded: {
+    backgroundColor: "#F3F4F6",
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  proposalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  proposalDescription: {
+    fontSize: 14,
+    color: palette.neutralMid,
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: palette.neutralLighter,
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: palette.primaryBlue,
+  },
+  voteNumbers: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  voteFor: {
+    color: palette.neutralDark,
+    fontWeight: "600",
+  },
+  voteAgainst: {
+    color: palette.neutralDark,
+    fontWeight: "600",
+  },
+  timeLeftText: {
+    fontSize: 12,
+    color: palette.neutralMid,
+  },
+  voteActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  voteButton: {
+    flex: 1,
+    borderRadius: 10,
+    paddingVertical: spacing.sm,
+    alignItems: "center",
+  },
+  voteButtonFor: {
+    backgroundColor: palette.primaryBlue,
+  },
+  voteButtonAgainst: {
+    backgroundColor: palette.errorRed,
+  },
+  voteButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
   // Unstake Buttons
   unstakeButtons: {

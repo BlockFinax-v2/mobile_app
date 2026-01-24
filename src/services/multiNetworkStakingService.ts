@@ -323,8 +323,8 @@ export class MultiNetworkStakingService {
       const config = await contract.getStakingConfig();
       const currentRewardRate = config.currentRewardRate;
 
-      // Calculate APR from current reward rate
-      const currentAPR = ethers.utils.formatUnits(currentRewardRate, 18);
+      // currentRewardRate is stored as a plain percentage (e.g., 12 => 12%)
+      const currentAPR = Number(currentRewardRate.toString());
 
       // For total LPs, we can derive from stakers count or set a reasonable estimate
       // Since we don't have getPoolStats, we'll use 0 as placeholder
@@ -334,8 +334,8 @@ export class MultiNetworkStakingService {
         perToken,
         totalStakedUSD,
         totalLiquidityProviders: totalLPs,
-        currentAPR: parseFloat(currentAPR),
-        averageAPR: parseFloat(currentAPR),
+        currentAPR: Number.isFinite(currentAPR) ? currentAPR : 0,
+        averageAPR: Number.isFinite(currentAPR) ? currentAPR : 0,
       };
     } catch (error) {
       console.error("Failed to get pool stats:", error);

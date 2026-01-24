@@ -95,7 +95,8 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     id: "base-mainnet",
     name: "Base",
     chainId: 8453,
-    rpcUrl: "https://mainnet.base.org",
+    // Use Alchemy RPC for AA support; public RPC causes getCounterFactualAddress to fail
+    rpcUrl: `https://base-mainnet.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`,
     explorerUrl: "https://basescan.org",
     primaryCurrency: "ETH",
     isTestnet: false,
