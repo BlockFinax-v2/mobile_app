@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import { ethers } from "ethers";
 import React, {
   useState,
   useEffect,
@@ -156,6 +157,8 @@ export function TreasuryPortalScreen() {
     >
   >({});
   const [globalPoolTotalUSD, setGlobalPoolTotalUSD] = useState<number>(0);
+  const [userVotingPowerPercentage, setUserVotingPowerPercentage] =
+    useState<number>(0);
 
   // Performance: Track loading states separately
   const [dataVersion, setDataVersion] = useState(0);
@@ -283,19 +286,6 @@ export function TreasuryPortalScreen() {
         address,
       );
 
-      // Get all supported networks with Diamond contracts
-      const supportedChainIds = [4202, 84532]; // Lisk Sepolia, Base Sepolia
-
-      let globalUserTotalUSD = 0;
-      let globalPoolTotalUSD = 0;
-      const userStakesByNet: Record<
-        number,
-        {
-          tokens: Array<{ symbol: string; amount: string; usdValue: number }>;
-          totalUSD: number;
-        }
-      > = {};
-
       // Load current network tokens first
       const currentNetworkTokens = getSupportedStablecoins(
         selectedNetwork.chainId,
@@ -307,129 +297,146 @@ export function TreasuryPortalScreen() {
         }
       }
 
-      // Load data for each supported network with multi-token staking
+      // Load data from ALL networks for Global Pool and Voting Power
       const activeChainIds = [11155111, 4202, 84532]; // Ethereum Sepolia, Lisk Sepolia, Base Sepolia
 
-      console.log(
-        "[Multi-Token] Loading data from all networks with Diamond contracts",
-      );
+      console.log("[Multi-Token] Loading Global Pool data from all 3 networks");
       console.log(`[Multi-Token] Active chains: ${activeChainIds.join(", ")}`);
 
-      for (const chainId of activeChainIds) {
-        const networkTokens = getSupportedStablecoins(chainId);
-        const networkUserStakes: Array<{
-          symbol: string;
-          amount: string;
-          usdValue: number;
-        }> = [];
-        let networkUserTotalUSD = 0;
+      let globalTotalStakedUSD = 0;
+      let userTotalVotingPowerAcrossNetworks = 0;
+      let totalVotingPowerAcrossNetworks = 0;
 
-        console.log(
-          `[Multi-Token] Loading data for chain ${chainId}, tokens:`,
-          networkTokens.map((t) => t.symbol),
-        );
+      for (const chainId of activeChainIds) {
+        console.log(`[Multi-Token] Querying network ${chainId}...`);
 
         try {
-          // Load user stakes for this network using unified stakingService
-          const stakesData = await stakingService.getAllStakesForUser(address);
+          // Get RPC URL for this chain
+          const rpcUrl =
+            chainId === 4202
+              ? "https://rpc.sepolia-api.lisk.com"
+              : chainId === 84532
+                ? "https://sepolia.base.org"
+                : "https://rpc.sepolia.org";
+
+          // Get Diamond address for this chain
+          const diamondAddress =
+            chainId === 4202
+              ? "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34"
+              : chainId === 84532
+                ? "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711"
+                : "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284";
+
+          // Create provider for this network
+          const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+
+          const governanceABI = [
+            "function getTotalStakedUSD() external view returns (uint256)",
+          ];
+
+          const contract = new ethers.Contract(
+            diamondAddress,
+            governanceABI,
+            provider,
+          );
+          const totalStakedUSD = await contract.getTotalStakedUSD();
+
+          const networkTotalStaked = parseFloat(
+            ethers.utils.formatEther(totalStakedUSD),
+          );
+          globalTotalStakedUSD += networkTotalStaked;
 
           console.log(
-            `[Multi-Token] Stakes data for chain ${chainId}:`,
-            JSON.stringify(stakesData, null, 2),
+            `[Multi-Token] Network ${chainId} - Total Staked: $${networkTotalStaked}`,
           );
+
+          // Get user's stake info for voting power calculation
+          const stakeABI = [
+            "function getStake(address staker) external view returns (uint256 amount, uint256 timestamp, uint256 votingPower, bool active, uint256 pendingRewards, uint256 timeUntilUnlock, uint256 deadline, bool financierStatus)",
+          ];
+
+          const stakeContract = new ethers.Contract(
+            diamondAddress,
+            stakeABI,
+            provider,
+          );
+          const userStake = await stakeContract.getStake(address);
+          const userVotingPower = parseFloat(
+            ethers.utils.formatEther(userStake.votingPower),
+          );
+          userTotalVotingPowerAcrossNetworks += userVotingPower;
+
+          // Total voting power is always 1.0 (100%) per network, so we add 1.0 for each network
+          totalVotingPowerAcrossNetworks += 1.0;
+
           console.log(
-            `[Multi-Token] Total USD from contract:`,
-            stakesData?.totalUsdValue || "0",
+            `[Multi-Token] Network ${chainId} - User Voting Power: ${userVotingPower}`,
           );
-
-          // Use totalUsdValue directly from contract (already formatted from 18 decimals)
-          networkUserTotalUSD = parseFloat(stakesData?.totalUsdValue || "0");
-
-          // Process each token stake for display purposes
-          if (stakesData && stakesData.tokens && stakesData.tokens.length > 0) {
-            console.log(
-              `[Multi-Token] Processing ${stakesData.tokens.length} tokens for chain ${chainId}`,
-            );
-
-            for (let i = 0; i < stakesData.tokens.length; i++) {
-              const tokenAddr = stakesData.tokens[i];
-              const amount = stakesData.amounts[i];
-              const usdValue = parseFloat(stakesData.usdEquivalents[i]);
-
-              // Find token config for symbol
-              const tokenConfig = networkTokens.find(
-                (t) => t.address.toLowerCase() === tokenAddr.toLowerCase(),
-              );
-              const tokenSymbol = tokenConfig?.symbol || "Unknown";
-
-              console.log(`[Multi-Token] Examining stake:`, {
-                tokenSymbol,
-                amount,
-                usdValue,
-              });
-
-              if (parseFloat(amount) > 0) {
-                networkUserStakes.push({
-                  symbol: tokenSymbol,
-                  amount,
-                  usdValue,
-                });
-
-                console.log(
-                  `[Multi-Token] ✅ Active stake found: ${amount} ${tokenSymbol} = $${usdValue}`,
-                );
-              } else {
-                console.log(
-                  `[Multi-Token] ⏭️ Skipping zero stake for ${tokenSymbol}`,
-                );
-              }
-            }
-          } else {
-            console.log(
-              `[Multi-Token] ⚠️ No tokens in stakes for chain ${chainId}`,
-            );
-          }
-
-          globalUserTotalUSD += networkUserTotalUSD;
-
-          if (networkUserStakes.length > 0) {
-            userStakesByNet[chainId] = {
-              tokens: networkUserStakes,
-              totalUSD: networkUserTotalUSD,
-            };
-          }
-
-          // Load pool stats for this network
-          try {
-            const poolStats = await stakingService.getPoolStats();
-            const poolTotalUSD = parseFloat(poolStats.totalStaked || "0");
-            globalPoolTotalUSD += poolTotalUSD;
-            console.log(
-              `[Multi-Token] Pool total USD on chain ${chainId}: $${poolTotalUSD}`,
-            );
-          } catch (error) {
-            console.error(
-              `Failed to load pool stats for chain ${chainId}:`,
-              error,
-            );
-          }
         } catch (error) {
           console.error(`Failed to load data for chain ${chainId}:`, error);
         }
       }
 
-      console.log("[Multi-Token] Global user total USD:", globalUserTotalUSD);
-      console.log("[Multi-Token] Global pool total USD:", globalPoolTotalUSD);
-      console.log("[Multi-Token] User stakes by network:", userStakesByNet);
+      console.log(
+        "[Multi-Token] Global Total Staked USD:",
+        globalTotalStakedUSD,
+      );
+      console.log(
+        "[Multi-Token] User Total Voting Power:",
+        userTotalVotingPowerAcrossNetworks,
+      );
+      console.log(
+        "[Multi-Token] Total Voting Power Across Networks:",
+        totalVotingPowerAcrossNetworks,
+      );
 
-      // Update state with aggregated data
-      setUserTotalStakedUSD(globalUserTotalUSD);
-      setUserStakesByNetwork(userStakesByNet);
-      setGlobalPoolTotalUSD(globalPoolTotalUSD);
+      // Calculate user's voting power percentage
+      const userVotingPowerPercentage =
+        totalVotingPowerAcrossNetworks > 0
+          ? (userTotalVotingPowerAcrossNetworks /
+              totalVotingPowerAcrossNetworks) *
+            100
+          : 0;
 
-      // Load current network-specific data
-      const stakes = await stakingService.getAllStakesForUser(address);
-      setMultiTokenStakes(stakes);
+      console.log(
+        "[Multi-Token] User Voting Power %:",
+        userVotingPowerPercentage,
+      );
+
+      // Update state
+      setGlobalPoolTotalUSD(globalTotalStakedUSD);
+      setUserVotingPowerPercentage(userVotingPowerPercentage);
+
+      // Now load CURRENT network data for user's portfolio
+      console.log(
+        "[Multi-Token] Loading user portfolio from CURRENT network only (chainId: " +
+          selectedNetwork.chainId +
+          ")",
+      );
+
+      // Load user stakes for CURRENT network using unified stakingService
+      const stakesData = await stakingService.getAllStakesForUser(address);
+
+      console.log(
+        `[Multi-Token] Stakes data for current network:`,
+        JSON.stringify(stakesData, null, 2),
+      );
+      console.log(
+        `[Multi-Token] Total USD from contract:`,
+        stakesData?.totalUsdValue || "0",
+      );
+
+      // Use totalUsdValue directly from contract (already formatted from 18 decimals)
+      const userTotalUSD = parseFloat(stakesData?.totalUsdValue || "0");
+
+      console.log(
+        "[Multi-Token] Portfolio Value (from current network):",
+        userTotalUSD,
+      );
+
+      // Update state with data from current network only
+      setUserTotalStakedUSD(userTotalUSD);
+      setMultiTokenStakes(stakesData);
 
       // Load balances for all supported tokens on current network
       const currentNetworkTokensList =
@@ -446,7 +453,6 @@ export function TreasuryPortalScreen() {
       await Promise.all(
         currentNetworkTokensList.map(async (token) => {
           try {
-            // Use getUSDCBalance for default token, ethers contract for others
             const balance = await stakingService.getUSDCBalance(address);
             balances[token.address] = balance;
             console.log(`[Balance] ${token.symbol} balance: ${balance}`);
@@ -458,37 +464,6 @@ export function TreasuryPortalScreen() {
       );
       setTokenBalances(balances);
       console.log("[Balance] All balances loaded:", balances);
-
-      // Load pool-wide token statistics using unified service
-      const poolStatsData = await stakingService.getPoolStats();
-      const poolStats: {
-        [tokenAddress: string]: { amount: string; usdValue: number };
-      } = {};
-      let totalUSD = 0;
-
-      // For each supported token, use pool stats
-      currentNetworkTokensList.forEach((token) => {
-        try {
-          // Use total staked from pool stats
-          const totalStaked = poolStatsData.totalStaked;
-          const usdValue = parseFloat(totalStaked);
-
-          poolStats[token.address] = {
-            amount: totalStaked,
-            usdValue: usdValue,
-          };
-          totalUSD += usdValue;
-        } catch (error) {
-          console.error(
-            `Failed to load pool stats for ${token.symbol}:`,
-            error,
-          );
-          poolStats[token.address] = { amount: "0", usdValue: 0 };
-        }
-      });
-
-      setPoolTokenStats(poolStats);
-      setTotalPoolUSD(totalUSD);
     } catch (error) {
       console.error("Failed to load multi-token data:", error);
     }
@@ -555,7 +530,7 @@ export function TreasuryPortalScreen() {
             TaskPriority.HIGH,
           ),
           asyncQueue.enqueue(
-            () => stakingService.getPoolStats(),
+            () => stakingService.getStakingConfig(),
             TaskPriority.NORMAL,
           ),
           asyncQueue.enqueue(
@@ -579,12 +554,12 @@ export function TreasuryPortalScreen() {
 
       // Update state
       setStakeInfo(stake);
-      setPoolStats(pool);
       setStakingConfig(config);
       setUsdcBalance(balance);
       setCurrentAPR(apr);
       setIsFinancier(isEligible);
-
+      // Remove poolStats since it's no longer available
+      setPoolStats(null);
       // Cache the results (5 minute TTL)
       performanceCache.set(
         cacheKey,
@@ -1647,90 +1622,9 @@ export function TreasuryPortalScreen() {
                           })}
                         </Text>
                         <Text style={styles.heroSubtext}>
-                          Staked across{" "}
-                          {Object.keys(userStakesByNetwork || {}).length}{" "}
-                          network(s)
+                          Total Staked Value
                         </Text>
                       </View>
-
-                      {/* Network Breakdown - Only show if user has stakes */}
-                      {Object.keys(userStakesByNetwork || {}).length > 0 && (
-                        <View style={styles.breakdownSection}>
-                          <Text style={styles.sectionTitle}>
-                            Your Stakes by Network
-                          </Text>
-                          {Object.entries(userStakesByNetwork || {}).map(
-                            ([chainId, networkData]) => {
-                              const networkName =
-                                chainId === "4202"
-                                  ? "Lisk Sepolia"
-                                  : chainId === "84532"
-                                    ? "Base Sepolia"
-                                    : `Chain ${chainId}`;
-                              const networkIcon =
-                                chainId === "4202"
-                                  ? "alpha-l-circle"
-                                  : chainId === "84532"
-                                    ? "alpha-b-circle"
-                                    : "network";
-
-                              return networkData.tokens.length > 0 ? (
-                                <View key={chainId} style={styles.networkCard}>
-                                  <View style={styles.networkCardHeader}>
-                                    <View style={styles.networkTitleRow}>
-                                      <MaterialCommunityIcons
-                                        name={networkIcon}
-                                        size={24}
-                                        color={colors.primary}
-                                      />
-                                      <Text style={styles.networkCardTitle}>
-                                        {networkName}
-                                      </Text>
-                                    </View>
-                                    <Text style={styles.networkCardTotal}>
-                                      ${(networkData?.totalUSD || 0).toFixed(2)}
-                                    </Text>
-                                  </View>
-
-                                  {(networkData?.tokens || []).map(
-                                    (token, idx) => (
-                                      <View
-                                        key={idx}
-                                        style={styles.tokenStakeRow}
-                                      >
-                                        <View style={styles.tokenStakeLeft}>
-                                          <View
-                                            style={styles.tokenIconPlaceholder}
-                                          >
-                                            <Text style={styles.tokenIconText}>
-                                              {token.symbol[0]}
-                                            </Text>
-                                          </View>
-                                          <View>
-                                            <Text style={styles.tokenStakeName}>
-                                              {token?.symbol || "Unknown"}
-                                            </Text>
-                                            <Text
-                                              style={styles.tokenStakeAmount}
-                                            >
-                                              {parseFloat(
-                                                token?.amount || "0",
-                                              ).toFixed(4)}
-                                            </Text>
-                                          </View>
-                                        </View>
-                                        <Text style={styles.tokenStakeValue}>
-                                          ${(token?.usdValue || 0).toFixed(2)}
-                                        </Text>
-                                      </View>
-                                    ),
-                                  )}
-                                </View>
-                              ) : null;
-                            },
-                          )}
-                        </View>
-                      )}
 
                       {/* Quick Stats Grid */}
                       <View style={styles.quickStatsGrid}>
@@ -1741,12 +1635,11 @@ export function TreasuryPortalScreen() {
                             color={colors.primary}
                           />
                           <Text style={styles.quickStatValue}>
-                            {multiTokenStakes?.totalUsdValue
+                            {stakeInfo?.votingPower
                               ? (
-                                  parseFloat(multiTokenStakes.totalUsdValue) /
-                                  1000
-                                ).toFixed(1)
-                              : "0"}
+                                  parseFloat(stakeInfo.votingPower) * 100
+                                ).toFixed(2)
+                              : "0.00"}
                             %
                           </Text>
                           <Text style={styles.quickStatLabel}>
@@ -1778,7 +1671,7 @@ export function TreasuryPortalScreen() {
                           <Text style={styles.quickStatValue}>
                             {(currentAPR || 0).toFixed(1)}%
                           </Text>
-                          <Text style={styles.quickStatLabel}>APR</Text>
+                          <Text style={styles.quickStatLabel}>Current APR</Text>
                         </View>
                       </View>
 

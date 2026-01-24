@@ -104,7 +104,6 @@ const LIQUIDITY_POOL_FACET_ABI = [
   {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getPendingRewards","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getFinanciers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getStakers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"getPoolStats","outputs":[{"internalType":"uint256","name":"totalStaked","type":"uint256"},{"internalType":"uint256","name":"totalLiquidityProviders","type":"uint256"},{"internalType":"uint256","name":"contractBalance","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getStakingConfig","outputs":[{"internalType":"uint256","name":"initialApr","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"},{"internalType":"uint256","name":"minLockDuration","type":"uint256"},{"internalType":"uint256","name":"aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"emergencyWithdrawPenalty","type":"uint256"},{"internalType":"uint256","name":"minimumStake","type":"uint256"},{"internalType":"uint256","name":"minimumFinancierStake","type":"uint256"},{"internalType":"uint256","name":"minFinancierLockDuration","type":"uint256"},{"internalType":"uint256","name":"minNormalStakerLockDuration","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"distributeRewards","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
@@ -577,26 +576,6 @@ class StakingService {
   }
 
   /**
-   * Get pool statistics
-   */
-  public async getPoolStats(): Promise<PoolStats> {
-    try {
-      const contract = await this.getStakingContract();
-      const stats = await contract.getPoolStats();
-      
-      return {
-        totalStaked: ethers.utils.formatUnits(stats.totalStaked, 6),
-        totalLiquidityProviders: stats.totalLiquidityProviders.toNumber(),
-        contractBalance: ethers.utils.formatUnits(stats.contractBalance, 6),
-        currentRewardRate: ethers.utils.formatUnits(stats.currentRewardRate, 18),
-      };
-    } catch (error) {
-      console.error("Error getting pool stats:", error);
-      throw new Error("Failed to fetch pool statistics");
-    }
-  }
-
-  /**
    * Get staking configuration
    */
   public async getStakingConfig(): Promise<StakingConfig> {
@@ -604,17 +583,36 @@ class StakingService {
       const contract = await this.getStakingContract();
       const config = await contract.getStakingConfig();
       
-      return {
-        initialApr: config.initialApr.toNumber() / 100, // Convert from basis points
+      console.log("🔧 [FIXED VERSION] getStakingConfig - All raw values:");
+      console.log("🔧 initialApr:", config.initialApr.toString());
+      console.log("🔧 currentRewardRate:", config.currentRewardRate.toString());
+      console.log("🔧 minLockDuration:", config.minLockDuration.toString());
+      console.log("🔧 aprReductionPerThousand:", config.aprReductionPerThousand.toString());
+      console.log("🔧 emergencyWithdrawPenalty:", config.emergencyWithdrawPenalty.toString());
+      console.log("🔧 minimumStake:", config.minimumStake.toString());
+      console.log("🔧 minimumFinancierStake:", config.minimumFinancierStake.toString());
+      console.log("🔧 minFinancierLockDuration:", config.minFinancierLockDuration.toString());
+      console.log("🔧 minNormalStakerLockDuration:", config.minNormalStakerLockDuration.toString());
+      
+      const result = {
+        // initialApr is stored with 18 decimals in contract (e.g., 1200 * 10^18 for 12%)
+        initialApr: parseFloat(ethers.utils.formatEther(config.initialApr)) / 100,
         currentRewardRate: ethers.utils.formatUnits(config.currentRewardRate, 18),
-        minLockDuration: config.minLockDuration.toNumber(),
-        aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
-        emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
-        minimumStake: ethers.utils.formatUnits(config.minimumStake, 6),
-        minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
-        minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
-        minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
+        // Duration values are stored with 18 decimals in contract, need to convert
+        minLockDuration: parseInt(ethers.utils.formatEther(config.minLockDuration)),
+        // APR reduction and penalty are also stored with 18 decimals
+        aprReductionPerThousand: parseInt(ethers.utils.formatEther(config.aprReductionPerThousand)),
+        emergencyWithdrawPenalty: parseFloat(ethers.utils.formatEther(config.emergencyWithdrawPenalty)) / 100,
+        // minimumStake is stored as USD equivalent with 18 decimals (ethers.parseEther)
+        minimumStake: ethers.utils.formatEther(config.minimumStake),
+        minimumFinancierStake: ethers.utils.formatEther(config.minimumFinancierStake),
+        // Lock durations are also stored with 18 decimals
+        minFinancierLockDuration: parseInt(ethers.utils.formatEther(config.minFinancierLockDuration)),
+        minNormalStakerLockDuration: parseInt(ethers.utils.formatEther(config.minNormalStakerLockDuration)),
       };
+      
+      console.log("🔧 Formatted result:", JSON.stringify(result, null, 2));
+      return result;
     } catch (error) {
       console.error("Error getting staking config:", error);
       throw new Error("Failed to fetch staking configuration");
@@ -1892,23 +1890,17 @@ class StakingService {
 
   /**
    * Calculate estimated APR based on current conditions
+   * Uses staking config data to calculate APR
    */
   public async calculateCurrentAPR(): Promise<number> {
     try {
       const config = await this.getStakingConfig();
-      const poolStats = await this.getPoolStats();
       
-      // Calculate APR reduction based on total staked amount
-      const totalStaked = parseFloat(poolStats.totalStaked);
-      const reductionThousands = Math.floor(totalStaked / 1000);
-      const aprReduction = reductionThousands * config.aprReductionPerThousand;
+      // The current reward rate from config IS the current APR
+      // It's already adjusted by the contract based on total staked
+      const currentAPR = parseFloat(config.currentRewardRate);
       
-      const currentAPR = Math.max(
-        config.initialApr - aprReduction / 100,
-        1 // Minimum 1% APR
-      );
-      
-      return currentAPR;
+      return Math.max(currentAPR, 1); // Minimum 1% APR
     } catch (error) {
       console.error("Error calculating current APR:", error);
       return 0;

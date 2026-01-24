@@ -145,11 +145,10 @@ export class MultiNetworkStakingService {
       "function unstake(uint256 amount) external",
       
       // Query functions
-      "function getStakeForToken(address staker, address tokenAddress) external view returns (uint256 amount, uint256 timestamp, uint256 votingPower, bool active, uint256 pendingRewards, uint256 timeUntilUnlock, uint256 deadline, bool isFinancier, uint256 usdEquivalent)",
+      "function getStakeForToken(address staker, address tokenAddress) external view returns (uint256 amount, uint256 timestamp, bool active, uint256 usdEquivalent, uint256 deadline, bool financierStatus, uint256 pendingRewards, uint256 votingPower)",
       "function getAllStakesForUser(address staker) external view returns (address[] tokens, uint256[] amounts, uint256[] usdEquivalents, uint256 totalUsdValue)",
       "function getSupportedStakingTokens() external view returns (address[])",
       "function isTokenSupported(address tokenAddress) external view returns (bool)",
-      "function getPoolStats() external view returns (uint256 totalStaked, uint256 totalLiquidityProviders, uint256 contractBalance, uint256 currentRewardRate)",
       "function getStakingConfig() external view returns (uint256 initialApr, uint256 currentRewardRate, uint256 minLockDuration, uint256 aprReductionPerThousand, uint256 emergencyWithdrawPenalty, uint256 minimumStake, uint256 minimumFinancierStake, uint256 minFinancierLockDuration, uint256 minNormalStakerLockDuration)",
       
       // Token management (admin)
@@ -320,18 +319,23 @@ export class MultiNetworkStakingService {
         totalStakedUSD += usdValue;
       }
 
-      // Get general pool stats
-      const [, totalLPs, , currentRewardRate] = await contract.getPoolStats();
+      // Get current reward rate from staking config
+      const config = await contract.getStakingConfig();
+      const currentRewardRate = config.currentRewardRate;
 
-      // Calculate APR (simplified - you may need more complex calculation)
-      const currentAPR = currentRewardRate.toNumber() / 100;
+      // Calculate APR from current reward rate
+      const currentAPR = ethers.utils.formatUnits(currentRewardRate, 18);
+
+      // For total LPs, we can derive from stakers count or set a reasonable estimate
+      // Since we don't have getPoolStats, we'll use 0 as placeholder
+      const totalLPs = 0; // This can be updated if needed from another source
 
       return {
         perToken,
         totalStakedUSD,
-        totalLiquidityProviders: totalLPs.toNumber(),
-        currentAPR,
-        averageAPR: currentAPR,
+        totalLiquidityProviders: totalLPs,
+        currentAPR: parseFloat(currentAPR),
+        averageAPR: parseFloat(currentAPR),
       };
     } catch (error) {
       console.error("Failed to get pool stats:", error);
@@ -363,9 +367,9 @@ export class MultiNetworkStakingService {
       return {
         minimumStakeUSD: Number(ethers.utils.formatEther(minimumStake)),
         minimumFinancierStakeUSD: Number(ethers.utils.formatEther(minimumFinancierStake)),
-        minLockDuration: minLockDuration.toNumber(),
-        minFinancierLockDuration: minFinancierLockDuration.toNumber(),
-        emergencyWithdrawPenalty: emergencyWithdrawPenalty.toNumber(),
+        minLockDuration: Number(minLockDuration.toString()),
+        minFinancierLockDuration: Number(minFinancierLockDuration.toString()),
+        emergencyWithdrawPenalty: Number(emergencyWithdrawPenalty.toString()),
         supportedTokens,
       };
     } catch (error) {
@@ -477,15 +481,18 @@ export class MultiNetworkStakingService {
         return "0";
       }
 
-      // Get pool stats which should have per-token totals
-      // If the contract doesn't have this, we'll return 0
+      // Since getPoolStats is removed, we'll return the contract balance for this token
+      // This is an approximation of total staked for the token
       try {
-        const poolStats = await contract.getPoolStats();
-        // Assuming the contract returns totalStakedPerToken mapping
-        // You may need to adjust based on your actual contract implementation
-        return ethers.utils.formatUnits(poolStats.totalStaked || "0", tokenConfig.decimals);
+        const tokenContract = new ethers.Contract(
+          tokenAddress,
+          ["function balanceOf(address) view returns (uint256)"],
+          this.getProvider(network)
+        );
+        const balance = await tokenContract.balanceOf(getDiamondAddress(chainId));
+        return ethers.utils.formatUnits(balance, tokenConfig.decimals);
       } catch (error) {
-        console.warn(`Contract doesn't support per-token stats yet, returning 0 for ${tokenConfig.symbol}`);
+        console.warn(`Failed to get token balance for ${tokenConfig.symbol}:`, error);
         return "0";
       }
     } catch (error) {

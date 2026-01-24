@@ -198,7 +198,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
       {
         symbol: "USDT",
         name: "Tether USD",
-        address: "0x2E8b7c5D36F4b44b20f9FBF4A7B7c4E6b8A3b7F2",
+        address: "0xa3f3aA5B62237961AF222B211477e572149EBFAe",
         decimals: 6,
       },
     ],

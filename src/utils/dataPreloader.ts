@@ -86,14 +86,10 @@ class DataPreloader {
 
       // Preload staking data with high priority
       console.log('[Preloader] Loading staking data...');
-      const [stake, pool, config, balance, apr, isEligible] = await Promise.all([
+      const [stake, config, balance, apr, isEligible] = await Promise.all([
         asyncQueue.enqueue(
           () => stakingService.getStakeInfo(address),
           TaskPriority.CRITICAL
-        ),
-        asyncQueue.enqueue(
-          () => stakingService.getPoolStats(),
-          TaskPriority.HIGH
         ),
         asyncQueue.enqueue(
           () => stakingService.getStakingConfig(),
@@ -115,7 +111,7 @@ class DataPreloader {
 
       result.staking = {
         stakeInfo: stake,
-        poolStats: pool,
+        poolStats: null, // getPoolStats removed - function no longer exists in contract
         stakingConfig: config,
         usdcBalance: balance,
         currentAPR: apr,

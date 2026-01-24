@@ -96,15 +96,12 @@ export function RewardsHomeScreen() {
         });
       }
 
-      // Load pool statistics using unified stakingService
-      const poolStatsData = await stakingService.getPoolStats();
-      if (poolStatsData) {
-        setPoolStats({
-          totalLiquidityProviders:
-            poolStatsData.totalLiquidityProviders.toString(),
-          contractBalance: poolStatsData.totalStaked,
-        });
-      }
+      // Pool statistics - using staking config for current APR data
+      // getPoolStats removed - set default values
+      setPoolStats({
+        totalLiquidityProviders: "0", // Not available without getPoolStats
+        contractBalance: "0", // Will be calculated from user stakes
+      });
 
       // Load pool-wide token statistics
       const poolStatsMap: {

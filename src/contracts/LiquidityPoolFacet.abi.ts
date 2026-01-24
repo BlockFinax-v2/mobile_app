@@ -499,34 +499,6 @@ export const LIQUIDITY_POOL_FACET_ABI = [
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getPoolStats",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "totalStaked",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalLiquidityProviders",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "contractBalance",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "currentRewardRate",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "address",
