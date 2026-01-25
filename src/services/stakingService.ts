@@ -21,8 +21,15 @@ import { AlchemyAccountService } from "@/services/alchemyAccountService";
 import { smartContractTransactionService } from "@/services/smartContractTransactionService";
 import { Hex, encodeFunctionData } from "viem";
 
-// Contract Configuration
-export const DIAMOND_CONTRACT_ADDRESS = "0xe1A27Ee53D0E90F024965E6826e0BCA28946747A";
+// Contract Configuration - Diamond addresses by chain ID
+export const DIAMOND_ADDRESSES: { [chainId: number]: string } = {
+  11155111: "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284", // Ethereum Sepolia
+  4202: "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34", // Lisk Sepolia
+  84532: "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711", // Base Sepolia
+};
+
+// Default to Lisk Sepolia for backward compatibility
+export const DIAMOND_CONTRACT_ADDRESS = DIAMOND_ADDRESSES[4202];
 
 // Lisk Sepolia Network Configuration
 export const LISK_SEPOLIA_NETWORK: WalletNetwork = {
@@ -43,7 +50,7 @@ export const LISK_SEPOLIA_NETWORK: WalletNetwork = {
   ],
 };
 
-// LiquidityPoolFacet ABI (Updated with Financier features)
+// LiquidityPoolFacet ABI (Multi-token support with ALL functions)
 const LIQUIDITY_POOL_FACET_ABI = [
   {"inputs":[],"name":"BelowMinimumStake","type":"error"},
   {"inputs":[],"name":"ContractPaused","type":"error"},
@@ -56,6 +63,7 @@ const LIQUIDITY_POOL_FACET_ABI = [
   {"inputs":[],"name":"InvalidDeadline","type":"error"},
   {"inputs":[],"name":"InvalidLockDuration","type":"error"},
   {"inputs":[],"name":"InvalidPenalty","type":"error"},
+  {"inputs":[],"name":"InvalidTokenAddress","type":"error"},
   {"inputs":[],"name":"InvalidVotingPower","type":"error"},
   {"inputs":[],"name":"LockDurationNotMet","type":"error"},
   {"inputs":[],"name":"NoActiveStake","type":"error"},
@@ -78,22 +86,26 @@ const LIQUIDITY_POOL_FACET_ABI = [
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"parameter","type":"string"},{"indexed":false,"internalType":"uint256","name":"oldValue","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"newValue","type":"uint256"}],"name":"StakingConfigUpdated","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":false,"internalType":"address","name":"account","type":"address"}],"name":"Unpaused","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"staker","type":"address"},{"indexed":false,"internalType":"uint256","name":"amount","type":"uint256"},{"indexed":false,"internalType":"uint256","name":"rewards","type":"uint256"}],"name":"Unstaked","type":"event"},
+  // Multi-token staking functions
+  {"inputs":[{"internalType":"address","name":"tokenAddress","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"},{"internalType":"uint256","name":"usdEquivalent","type":"uint256"}],"name":"stakeToken","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"address","name":"tokenAddress","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"},{"internalType":"uint256","name":"usdEquivalent","type":"uint256"}],"name":"stakeTokenAsFinancier","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"address","name":"tokenAddress","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"unstakeToken","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"address","name":"tokenAddress","type":"address"}],"name":"claimTokenRewards","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"address","name":"tokenAddress","type":"address"}],"name":"emergencyWithdrawToken","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  // Financier functions
   {"inputs":[],"name":"applyAsFinancier","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"claimRewards","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"distributeRewards","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"emergencyWithdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[],"name":"getFinanciers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"uint256","name":"newDeadline","type":"uint256"}],"name":"setCustomDeadline","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"isFinancier","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  // Multi-token view functions
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"address","name":"tokenAddress","type":"address"}],"name":"getStakeForToken","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"uint256","name":"usdEquivalent","type":"uint256"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"financierStatus","type":"bool"},{"internalType":"uint256","name":"pendingRewards","type":"uint256"},{"internalType":"uint256","name":"votingPower","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getAllStakesForUser","outputs":[{"internalType":"address[]","name":"tokens","type":"address[]"},{"internalType":"uint256[]","name":"amounts","type":"uint256[]"},{"internalType":"uint256[]","name":"usdEquivalents","type":"uint256[]"},{"internalType":"bool[]","name":"isFinancierFlags","type":"bool[]"},{"internalType":"uint256[]","name":"deadlines","type":"uint256[]"},{"internalType":"uint256[]","name":"pendingRewards","type":"uint256[]"},{"internalType":"uint256","name":"totalUsdValue","type":"uint256"}],"stateMutability":"view","type":"function"},
+  // Legacy view functions (backward compatibility)
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getStake","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"uint256","name":"votingPower","type":"uint256"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"uint256","name":"pendingRewards","type":"uint256"},{"internalType":"uint256","name":"timeUntilUnlock","type":"uint256"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"financierStatus","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getPendingRewards","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"getPoolStats","outputs":[{"internalType":"uint256","name":"totalStaked","type":"uint256"},{"internalType":"uint256","name":"totalLiquidityProviders","type":"uint256"},{"internalType":"uint256","name":"contractBalance","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getStake","outputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"timestamp","type":"uint256"},{"internalType":"uint256","name":"votingPower","type":"uint256"},{"internalType":"bool","name":"active","type":"bool"},{"internalType":"uint256","name":"pendingRewards","type":"uint256"},{"internalType":"uint256","name":"timeUntilUnlock","type":"uint256"},{"internalType":"uint256","name":"deadline","type":"uint256"},{"internalType":"bool","name":"isFinancier","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"getFinanciers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getStakers","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getStakingConfig","outputs":[{"internalType":"uint256","name":"initialApr","type":"uint256"},{"internalType":"uint256","name":"currentRewardRate","type":"uint256"},{"internalType":"uint256","name":"minLockDuration","type":"uint256"},{"internalType":"uint256","name":"aprReductionPerThousand","type":"uint256"},{"internalType":"uint256","name":"emergencyWithdrawPenalty","type":"uint256"},{"internalType":"uint256","name":"minimumStake","type":"uint256"},{"internalType":"uint256","name":"minimumFinancierStake","type":"uint256"},{"internalType":"uint256","name":"minFinancierLockDuration","type":"uint256"},{"internalType":"uint256","name":"minNormalStakerLockDuration","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"isEligibleFinancier","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"revokeFinancierStatus","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"newDeadline","type":"uint256"}],"name":"setCustomDeadline","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"}],"name":"stake","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"},{"internalType":"uint256","name":"customDeadline","type":"uint256"}],"name":"stakeAsFinancier","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"unstake","outputs":[],"stateMutability":"nonpayable","type":"function"}
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"},{"internalType":"uint256","name":"amount","type":"uint256"}],"name":"distributeRewards","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
 
 // GovernanceFacet ABI
@@ -105,13 +117,21 @@ const GOVERNANCE_FACET_ABI = [
   {"inputs":[],"name":"InvalidDescription","type":"error"},
   {"inputs":[],"name":"InvalidProposalId","type":"error"},
   {"inputs":[],"name":"InvalidTitle","type":"error"},
+  {"inputs":[],"name":"NoRevocationRequested","type":"error"},
+  {"inputs":[],"name":"NotAFinancier","type":"error"},
   {"inputs":[],"name":"ProposalAlreadyExecuted","type":"error"},
   {"inputs":[],"name":"ProposalNotActive","type":"error"},
   {"inputs":[],"name":"ProposalNotFound","type":"error"},
+  {"inputs":[],"name":"RevocationAlreadyRequested","type":"error"},
+  {"inputs":[],"name":"RevocationPeriodNotMet","type":"error"},
   {"inputs":[],"name":"VotingPeriodEnded","type":"error"},
   {"inputs":[],"name":"VotingPeriodNotEnded","type":"error"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"financier","type":"address"},{"indexed":false,"internalType":"uint256","name":"requestTime","type":"uint256"}],"name":"FinancierRevocationCancelled","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"financier","type":"address"},{"indexed":false,"internalType":"uint256","name":"completionTime","type":"uint256"}],"name":"FinancierRevocationCompleted","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"financier","type":"address"},{"indexed":false,"internalType":"uint256","name":"requestTime","type":"uint256"}],"name":"FinancierRevocationRequested","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":true,"internalType":"string","name":"category","type":"string"},{"indexed":true,"internalType":"string","name":"title","type":"string"},{"indexed":false,"internalType":"address","name":"proposer","type":"address"},{"indexed":false,"internalType":"uint256","name":"votingDeadline","type":"uint256"}],"name":"ProposalCreated","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":false,"internalType":"address","name":"executor","type":"address"}],"name":"ProposalExecuted","type":"event"},
+  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":false,"internalType":"enum LibAppStorage.ProposalStatus","name":"newStatus","type":"uint8"}],"name":"ProposalStatusChanged","type":"event"},
   {"anonymous":false,"inputs":[{"indexed":true,"internalType":"string","name":"proposalId","type":"string"},{"indexed":true,"internalType":"address","name":"voter","type":"address"},{"indexed":false,"internalType":"bool","name":"support","type":"bool"},{"indexed":false,"internalType":"uint256","name":"votingPower","type":"uint256"}],"name":"ProposalVoteCast","type":"event"},
   {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"string","name":"category","type":"string"},{"internalType":"string","name":"title","type":"string"},{"internalType":"string","name":"description","type":"string"}],"name":"createProposal","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"string","name":"proposalId","type":"string"}],"name":"executeProposal","outputs":[],"stateMutability":"nonpayable","type":"function"},
@@ -121,8 +141,11 @@ const GOVERNANCE_FACET_ABI = [
   {"inputs":[],"name":"getDAOConfig","outputs":[{"internalType":"uint256","name":"minimumFinancierStake","type":"uint256"},{"internalType":"uint256","name":"votingDuration","type":"uint256"},{"internalType":"uint256","name":"approvalThreshold","type":"uint256"},{"internalType":"uint256","name":"revocationPeriod","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[],"name":"getDAOStats","outputs":[{"internalType":"uint256","name":"totalProposals","type":"uint256"},{"internalType":"uint256","name":"activeProposals","type":"uint256"},{"internalType":"uint256","name":"passedProposals","type":"uint256"},{"internalType":"uint256","name":"executedProposals","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"string","name":"proposalId","type":"string"}],"name":"getProposal","outputs":[{"internalType":"address","name":"proposer","type":"address"},{"internalType":"string","name":"category","type":"string"},{"internalType":"string","name":"title","type":"string"},{"internalType":"string","name":"description","type":"string"},{"internalType":"uint256","name":"votesFor","type":"uint256"},{"internalType":"uint256","name":"votesAgainst","type":"uint256"},{"internalType":"uint256","name":"createdAt","type":"uint256"},{"internalType":"uint256","name":"votingDeadline","type":"uint256"},{"internalType":"enum LibAppStorage.ProposalStatus","name":"status","type":"uint8"},{"internalType":"bool","name":"executed","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"address","name":"staker","type":"address"}],"name":"getRevocationStatus","outputs":[{"internalType":"bool","name":"revocationRequested","type":"bool"},{"internalType":"uint256","name":"revocationRequestTime","type":"uint256"},{"internalType":"uint256","name":"revocationDeadline","type":"uint256"},{"internalType":"bool","name":"canCompleteRevocation","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"address","name":"voter","type":"address"}],"name":"getVoteStatus","outputs":[{"internalType":"bool","name":"hasVoted","type":"bool"},{"internalType":"bool","name":"support","type":"bool"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"account","type":"address"}],"name":"isFinancier","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"requestFinancierRevocation","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"cancelFinancierRevocation","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[],"name":"completeFinancierRevocation","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"string","name":"proposalId","type":"string"},{"internalType":"bool","name":"support","type":"bool"}],"name":"voteOnProposal","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ];
 
@@ -161,6 +184,10 @@ const ERC20_ABI = [
 const MNEMONIC_KEY = "blockfinax.mnemonic";
 const PRIVATE_KEY = "blockfinax.privateKey";
 
+// ========================================
+// TYPE DEFINITIONS
+// ========================================
+
 export interface StakeInfo {
   amount: string;
   timestamp: number;
@@ -170,6 +197,35 @@ export interface StakeInfo {
   timeUntilUnlock: number;
   deadline: number;
   isFinancier: boolean;
+}
+
+export interface TokenStakeInfo {
+  tokenAddress: string;
+  amount: string;
+  timestamp: number;
+  active: boolean;
+  usdEquivalent: string;
+  deadline: number;
+  isFinancier: boolean;
+  pendingRewards: string;
+  votingPower: string;
+}
+
+export interface AllStakesInfo {
+  tokens: string[];
+  amounts: string[];
+  usdEquivalents: string[];
+  isFinancierFlags: boolean[];
+  deadlines: number[];
+  pendingRewards: string[];
+  totalUsdValue: string;
+}
+
+export interface RevocationStatus {
+  revocationRequested: boolean;
+  revocationRequestTime: number;
+  revocationDeadline: number;
+  canCompleteRevocation: boolean;
 }
 
 export interface PoolStats {
@@ -193,7 +249,7 @@ export interface StakingConfig {
 
 export interface StakingTransaction {
   hash: string;
-  type: 'approve' | 'stake' | 'unstake' | 'claim' | 'emergency' | 'proposal' | 'vote';
+  type: 'approve' | 'stake' | 'unstake' | 'claim' | 'emergency' | 'proposal' | 'vote' | 'revocation';
   amount?: string;
   timestamp: number;
   status: 'pending' | 'confirmed' | 'failed';
@@ -236,6 +292,8 @@ export interface VoteStatus {
 
 class StakingService {
   private static instance: StakingService;
+  private currentChainId: number = 4202; // Default to Lisk Sepolia
+  private currentNetworkConfig: WalletNetwork = LISK_SEPOLIA_NETWORK;
 
   public static getInstance(): StakingService {
     if (!StakingService.instance) {
@@ -245,12 +303,43 @@ class StakingService {
   }
 
   /**
-   * Get provider for Lisk Sepolia network
+   * Set current network - should be called when user switches networks
+   */
+  public setNetwork(chainId: number, networkConfig?: WalletNetwork): void {
+    this.currentChainId = chainId;
+    if (networkConfig) {
+      this.currentNetworkConfig = networkConfig;
+    }
+    // Clear cached signer when network changes
+    this.currentSigner = null;
+    console.log(`[StakingService] Network switched to chainId: ${chainId}`);
+  }
+
+  /**
+   * Get current network chainId
+   */
+  public getCurrentChainId(): number {
+    return this.currentChainId;
+  }
+
+  /**
+   * Get Diamond address for current network
+   */
+  private getDiamondAddress(): string {
+    const address = DIAMOND_ADDRESSES[this.currentChainId];
+    if (!address) {
+      throw new Error(`No Diamond contract deployed on network ${this.currentChainId}`);
+    }
+    return address;
+  }
+
+  /**
+   * Get provider for current network
    */
   private getProvider(): ethers.providers.JsonRpcProvider {
-    return new ethers.providers.JsonRpcProvider(LISK_SEPOLIA_NETWORK.rpcUrl, {
-      name: LISK_SEPOLIA_NETWORK.name,
-      chainId: LISK_SEPOLIA_NETWORK.chainId,
+    return new ethers.providers.JsonRpcProvider(this.currentNetworkConfig.rpcUrl, {
+      name: this.currentNetworkConfig.name,
+      chainId: this.currentNetworkConfig.chainId,
     });
   }
 
@@ -383,37 +472,40 @@ class StakingService {
   }
 
   /**
-   * Get the staking contract instance
+   * Get the staking contract instance for current network
    */
   private async getStakingContract(): Promise<ethers.Contract> {
     const signer = await this.getSigner();
+    const diamondAddress = this.getDiamondAddress();
+    console.log(`[StakingService] Using Diamond at ${diamondAddress} on chain ${this.currentChainId}`);
     return new ethers.Contract(
-      DIAMOND_CONTRACT_ADDRESS,
+      diamondAddress,
       LIQUIDITY_POOL_FACET_ABI,
       signer
     );
   }
 
   /**
-   * Get the governance contract instance
+   * Get the governance contract instance for current network
    */
   private async getGovernanceContract(): Promise<ethers.Contract> {
     const signer = await this.getSigner();
+    const diamondAddress = this.getDiamondAddress();
     return new ethers.Contract(
-      DIAMOND_CONTRACT_ADDRESS,
+      diamondAddress,
       GOVERNANCE_FACET_ABI,
       signer
     );
   }
 
   /**
-   * Get USDC token contract instance
+   * Get USDC token contract instance for current network
    */
   private async getUSDCContract(): Promise<ethers.Contract> {
     const signer = await this.getSigner();
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
     if (!usdcAddress) {
-      throw new Error("USDC address not found for Lisk Sepolia network");
+      throw new Error(`USDC address not found for network ${this.currentNetworkConfig.name}`);
     }
     
     return new ethers.Contract(usdcAddress, ERC20_ABI, signer);
@@ -484,26 +576,6 @@ class StakingService {
   }
 
   /**
-   * Get pool statistics
-   */
-  public async getPoolStats(): Promise<PoolStats> {
-    try {
-      const contract = await this.getStakingContract();
-      const stats = await contract.getPoolStats();
-      
-      return {
-        totalStaked: ethers.utils.formatUnits(stats.totalStaked, 6),
-        totalLiquidityProviders: stats.totalLiquidityProviders.toNumber(),
-        contractBalance: ethers.utils.formatUnits(stats.contractBalance, 6),
-        currentRewardRate: ethers.utils.formatUnits(stats.currentRewardRate, 18),
-      };
-    } catch (error) {
-      console.error("Error getting pool stats:", error);
-      throw new Error("Failed to fetch pool statistics");
-    }
-  }
-
-  /**
    * Get staking configuration
    */
   public async getStakingConfig(): Promise<StakingConfig> {
@@ -511,17 +583,36 @@ class StakingService {
       const contract = await this.getStakingContract();
       const config = await contract.getStakingConfig();
       
-      return {
-        initialApr: config.initialApr.toNumber() / 100, // Convert from basis points
+      console.log("🔧 [FIXED VERSION] getStakingConfig - All raw values:");
+      console.log("🔧 initialApr:", config.initialApr.toString());
+      console.log("🔧 currentRewardRate:", config.currentRewardRate.toString());
+      console.log("🔧 minLockDuration:", config.minLockDuration.toString());
+      console.log("🔧 aprReductionPerThousand:", config.aprReductionPerThousand.toString());
+      console.log("🔧 emergencyWithdrawPenalty:", config.emergencyWithdrawPenalty.toString());
+      console.log("🔧 minimumStake:", config.minimumStake.toString());
+      console.log("🔧 minimumFinancierStake:", config.minimumFinancierStake.toString());
+      console.log("🔧 minFinancierLockDuration:", config.minFinancierLockDuration.toString());
+      console.log("🔧 minNormalStakerLockDuration:", config.minNormalStakerLockDuration.toString());
+      
+      const result = {
+        // initialApr is stored with 18 decimals in contract (e.g., 1200 * 10^18 for 12%)
+        initialApr: parseFloat(ethers.utils.formatEther(config.initialApr)) / 100,
         currentRewardRate: ethers.utils.formatUnits(config.currentRewardRate, 18),
-        minLockDuration: config.minLockDuration.toNumber(),
-        aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
-        emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
-        minimumStake: ethers.utils.formatUnits(config.minimumStake, 6),
-        minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
-        minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
-        minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
+        // Duration values are stored with 18 decimals in contract, need to convert
+        minLockDuration: parseInt(ethers.utils.formatEther(config.minLockDuration)),
+        // APR reduction and penalty are also stored with 18 decimals
+        aprReductionPerThousand: parseInt(ethers.utils.formatEther(config.aprReductionPerThousand)),
+        emergencyWithdrawPenalty: parseFloat(ethers.utils.formatEther(config.emergencyWithdrawPenalty)) / 100,
+        // minimumStake is stored as USD equivalent with 18 decimals (ethers.parseEther)
+        minimumStake: ethers.utils.formatEther(config.minimumStake),
+        minimumFinancierStake: ethers.utils.formatEther(config.minimumFinancierStake),
+        // Lock durations are also stored with 18 decimals
+        minFinancierLockDuration: parseInt(ethers.utils.formatEther(config.minFinancierLockDuration)),
+        minNormalStakerLockDuration: parseInt(ethers.utils.formatEther(config.minNormalStakerLockDuration)),
       };
+      
+      console.log("🔧 Formatted result:", JSON.stringify(result, null, 2));
+      return result;
     } catch (error) {
       console.error("Error getting staking config:", error);
       throw new Error("Failed to fetch staking configuration");
@@ -562,7 +653,7 @@ class StakingService {
         address = await signer.getAddress();
       }
 
-      const allowance = await usdcContract.allowance(address, DIAMOND_CONTRACT_ADDRESS);
+      const allowance = await usdcContract.allowance(address, this.getDiamondAddress());
       const requiredAmount = ethers.utils.parseUnits(amount, 6);
       
       return allowance.gte(requiredAmount);
@@ -584,10 +675,10 @@ class StakingService {
       console.log("Approving USDC spend:", {
         amount,
         amountInWei: amountInWei.toString(),
-        spender: DIAMOND_CONTRACT_ADDRESS,
+        spender: this.getDiamondAddress(),
       });
 
-      const tx = await usdcContract.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+      const tx = await usdcContract.approve(this.getDiamondAddress(), amountInWei);
       
       return {
         hash: tx.hash,
@@ -640,10 +731,7 @@ class StakingService {
       const amountInWei = ethers.utils.parseUnits(amount, 6);
 
       // Get USDC contract address
-      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
-      if (!usdcAddress) {
-        throw new Error('USDC address not found');
-      }
+      const usdcAddress = this.getDefaultTokenAddress();
 
       // Check if should use AA
       if (this.shouldUseAA()) {
@@ -669,11 +757,11 @@ class StakingService {
                 contractAddress: usdcAddress,
                 abi: ERC20_ABI,
                 functionName: 'approve',
-                args: [DIAMOND_CONTRACT_ADDRESS, amountInWei.toString()],
+                args: [this.getDiamondAddress(), amountInWei.toString()],
                 value: '0'
               },
               {
-                contractAddress: DIAMOND_CONTRACT_ADDRESS,
+                contractAddress: this.getDiamondAddress(),
                 abi: LIQUIDITY_POOL_FACET_ABI,
                 functionName: 'stake',
                 args: [amountInWei.toString(), '0']
@@ -709,10 +797,10 @@ class StakingService {
         console.log("Approving USDC spend:", {
           amount,
           amountInWei: amountInWei.toString(),
-          spender: DIAMOND_CONTRACT_ADDRESS,
+          spender: this.getDiamondAddress(),
         });
 
-        const approveTx = await usdcContract.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+        const approveTx = await usdcContract.approve(this.getDiamondAddress(), amountInWei);
         console.log("Approval transaction:", approveTx.hash);
         
         onProgress?.('approving', `Waiting for approval confirmation...`);
@@ -727,14 +815,16 @@ class StakingService {
       console.log("Staking USDC:", {
         amount,
         amountInWei: amountInWei.toString(),
-        contractAddress: DIAMOND_CONTRACT_ADDRESS,
+        contractAddress: this.getDiamondAddress(),
+        usdcAddress, // already declared at function scope
         customDeadline: 0 // 0 means auto-calculate based on lock duration
       });
 
       // Add manual gas limit to avoid estimation errors
       const gasLimit = ethers.utils.hexlify(400000); // 400k gas limit
-      // New signature: stake(uint256 amount, uint256 customDeadline)
-      const tx = await contract.stake(amountInWei, 0, { gasLimit });
+      // Multi-token signature: stakeToken(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+      // For USDC with 6 decimals, 1 USDC = 1 USD, so usdEquivalent = amount
+      const tx = await contract.stakeToken(usdcAddress, amountInWei, 0, amountInWei, { gasLimit });
       
       console.log("Stake transaction submitted:", tx.hash);
       
@@ -784,7 +874,7 @@ class StakingService {
       amount,
       amountInWei: amountInWei.toString(),
       usdcAddress,
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
@@ -795,16 +885,17 @@ class StakingService {
         data: encodeFunctionData({
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [DIAMOND_CONTRACT_ADDRESS as Hex, BigInt(amountInWei.toString())]
+          args: [this.getDiamondAddress() as Hex, BigInt(amountInWei.toString())]
         }),
         value: BigInt(0)
       },
       {
-        target: DIAMOND_CONTRACT_ADDRESS as Hex,
+        target: this.getDiamondAddress() as Hex,
         data: encodeFunctionData({
           abi: LIQUIDITY_POOL_FACET_ABI,
-          functionName: 'stake',
-          args: [BigInt(amountInWei.toString()), BigInt(0)] // amount, customDeadline
+          functionName: 'stakeToken',
+          // stakeToken(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+          args: [usdcAddress as Hex, BigInt(amountInWei.toString()), BigInt(0), BigInt(amountInWei.toString())]
         }),
         value: BigInt(0)
       }
@@ -858,14 +949,17 @@ class StakingService {
 
           const txService = smartContractTransactionService;
           
+          // Get USDC token address
+          const usdcTokenAddress = this.getDefaultTokenAddress();
+          
           // Execute unstake transaction with AA
           const result = await txService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
-            functionName: 'unstake',
-            args: [amountInWei.toString()]
+            functionName: 'unstakeToken',
+            args: [usdcTokenAddress, amountInWei.toString()]
           });
 
           console.log('[StakingService] AA unstake completed:', result);
@@ -906,9 +1000,13 @@ class StakingService {
         timeUntilUnlock: stakeData.timeUntilUnlock.toString()
       });
 
+      // Get USDC token address for multi-token unstaking (reuse from AA section if available, or get new)
+      const usdcAddress = this.getDefaultTokenAddress();
+
       // Try to unstake with manual gas limit
       const gasLimit = ethers.utils.hexlify(300000); // 300k gas limit
-      const tx = await contract.unstake(amountInWei, { gasLimit });
+      // Multi-token signature: unstakeToken(address tokenAddress, uint256 amount)
+      const tx = await contract.unstakeToken(usdcAddress, amountInWei, { gasLimit });
       
       return {
         hash: tx.hash,
@@ -945,15 +1043,21 @@ class StakingService {
     console.log('[StakingService] Executing AA unstake:', {
       amount,
       amountInWei: amountInWei.toString(),
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
+    // Get USDC token address for multi-token unstaking
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found');
+    }
+
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       LIQUIDITY_POOL_FACET_ABI,
-      'unstake',
-      [BigInt(amountInWei.toString())]
+      'unstakeToken',
+      [usdcAddress as Hex, BigInt(amountInWei.toString())]
     );
 
     console.log('[StakingService] AA unstake submitted:', result.hash);
@@ -994,15 +1098,21 @@ class StakingService {
           }
 
           onProgress?.('linking', 'Linking smart account to your identity...');
+
+          // Get USDC token address for multi-token rewards
+          const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+          if (!usdcAddress) {
+            throw new Error('USDC address not found');
+          }
           
-          // Execute claimRewards transaction with AA
+          // Execute claimTokenRewards transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
-            functionName: 'claimRewards',
-            args: []
+            functionName: 'claimTokenRewards',
+            args: [usdcAddress]
           });
 
           console.log('[StakingService] AA claimRewards completed:', result);
@@ -1056,9 +1166,16 @@ class StakingService {
           `${Math.ceil(stakeData.timeUntilUnlock.toNumber() / 86400)} days remaining` : 'Unlocked'
       });
 
+      // Get USDC token address for multi-token rewards
+      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      if (!usdcAddress) {
+        throw new Error('USDC address not found');
+      }
+
       // Try to claim regardless of state
       const gasLimit = ethers.utils.hexlify(200000); // 200k gas limit
-      const tx = await contract.claimRewards({ gasLimit });
+      // Multi-token signature: claimTokenRewards(address tokenAddress)
+      const tx = await contract.claimTokenRewards(usdcAddress, { gasLimit });
       
       console.log("Claim rewards transaction submitted:", tx.hash);
       
@@ -1091,15 +1208,21 @@ class StakingService {
     }
 
     console.log('[StakingService] Executing AA claimRewards:', {
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
+    // Get USDC token address for multi-token rewards
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found');
+    }
+
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       LIQUIDITY_POOL_FACET_ABI,
-      'claimRewards',
-      []
+      'claimTokenRewards',
+      [usdcAddress as Hex]
     );
 
     console.log('[StakingService] AA claimRewards submitted:', result.hash);
@@ -1139,15 +1262,21 @@ class StakingService {
           }
 
           onProgress?.('linking', 'Linking smart account to your identity...');
+
+          // Get USDC token address for multi-token emergency withdrawal
+          const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+          if (!usdcAddress) {
+            throw new Error('USDC address not found');
+          }
           
-          // Execute emergencyWithdraw transaction with AA
+          // Execute emergencyWithdrawToken transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
-            functionName: 'emergencyWithdraw',
-            args: []
+            functionName: 'emergencyWithdrawToken',
+            args: [usdcAddress]
           });
 
           console.log('[StakingService] AA emergencyWithdraw completed:', result);
@@ -1186,10 +1315,17 @@ class StakingService {
       if (!stakeData.active || stakeData.amount.eq(0)) {
         throw new Error("No active stake found for emergency withdrawal");
       }
+
+      // Get USDC token address for multi-token emergency withdrawal
+      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      if (!usdcAddress) {
+        throw new Error('USDC address not found');
+      }
       
       // Try with manual gas limit to avoid estimation issues
       const gasLimit = ethers.utils.hexlify(250000); // 250k gas limit
-      const tx = await contract.emergencyWithdraw({ gasLimit });
+      // Multi-token signature: emergencyWithdrawToken(address tokenAddress)
+      const tx = await contract.emergencyWithdrawToken(usdcAddress, { gasLimit });
       
       console.log("Emergency withdrawal transaction submitted:", tx.hash);
       
@@ -1222,15 +1358,21 @@ class StakingService {
     }
 
     console.log('[StakingService] Executing AA emergencyWithdraw:', {
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
+    // Get USDC token address for multi-token emergency withdrawal
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found');
+    }
+
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       LIQUIDITY_POOL_FACET_ABI,
-      'emergencyWithdraw',
-      []
+      'emergencyWithdrawToken',
+      [usdcAddress as Hex]
     );
 
     console.log('[StakingService] AA emergencyWithdraw submitted:', result.hash);
@@ -1273,7 +1415,7 @@ class StakingService {
           
           // Execute applyAsFinancier transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
@@ -1319,8 +1461,8 @@ class StakingService {
       }
       
       // Check if eligible
-      const isEligible = await contract.isEligibleFinancier(address);
-      console.log('🔍 Contract isEligibleFinancier check:', isEligible);
+      const isEligible = await contract.isFinancier(address);
+      console.log('🔍 Contract isFinancier check:', isEligible);
       
       if (!isEligible) {
         const stakingConfig = await this.getStakingConfig();
@@ -1367,12 +1509,12 @@ class StakingService {
     }
 
     console.log('[StakingService] Executing AA applyAsFinancier:', {
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       LIQUIDITY_POOL_FACET_ABI,
       'applyAsFinancier',
       []
@@ -1390,10 +1532,10 @@ class StakingService {
   }
 
   /**
-   * Check if user is eligible to be a financier
+   * Check if user is a financier (multi-token aware)
    * Uses smart account address to ensure consistent identity
    */
-  public async isEligibleFinancier(userAddress?: string): Promise<boolean> {
+  public async isFinancier(userAddress?: string): Promise<boolean> {
     try {
       const contract = await this.getStakingContract();
       let address = userAddress;
@@ -1403,17 +1545,17 @@ class StakingService {
         address = await this.getSmartAccountAddress();
       }
 
-      const isEligible = await contract.isEligibleFinancier(address);
-      console.log('🔍 ========== FINANCIER ELIGIBILITY CHECK ==========');
+      const isFinancierStatus = await contract.isFinancier(address);
+      console.log('🔍 ========== FINANCIER STATUS CHECK (MULTI-TOKEN) ==========');
       console.log('🔍 Address:', address);
-      console.log('🔍 Contract returned:', isEligible);
-      console.log('🔍 Type:', typeof isEligible);
-      console.log('🔍 Final boolean result:', Boolean(isEligible));
+      console.log('🔍 Contract returned:', isFinancierStatus);
+      console.log('🔍 Type:', typeof isFinancierStatus);
+      console.log('🔍 Final boolean result:', Boolean(isFinancierStatus));
       console.log('🔍 ==================================================');
       
-      return isEligible;
+      return isFinancierStatus;
     } catch (error) {
-      console.error("❌ Error checking financier eligibility:", error);
+      console.error("❌ Error checking financier status:", error);
       console.log('🔍 Returning FALSE due to error');
       return false;
     }
@@ -1456,10 +1598,7 @@ class StakingService {
       const amountInWei = ethers.utils.parseUnits(amount, 6);
 
       // Get USDC contract address
-      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
-      if (!usdcAddress) {
-        throw new Error('USDC address not found');
-      }
+      const usdcAddress = this.getDefaultTokenAddress();
 
       // Try AA batch transaction if available
       if (this.shouldUseAA()) {
@@ -1487,14 +1626,15 @@ class StakingService {
                 contractAddress: usdcAddress,
                 abi: ERC20_ABI,
                 functionName: 'approve',
-                args: [DIAMOND_CONTRACT_ADDRESS, amountInWei.toString()],
+                args: [this.getDiamondAddress(), amountInWei.toString()],
                 value: '0'
               },
               {
-                contractAddress: DIAMOND_CONTRACT_ADDRESS,
+                contractAddress: this.getDiamondAddress(),
                 abi: LIQUIDITY_POOL_FACET_ABI,
-                functionName: 'stakeAsFinancier',
-                args: [amountInWei.toString(), '0'], // amount, customDeadline
+                functionName: 'stakeTokenAsFinancier',
+                // stakeTokenAsFinancier(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+                args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()],
                 value: '0'
               }
             ]
@@ -1526,10 +1666,10 @@ class StakingService {
         console.log("Approving USDC spend for financier stake:", {
           amount,
           amountInWei: amountInWei.toString(),
-          spender: DIAMOND_CONTRACT_ADDRESS,
+          spender: this.getDiamondAddress(),
         });
 
-        const approveTx = await usdcContract.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+        const approveTx = await usdcContract.approve(this.getDiamondAddress(), amountInWei);
         console.log("Approval transaction:", approveTx.hash);
         
         onProgress?.('approving', `Waiting for approval confirmation...`);
@@ -1544,14 +1684,16 @@ class StakingService {
       console.log("Staking USDC as financier:", {
         amount,
         amountInWei: amountInWei.toString(),
-        contractAddress: DIAMOND_CONTRACT_ADDRESS,
+        usdcAddress, // already declared at function scope
+        contractAddress: this.getDiamondAddress(),
         customDeadline: 0 // 0 means auto-calculate based on lock duration
       });
 
       // Add manual gas limit to avoid estimation errors
       const gasLimit = ethers.utils.hexlify(400000); // 400k gas limit
-      // Signature: stakeAsFinancier(uint256 amount, uint256 customDeadline)
-      const tx = await contract.stakeAsFinancier(amountInWei, 0, { gasLimit });
+      // Multi-token signature: stakeTokenAsFinancier(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+      // For USDC with 6 decimals, 1 USDC = 1 USD, so usdEquivalent = amount
+      const tx = await contract.stakeTokenAsFinancier(usdcAddress, amountInWei, 0, amountInWei, { gasLimit });
       
       console.log("Stake as financier transaction submitted:", tx.hash);
       
@@ -1601,7 +1743,7 @@ class StakingService {
       amount,
       amountInWei: amountInWei.toString(),
       usdcAddress,
-      stakingContract: DIAMOND_CONTRACT_ADDRESS,
+      stakingContract: this.getDiamondAddress(),
       accountAddress
     });
 
@@ -1612,16 +1754,17 @@ class StakingService {
         data: encodeFunctionData({
           abi: ERC20_ABI,
           functionName: 'approve',
-          args: [DIAMOND_CONTRACT_ADDRESS as Hex, BigInt(amountInWei.toString())]
+          args: [this.getDiamondAddress() as Hex, BigInt(amountInWei.toString())]
         }),
         value: BigInt(0)
       },
       {
-        target: DIAMOND_CONTRACT_ADDRESS as Hex,
+        target: this.getDiamondAddress() as Hex,
         data: encodeFunctionData({
           abi: LIQUIDITY_POOL_FACET_ABI,
-          functionName: 'stakeAsFinancier',
-          args: [BigInt(amountInWei.toString()), BigInt(0)] // amount, customDeadline
+          functionName: 'stakeTokenAsFinancier',
+          // stakeTokenAsFinancier(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+          args: [usdcAddress as Hex, BigInt(amountInWei.toString()), BigInt(0), BigInt(amountInWei.toString())]
         }),
         value: BigInt(0)
       }
@@ -1747,23 +1890,17 @@ class StakingService {
 
   /**
    * Calculate estimated APR based on current conditions
+   * Uses staking config data to calculate APR
    */
   public async calculateCurrentAPR(): Promise<number> {
     try {
       const config = await this.getStakingConfig();
-      const poolStats = await this.getPoolStats();
       
-      // Calculate APR reduction based on total staked amount
-      const totalStaked = parseFloat(poolStats.totalStaked);
-      const reductionThousands = Math.floor(totalStaked / 1000);
-      const aprReduction = reductionThousands * config.aprReductionPerThousand;
+      // The current reward rate from config IS the current APR
+      // It's already adjusted by the contract based on total staked
+      const currentAPR = parseFloat(config.currentRewardRate);
       
-      const currentAPR = Math.max(
-        config.initialApr - aprReduction / 100,
-        1 // Minimum 1% APR
-      );
-      
-      return currentAPR;
+      return Math.max(currentAPR, 1); // Minimum 1% APR
     } catch (error) {
       console.error("Error calculating current APR:", error);
       return 0;
@@ -1786,7 +1923,7 @@ class StakingService {
           if (!amount) throw new Error("Amount required for approval");
           const usdcContract = await this.getUSDCContract();
           const amountInWei = ethers.utils.parseUnits(amount, 6);
-          gasLimit = await usdcContract.estimateGas.approve(DIAMOND_CONTRACT_ADDRESS, amountInWei);
+          gasLimit = await usdcContract.estimateGas.approve(this.getDiamondAddress(), amountInWei);
           break;
         }
         case 'stake': {
@@ -1869,7 +2006,7 @@ class StakingService {
           
           // Execute createProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
@@ -1998,12 +2135,12 @@ class StakingService {
       proposalId,
       category,
       title,
-      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      governanceContract: this.getDiamondAddress(),
       accountAddress
     });
 
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       GOVERNANCE_FACET_ABI,
       'createProposal',
       [proposalId, category, title, description]
@@ -2051,7 +2188,7 @@ class StakingService {
           
           // Execute voteOnProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
@@ -2120,12 +2257,12 @@ class StakingService {
     console.log('[StakingService] Executing AA voteOnProposal:', {
       proposalId,
       support,
-      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      governanceContract: this.getDiamondAddress(),
       accountAddress
     });
 
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       GOVERNANCE_FACET_ABI,
       'voteOnProposal',
       [proposalId, support]
@@ -2363,12 +2500,12 @@ class StakingService {
 
     console.log('[StakingService] Executing AA finalizeVote:', {
       proposalId,
-      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      governanceContract: this.getDiamondAddress(),
       accountAddress
     });
 
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       GOVERNANCE_FACET_ABI,
       'finalizeVote',
       [proposalId]
@@ -2415,7 +2552,7 @@ class StakingService {
           
           // Execute executeProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
-            contractAddress: DIAMOND_CONTRACT_ADDRESS,
+            contractAddress: this.getDiamondAddress(),
             network: LISK_SEPOLIA_NETWORK,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
@@ -2478,12 +2615,12 @@ class StakingService {
 
     console.log('[StakingService] Executing AA executeProposal:', {
       proposalId,
-      governanceContract: DIAMOND_CONTRACT_ADDRESS,
+      governanceContract: this.getDiamondAddress(),
       accountAddress
     });
 
     const result = await alchemyService.executeContractFunction(
-      DIAMOND_CONTRACT_ADDRESS as Hex,
+      this.getDiamondAddress() as Hex,
       GOVERNANCE_FACET_ABI,
       'executeProposal',
       [proposalId]
@@ -2498,6 +2635,513 @@ class StakingService {
       status: 'pending',
       explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
     };
+  }
+
+  // ========================================
+  // MULTI-TOKEN VIEW FUNCTIONS
+  // ========================================
+
+  /**
+   * Get stake information for a specific token
+   * @param staker Address of the staker
+   * @param tokenAddress Address of the staking token
+   */
+  public async getStakeForToken(
+    tokenAddress: string,
+    staker?: string
+  ): Promise<TokenStakeInfo> {
+    try {
+      const contract = await this.getStakingContract();
+      let address = staker;
+      
+      if (!address) {
+        address = await this.getSmartAccountAddress();
+      }
+
+      console.log('Getting stake for token:', { tokenAddress, staker: address });
+      
+      const stakeData = await contract.getStakeForToken(address, tokenAddress);
+      
+      // Get token decimals for proper formatting
+      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, await this.getSigner());
+      const decimals = await tokenContract.decimals();
+      
+      return {
+        tokenAddress,
+        amount: ethers.utils.formatUnits(stakeData.amount, decimals),
+        timestamp: stakeData.timestamp.toNumber(),
+        active: stakeData.active,
+        usdEquivalent: ethers.utils.formatUnits(stakeData.usdEquivalent, 18), // USD is 18 decimals
+        deadline: stakeData.deadline.toNumber(),
+        isFinancier: stakeData.financierStatus,
+        pendingRewards: ethers.utils.formatUnits(stakeData.pendingRewards, decimals),
+        votingPower: ethers.utils.formatUnits(stakeData.votingPower, 18),
+      };
+    } catch (error) {
+      console.error("Error getting stake for token:", error);
+      return {
+        tokenAddress,
+        amount: "0",
+        timestamp: 0,
+        active: false,
+        usdEquivalent: "0",
+        deadline: 0,
+        isFinancier: false,
+        pendingRewards: "0",
+        votingPower: "0",
+      };
+    }
+  }
+
+  /**
+   * Get all stakes for a user across all supported tokens
+   * @param staker Address of the staker (optional, uses current user if not provided)
+   */
+  public async getAllStakesForUser(staker?: string): Promise<AllStakesInfo> {
+    try {
+      const contract = await this.getStakingContract();
+      let address = staker;
+      
+      if (!address) {
+        address = await this.getSmartAccountAddress();
+      }
+
+      console.log('Getting all stakes for user:', address);
+      
+      const allStakes = await contract.getAllStakesForUser(address);
+      
+      // Format the response
+      const tokens = allStakes.tokens;
+      const amounts: string[] = [];
+      const usdEquivalents: string[] = [];
+      const isFinancierFlags = allStakes.isFinancierFlags;
+      const deadlines: number[] = [];
+      const pendingRewards: string[] = [];
+      
+      // Get decimals for each token and format amounts
+      for (let i = 0; i < tokens.length; i++) {
+        const tokenContract = new ethers.Contract(tokens[i], ERC20_ABI, await this.getSigner());
+        const decimals = await tokenContract.decimals();
+        
+        amounts.push(ethers.utils.formatUnits(allStakes.amounts[i], decimals));
+        usdEquivalents.push(ethers.utils.formatUnits(allStakes.usdEquivalents[i], 18));
+        deadlines.push(allStakes.deadlines[i].toNumber());
+        pendingRewards.push(ethers.utils.formatUnits(allStakes.pendingRewards[i], decimals));
+      }
+      
+      return {
+        tokens,
+        amounts,
+        usdEquivalents,
+        isFinancierFlags,
+        deadlines,
+        pendingRewards,
+        totalUsdValue: ethers.utils.formatUnits(allStakes.totalUsdValue, 18),
+      };
+    } catch (error) {
+      console.error("Error getting all stakes for user:", error);
+      return {
+        tokens: [],
+        amounts: [],
+        usdEquivalents: [],
+        isFinancierFlags: [],
+        deadlines: [],
+        pendingRewards: [],
+        totalUsdValue: "0",
+      };
+    }
+  }
+
+  // ========================================
+  // FINANCIER REVOCATION FUNCTIONS
+  // ========================================
+
+  /**
+   * Request financier revocation (starts 30-day waiting period)
+   * @param onProgress Optional callback for progress updates
+   */
+  public async requestFinancierRevocation(
+    onProgress?: (stage: 'checking' | 'requesting' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
+    try {
+      onProgress?.('checking', 'Checking financier status...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA requestFinancierRevocation');
+          
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'requestFinancierRevocation',
+            args: []
+          });
+
+          console.log('[StakingService] AA requestFinancierRevocation completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'revocation',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA requestFinancierRevocation failed, falling back to EOA:', error);
+        }
+      }
+
+      // EOA method
+      onProgress?.('requesting', 'Submitting revocation request...');
+      
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Requesting financier revocation...");
+      
+      const gasLimit = ethers.utils.hexlify(200000);
+      const tx = await contract.requestFinancierRevocation({ gasLimit });
+      
+      console.log("Revocation request transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'revocation',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
+      };
+    } catch (error: any) {
+      console.error("Raw requestFinancierRevocation error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cancel a pending financier revocation request
+   * @param onProgress Optional callback for progress updates
+   */
+  public async cancelFinancierRevocation(
+    onProgress?: (stage: 'checking' | 'cancelling' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
+    try {
+      onProgress?.('checking', 'Checking revocation status...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA cancelFinancierRevocation');
+          
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'cancelFinancierRevocation',
+            args: []
+          });
+
+          console.log('[StakingService] AA cancelFinancierRevocation completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'revocation',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA cancelFinancierRevocation failed, falling back to EOA:', error);
+        }
+      }
+
+      // EOA method
+      onProgress?.('cancelling', 'Cancelling revocation request...');
+      
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Cancelling financier revocation...");
+      
+      const gasLimit = ethers.utils.hexlify(200000);
+      const tx = await contract.cancelFinancierRevocation({ gasLimit });
+      
+      console.log("Revocation cancellation transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'revocation',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
+      };
+    } catch (error: any) {
+      console.error("Raw cancelFinancierRevocation error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete financier revocation after 30-day waiting period
+   * @param onProgress Optional callback for progress updates
+   */
+  public async completeFinancierRevocation(
+    onProgress?: (stage: 'checking' | 'completing' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
+    try {
+      onProgress?.('checking', 'Verifying revocation period...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA completeFinancierRevocation');
+          
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: GOVERNANCE_FACET_ABI,
+            functionName: 'completeFinancierRevocation',
+            args: []
+          });
+
+          console.log('[StakingService] AA completeFinancierRevocation completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'revocation',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA completeFinancierRevocation failed, falling back to EOA:', error);
+        }
+      }
+
+      // EOA method
+      onProgress?.('completing', 'Completing revocation...');
+      
+      const contract = await this.getGovernanceContract();
+      
+      console.log("Completing financier revocation...");
+      
+      const gasLimit = ethers.utils.hexlify(200000);
+      const tx = await contract.completeFinancierRevocation({ gasLimit });
+      
+      console.log("Revocation completion transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'revocation',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
+      };
+    } catch (error: any) {
+      console.error("Raw completeFinancierRevocation error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get revocation status for a financier
+   * @param staker Address of the staker (optional, uses current user if not provided)
+   */
+  public async getRevocationStatus(staker?: string): Promise<RevocationStatus> {
+    try {
+      const contract = await this.getGovernanceContract();
+      let address = staker;
+      
+      if (!address) {
+        address = await this.getSmartAccountAddress();
+      }
+
+      console.log('Getting revocation status for:', address);
+      
+      const status = await contract.getRevocationStatus(address);
+      
+      return {
+        revocationRequested: status.revocationRequested,
+        revocationRequestTime: status.revocationRequestTime.toNumber(),
+        revocationDeadline: status.revocationDeadline.toNumber(),
+        canCompleteRevocation: status.canCompleteRevocation,
+      };
+    } catch (error) {
+      console.error("Error getting revocation status:", error);
+      return {
+        revocationRequested: false,
+        revocationRequestTime: 0,
+        revocationDeadline: 0,
+        canCompleteRevocation: false,
+      };
+    }
+  }
+
+  // ========================================
+  // CUSTOM DEADLINE FUNCTION
+  // ========================================
+
+  /**
+   * Set a custom deadline for staking lock period
+   * @param newDeadline Unix timestamp for the new deadline
+   * @param onProgress Optional callback for progress updates
+   */
+  public async setCustomDeadline(
+    newDeadline: number,
+    onProgress?: (stage: 'checking' | 'setting' | 'linking', message: string) => void
+  ): Promise<StakingTransaction> {
+    try {
+      onProgress?.('checking', 'Validating deadline...');
+
+      // Try AA if available
+      if (this.shouldUseAA()) {
+        try {
+          console.log('[StakingService] Attempting AA setCustomDeadline');
+          
+          const password = await secureStorage.getSecureItem('blockfinax.password');
+          if (!password) {
+            throw new Error('Password not found for AA transaction');
+          }
+          const privateKey = await secureStorage.getDecryptedPrivateKey(password);
+          if (!privateKey) {
+            throw new Error('Private key not found for AA transaction');
+          }
+
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          const result = await smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            network: LISK_SEPOLIA_NETWORK,
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'setCustomDeadline',
+            args: [newDeadline.toString()]
+          });
+
+          console.log('[StakingService] AA setCustomDeadline completed:', result);
+
+          return {
+            hash: result.txHash,
+            type: 'stake',
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: result.explorerUrl,
+            usedAA: result.usedSmartAccount
+          };
+        } catch (error) {
+          console.warn('[StakingService] AA setCustomDeadline failed, falling back to EOA:', error);
+        }
+      }
+
+      // EOA method
+      onProgress?.('setting', 'Setting custom deadline...');
+      
+      const contract = await this.getStakingContract();
+      
+      console.log("Setting custom deadline:", new Date(newDeadline * 1000).toISOString());
+      
+      const gasLimit = ethers.utils.hexlify(200000);
+      const tx = await contract.setCustomDeadline(newDeadline, { gasLimit });
+      
+      console.log("Custom deadline transaction submitted:", tx.hash);
+      
+      return {
+        hash: tx.hash,
+        type: 'stake',
+        timestamp: Date.now(),
+        status: 'pending',
+        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        usedAA: false
+      };
+    } catch (error: any) {
+      console.error("Raw setCustomDeadline error:", error);
+      throw error;
+    }
+  }
+
+  // ========================================
+  // HELPER FUNCTIONS
+  // ========================================
+
+  /**
+   * Get the default staking token (USDC) address
+   */
+  public getDefaultTokenAddress(): string {
+    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    if (!usdcAddress) {
+      throw new Error('USDC address not found for Lisk Sepolia network');
+    }
+    return usdcAddress;
+  }
+
+  /**
+   * Calculate deadline timestamp from days
+   * @param days Number of days from now
+   */
+  public calculateDeadlineFromDays(days: number): number {
+    return Math.floor(Date.now() / 1000) + (days * 24 * 60 * 60);
+  }
+
+  /**
+   * Format deadline to human-readable string
+   * @param deadline Unix timestamp
+   */
+  public formatDeadline(deadline: number): string {
+    const date = new Date(deadline * 1000);
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    
+    if (days < 0) {
+      return 'Unlocked';
+    } else if (days === 0) {
+      return 'Unlocks today';
+    } else if (days === 1) {
+      return 'Unlocks tomorrow';
+    } else {
+      return `Unlocks in ${days} days`;
+    }
   }
 }
 

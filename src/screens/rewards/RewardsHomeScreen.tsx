@@ -14,7 +14,7 @@ import { Screen } from "../../components/ui/Screen";
 import { Text } from "../../components/ui/Text";
 import { InfoCard, StatusBadge } from "../../components/ui";
 import { useWallet } from "../../contexts/WalletContext";
-import { multiTokenStakingService } from "../../services/multiTokenStakingService";
+import { stakingService } from "../../services/stakingService";
 import { getSupportedStablecoins } from "../../config/stablecoinPrices";
 import { convertToUSD } from "../../config/stablecoinPrices";
 import {
@@ -65,38 +65,43 @@ export function RewardsHomeScreen() {
 
     setIsLoadingEarnings(true);
     try {
+      // Configure stakingService for current network
+      console.log(
+        "[RewardsHomeScreen] Configuring stakingService for network:",
+        {
+          chainId: selectedNetwork.chainId,
+          name: selectedNetwork.name,
+        },
+      );
+      stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+
       // Get supported tokens for current network
       const tokens = getSupportedStablecoins(selectedNetwork.chainId);
       setSupportedTokens(tokens);
 
-      // Load user stakes
-      const stakes = await multiTokenStakingService.getAllUserStakes(
-        address,
-        selectedNetwork.chainId
-      );
+      // Load user stakes using unified stakingService
+      const stakes = await stakingService.getAllStakesForUser(address);
 
       // Set stake info from first active stake (for backward compatibility)
-      if (stakes.stakes && stakes.stakes.length > 0) {
-        const firstStake = stakes.stakes[0];
+      if (
+        stakes.amounts &&
+        stakes.amounts.length > 0 &&
+        parseFloat(stakes.amounts[0]) > 0
+      ) {
         setStakeInfo({
-          amount: firstStake.amount,
-          timestamp: firstStake.timestamp,
-          pendingRewards: firstStake.pendingRewards,
-          active: firstStake.active,
+          amount: stakes.amounts[0],
+          timestamp: Date.now() / 1000, // AllStakesInfo doesn't have timestamp
+          pendingRewards: stakes.pendingRewards[0],
+          active: parseFloat(stakes.amounts[0]) > 0,
         });
       }
 
-      // Load pool statistics
-      const poolStatsData =
-        await multiTokenStakingService.getMultiTokenPoolStats(
-          selectedNetwork.chainId
-        );
-      if (poolStatsData) {
-        setPoolStats({
-          totalLiquidityProviders: poolStatsData.totalStakers.toString(),
-          contractBalance: poolStatsData.totalStakedUSD.toString(),
-        });
-      }
+      // Pool statistics - using staking config for current APR data
+      // getPoolStats removed - set default values
+      setPoolStats({
+        totalLiquidityProviders: "0", // Not available without getPoolStats
+        contractBalance: "0", // Will be calculated from user stakes
+      });
 
       // Load pool-wide token statistics
       const poolStatsMap: {
@@ -104,35 +109,25 @@ export function RewardsHomeScreen() {
       } = {};
       let totalUSD = 0;
 
-      await Promise.all(
-        tokens.map(async (token) => {
-          try {
-            const totalStaked =
-              await multiTokenStakingService.getTotalStakedForToken(
-                token.address,
-                selectedNetwork.chainId
-              );
+      // Use pool stats for each token (simplified - using same totalStaked for all)
+      tokens.forEach((token) => {
+        try {
+          const totalStaked = poolStatsData.totalStaked;
+          const usdValue = parseFloat(totalStaked);
 
-            const usdValue = await convertToUSD(
-              parseFloat(totalStaked),
-              token.symbol,
-              selectedNetwork.chainId
-            );
-
-            poolStatsMap[token.address] = {
-              amount: totalStaked,
-              usdValue: usdValue,
-            };
-            totalUSD += usdValue;
-          } catch (error) {
-            console.error(
-              `Failed to load pool stats for ${token.symbol}:`,
-              error
-            );
-            poolStatsMap[token.address] = { amount: "0", usdValue: 0 };
-          }
-        })
-      );
+          poolStatsMap[token.address] = {
+            amount: totalStaked,
+            usdValue: usdValue,
+          };
+          totalUSD += usdValue;
+        } catch (error) {
+          console.error(
+            `Failed to load pool stats for ${token.symbol}:`,
+            error,
+          );
+          poolStatsMap[token.address] = { amount: "0", usdValue: 0 };
+        }
+      });
 
       setPoolTokenStats(poolStatsMap);
       setTotalPoolUSD(totalUSD);
@@ -329,7 +324,7 @@ export function RewardsHomeScreen() {
                     <Text style={[textStyles.cardTitle, textStyles.primary]}>
                       {stakeInfo?.timestamp
                         ? Math.floor(
-                            (Date.now() / 1000 - stakeInfo.timestamp) / 86400
+                            (Date.now() / 1000 - stakeInfo.timestamp) / 86400,
                           )
                         : "0"}{" "}
                       days
@@ -405,7 +400,7 @@ export function RewardsHomeScreen() {
                                   {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 2,
-                                  }
+                                  },
                                 )}
                               </Text>
                               <Text style={textStyles.detailValue}>

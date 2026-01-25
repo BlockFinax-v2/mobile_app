@@ -7,6 +7,15 @@ import {
   Application,
   DraftCertificate,
 } from "@/contexts/TradeFinanceContext";
+import {
+  useWallet,
+  SupportedNetworkId,
+  getAllSupportedTokens,
+} from "@/contexts/WalletContext";
+import { NetworkSelector } from "@/components/ui/NetworkSelector";
+import { TokenSelector, TokenInfo } from "@/components/ui/TokenSelector";
+import { CompactNetworkTokenSelector } from "@/components/ui/CompactNetworkTokenSelector";
+import { StablecoinConfig } from "@/config/stablecoinPrices";
 import { TradeStackParamList } from "@/navigation/types";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -25,10 +34,13 @@ import {
   ToastAndroid,
   Platform,
   Dimensions,
+  Pressable,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { PoolGuaranteeApplicationFlow } from "@/components/trade/PoolGuaranteeApplicationFlow";
+import { SellerDraftView } from "@/components/trade/SellerDraftView";
+import { BuyerApplicationView } from "@/components/trade/BuyerApplicationView";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -55,6 +67,263 @@ interface PoolGuaranteeForm {
 type NavigationProp = StackNavigationProp<TradeStackParamList, "TradeFinance">;
 type RouteProps = RouteProp<TradeStackParamList, "TradeFinance">;
 
+// Dummy applications data for testing buyer view
+const DUMMY_BUYER_APPLICATIONS = [
+  {
+    id: "app-buyer-1",
+    requestId: "PG-1762503009626-PI4MD88",
+    guaranteeNo: "PG-1762503009626-PI4MD88",
+    applicant: {
+      company: "ACME Imports Ltd.",
+      registration: "REG-123456",
+      country: "United States",
+      contact: "Alice Buyer",
+      email: "alice@acmeimports.com",
+      walletAddress: "0x759ed3d2...fe5e5582a",
+    },
+    beneficiary: {
+      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
+      name: "Global Exports Co.",
+    },
+    tradeDescription: "Import of 1,000 widgets from EU",
+    collateralDescription: "Half percent of the goods as collateral",
+    guaranteeAmount: "8000.00 USDC",
+    collateralValue: "40.00 USDC",
+    financingDuration: 90,
+    contractNumber: "SC-2025-001",
+    paymentDueDate: "12/4/2025",
+    status: "Awaiting Seller Approval",
+    currentStage: 2, // Draft Sent stage
+    issuanceFee: "80.00 USDC (1%)",
+    submittedDate: "Jan 16, 2025",
+    content: `[BlockFinaX Treasury Pool]\n\nIRREVOCABLE POOL GUARANTEE\n\nGuarantee No: PG-1762503009626-PI4MD88\nDate of Issue: January 16, 2025\n\nWE, BLOCKFINAX TREASURY POOL, hereby irrevocably and unconditionally guarantee payment of up to Eight Thousand United States Dollars (USD 8,000.00) to the Beneficiary named below.\n\nAPPLICANT DETAILS:\nName: ACME Imports Ltd.\nRegistration: REG-123456\nCountry: United States\n\nBENEFICIARY:\nWallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d\nName: Global Exports Co.\n\nUNDERLYING TRANSACTION:\nPurpose: Import of 1,000 widgets from EU\nContract Number: SC-2025-001\nTrade Value: USD 8,000.00\n\nThis guarantee is governed by the ICC Uniform Rules for Demand Guarantees (URDG 758) and is valid for 90 days from the date of issue.\n\nAny claim under this guarantee must be submitted in writing with supporting documentation before the expiry date.\n\nTHIS IS A DIGITALLY VERIFIED POOL GUARANTEE\nBlockchain Network: Ethereum Sepolia\nSmart Contract: 0x...\n\nFor BlockFinaX Treasury Pool\n[Digital Signature]`,
+    proformaInvoiceIpfs: {
+      hash: "QmX7Yn9K2vPqw3ZRt8Hm5kL9Jn4Wp6Vb2Xq1Yz5Tc8Kd3",
+      url: "https://gateway.pinata.cloud/ipfs/QmX7Yn9K2vPqw3ZRt8Hm5kL9Jn4Wp6Vb2Xq1Yz5Tc8Kd3",
+    },
+    salesContractIpfs: {
+      hash: "QmP4Bf9N3vLm2Wn6Tp5Vk8Jc7Xr1Hq9Yz4Kd6Mb3Lp2Nq8",
+      url: "https://gateway.pinata.cloud/ipfs/QmP4Bf9N3vLm2Wn6Tp5Vk8Jc7Xr1Hq9Yz4Kd6Mb3Lp2Nq8",
+    },
+  },
+  {
+    id: "app-buyer-2",
+    requestId: "PG-1762504120837-XM9PL22",
+    guaranteeNo: "PG-1762504120837-XM9PL22",
+    applicant: {
+      company: "Tech Supply Inc.",
+      registration: "REG-789012",
+      country: "Canada",
+      contact: "Bob Chen",
+      email: "bob@techsupply.ca",
+      walletAddress: "0x8a3c5e9d...ab2f7691c",
+    },
+    beneficiary: {
+      walletAddress: "0x2b8f4c7a9d3e6b1f5a8c4d7e2f9b6a3c8e1d4f7b",
+      name: "Asian Electronics Ltd.",
+    },
+    tradeDescription: "Purchase of 500 electronic components",
+    collateralDescription: "Electronics inventory as collateral",
+    guaranteeAmount: "5000.00 USDC",
+    collateralValue: "25.00 USDC",
+    financingDuration: 60,
+    contractNumber: "SC-2025-002",
+    paymentDueDate: "11/28/2025",
+    status: "Fee Paid - Awaiting Certificate",
+    currentStage: 4, // Fee Paid stage
+    issuanceFee: "50.00 USDC (1%)",
+    submittedDate: "Jan 10, 2025",
+    content: `[BlockFinaX Treasury Pool]\n\nIRREVOCABLE POOL GUARANTEE\n\nGuarantee No: PG-1762504120837-XM9PL22\nDate of Issue: January 10, 2025\n\nWE, BLOCKFINAX TREASURY POOL, hereby irrevocably and unconditionally guarantee payment of up to Five Thousand United States Dollars (USD 5,000.00) to the Beneficiary named below.\n\nAPPLICANT DETAILS:\nName: Tech Supply Inc.\nRegistration: REG-789012\nCountry: Canada\n\nBENEFICIARY:\nWallet Address: 0x2b8f4c7a9d3e6b1f5a8c4d7e2f9b6a3c8e1d4f7b\nName: Asian Electronics Ltd.\n\nUNDERLYING TRANSACTION:\nPurpose: Purchase of 500 electronic components\nContract Number: SC-2025-002\nTrade Value: USD 5,000.00\n\nThis guarantee is governed by the ICC Uniform Rules for Demand Guarantees (URDG 758) and is valid for 60 days from the date of issue.`,
+    proformaInvoiceIpfs: {
+      hash: "QmT8Zm5L3wQn4Vp7Yk9Jm6Bc2Xd5Np8Lq1Tr4Km7Wp3Hf9",
+      url: "https://gateway.pinata.cloud/ipfs/QmT8Zm5L3wQn4Vp7Yk9Jm6Bc2Xd5Np8Lq1Tr4Km7Wp3Hf9",
+    },
+    salesContractIpfs: {
+      hash: "QmR2Hm8N4vKp7Wq3Yd6Lm9Jc5Xn2Bp4Fq8Tr1Km6Np5Lp7",
+      url: "https://gateway.pinata.cloud/ipfs/QmR2Hm8N4vKp7Wq3Yd6Lm9Jc5Xn2Bp4Fq8Tr1Km6Np5Lp7",
+    },
+  },
+];
+
+// Dummy draft data for testing seller view
+const DUMMY_DRAFTS = [
+  {
+    id: "draft-1",
+    requestId: "PG-1762503009626-PI4MD88",
+    guaranteeNo: "PG-1762503009626-PI4MD88",
+    applicant: {
+      company: "ACME Imports Ltd.",
+      registration: "REG-123456",
+      country: "United States",
+      contact: "Alice Buyer",
+      email: "alice@acmeimports.com",
+      phone: "+1 234 567 8900",
+      walletAddress: "0x759ed3d2...fe5e5582a",
+      applicationDate: "Nov 16, 2025",
+    },
+    beneficiary: {
+      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
+    },
+    tradeDescription: "Import of 1,000 widgets from EU",
+    collateralDescription: "Half percent of the goods as collateral",
+    guaranteeAmount: "8000.00 USDC",
+    collateralValue: "0.40 USDC",
+    financingDuration: 90,
+    contractNumber: "SC-2025-001",
+    paymentDueDate: "12/4/2025",
+    status: "SENT TO SELLER",
+    currentStage: 2, // Draft Sent stage
+    issuanceFee: "80.00 USDC (1%)",
+    content: `[BlockFinaX Treasury Pool]
+
+IRREVOCABLE POOL GUARANTEE
+
+═══════════════════════════════════════════════════════════════════════
+
+To: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
+
+Date: 2025-11-07
+
+───────────────────────────────────────────────────────────────────────
+
+– TYPE OF GUARANTEE: Performance Guarantee (Goods-as-Collateral Pool Guarantee)
+– GUARANTEE NO.: PG-1762503009626-PI4MD88
+– THE GUARANTOR: BlockFinaX Treasury Pool
+   Pool Contract Address: [Treasury Pool Smart Contract]
+   Place of Issue: Base Sepolia Blockchain Network
+   Status: DRAFT - Subject to Seller Approval and Fee Payment
+   
+– THE APPLICANT (Principal/Buyer):
+   Company: ACME Imports Ltd.
+   Registration: REG-123456
+   Country: United States
+   Contact: Alice Buyer
+   Email: alice@acmeimports.com
+   Wallet Address: 0x759ed3d2...fe5e5582a
+   
+– THE BENEFICIARY (Seller):
+   Wallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
+   
+– TRADE DESCRIPTION:
+   Import of 1,000 widgets from EU
+   Total Trade Value: 16,000.00 USDC
+   Contract Number: SC-2025-001
+   
+– GUARANTEE AMOUNT: 8,000.00 USDC (50% of trade value)
+   
+– COLLATERAL:
+   Description: Half percent of the goods as collateral
+   Estimated Value: 0.40 USDC
+   
+– FINANCING DURATION: 90 days
+   Payment Due Date: 12/4/2025
+   
+– ISSUANCE FEE: 80.00 USDC (1% of guarantee amount)
+   Payable by: Applicant (Buyer)
+   Payment Status: PENDING - Due upon seller approval
+   
+– TERMS & CONDITIONS:
+   1. This guarantee becomes effective upon seller approval and buyer fee payment
+   2. The guarantee is irrevocable once activated
+   3. Payment is guaranteed by the BlockFinaX Treasury Pool
+   4. Seller must ship goods within 30 days of certificate issuance
+   5. Buyer must confirm delivery within 7 days of receipt
+   6. Invoice settlement triggers release of guarantee
+   
+– RISK & OBLIGATIONS:
+   • Buyer pays 30% issuance fee and posts 10% collateral
+   • Seller accepts 5% risk exposure and posts 5% collateral
+   • Treasury pool covers 60% backed by staked capital
+   • All parties protected by smart contract enforcement
+   
+═══════════════════════════════════════════════════════════════════════
+
+Issued by: BlockFinaX Treasury Pool
+Blockchain: Base Sepolia Network
+Smart Contract: [Diamond Proxy Address]
+Timestamp: 2025-11-07 14:30:15 UTC
+
+This is a legally binding instrument subject to ICC URDG 758 rules.`,
+  },
+  {
+    id: "draft-2",
+    requestId: "PG-1763321117688-XYZ123",
+    guaranteeNo: "PG-1763321117688-XYZ123",
+    applicant: {
+      company: "XYZ LTD",
+      registration: "REG-789012",
+      country: "Nigeria",
+      contact: "Bilal",
+      email: "bilal@xyzltd.com",
+      phone: "+234 123 456 789",
+      walletAddress: "0x324ffda4...b9f141",
+      applicationDate: "Nov 16, 2025",
+    },
+    beneficiary: {
+      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
+    },
+    tradeDescription: "Import of Cloth from Ghana",
+    collateralDescription: "Goods as collateral",
+    guaranteeAmount: "4.00 USDC",
+    collateralValue: "0.40 USDC",
+    financingDuration: 30,
+    contractNumber: "SC-2025-002",
+    paymentDueDate: "12/16/2025",
+    status: "SENT TO SELLER",
+    currentStage: 3, // Approved stage (for testing different stages)
+    issuanceFee: "0.04 USDC (1%)",
+    content: `[BlockFinaX Treasury Pool]
+
+IRREVOCABLE POOL GUARANTEE
+
+═══════════════════════════════════════════════════════════════════════
+
+To: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
+
+Date: 2025-11-16
+
+───────────────────────────────────────────────────────────────────────
+
+– TYPE OF GUARANTEE: Performance Guarantee (Goods-as-Collateral Pool Guarantee)
+– GUARANTEE NO.: PG-1763321117688-XYZ123
+– THE GUARANTOR: BlockFinaX Treasury Pool
+   Pool Contract Address: [Treasury Pool Smart Contract]
+   Place of Issue: Base Sepolia Blockchain Network
+   Status: APPROVED - Awaiting buyer fee payment
+   
+– THE APPLICANT (Principal/Buyer):
+   Company: XYZ LTD
+   Registration: REG-789012
+   Country: Nigeria
+   Contact: Bilal
+   Email: bilal@xyzltd.com
+   Wallet Address: 0x324ffda4...b9f141
+   
+– THE BENEFICIARY (Seller):
+   Wallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
+   
+– TRADE DESCRIPTION:
+   Import of Cloth from Ghana
+   Total Trade Value: 8.00 USDC
+   Contract Number: SC-2025-002
+   
+– GUARANTEE AMOUNT: 4.00 USDC (50% of trade value)
+   
+– COLLATERAL:
+   Description: Goods as collateral
+   Estimated Value: 0.40 USDC
+   
+– FINANCING DURATION: 30 days
+   Payment Due Date: 12/16/2025
+   
+– ISSUANCE FEE: 0.04 USDC (1% of guarantee amount)
+   Payable by: Applicant (Buyer)
+   Payment Status: PENDING
+   
+═══════════════════════════════════════════════════════════════════════`,
+  },
+];
+
 export const TradeFinanceScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
@@ -80,6 +349,8 @@ export const TradeFinanceScreen = () => {
   const [userRole, setUserRole] = useState<"buyer" | "seller">("buyer");
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [showNetworkSelector, setShowNetworkSelector] = useState(false);
+  const [showTokenSelector, setShowTokenSelector] = useState(false);
   const [selectedCertificate, setSelectedCertificate] =
     useState<DraftCertificate | null>(null);
   const [selectedApplication, setSelectedApplication] =
@@ -87,6 +358,12 @@ export const TradeFinanceScreen = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showSettlementModal, setShowSettlementModal] = useState(false);
   const [settlementAmount, setSettlementAmount] = useState("");
+  const [showSellerDraftView, setShowSellerDraftView] = useState(false);
+  const [selectedSellerDraft, setSelectedSellerDraft] = useState<any>(null);
+  const [showBuyerApplicationView, setShowBuyerApplicationView] =
+    useState(false);
+  const [selectedBuyerApplication, setSelectedBuyerApplication] =
+    useState<any>(null);
 
   const [poolBalance] = useState({
     balance: "223.76 USDC",
@@ -124,6 +401,146 @@ export const TradeFinanceScreen = () => {
 
   // Applications and drafts now come from context - no local state needed
 
+  // Load dummy data for testing
+  useEffect(() => {
+    if (userRole === "seller" && drafts.length === 0) {
+      DUMMY_DRAFTS.forEach((draft) =>
+        setDrafts((prev) => [...prev, draft as any]),
+      );
+    }
+    if (userRole === "buyer" && applications.length === 0) {
+      DUMMY_BUYER_APPLICATIONS.forEach((app) =>
+        setApplications((prev) => [...prev, app as any]),
+      );
+    }
+  }, [userRole]);
+
+  const handleSellerDraftApprove = () => {
+    Alert.alert(
+      "Draft Approved",
+      "You have approved this draft. The buyer will be notified to pay the issuance fee.",
+      [
+        {
+          text: "OK",
+          onPress: () => {
+            setShowSellerDraftView(false);
+            setSelectedSellerDraft(null);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleSellerDraftReject = () => {
+    Alert.alert(
+      "Reject Draft?",
+      "Are you sure you want to reject this draft? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Reject",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Draft Rejected",
+              "You have rejected this draft. The buyer will be notified.",
+            );
+            setShowSellerDraftView(false);
+            setSelectedSellerDraft(null);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBuyerPayFee = () => {
+    Alert.alert(
+      "Pay Issuance Fee",
+      "Processing payment of issuance fee. In production, this will connect to your wallet.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Pay",
+          onPress: () => {
+            showToast(
+              "Fee payment successful! Certificate is being generated.",
+            );
+            // Update application stage
+            if (selectedBuyerApplication) {
+              setSelectedBuyerApplication({
+                ...selectedBuyerApplication,
+                currentStage: 4,
+                status: "Fee Paid - Awaiting Certificate",
+              });
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBuyerPayInvoice = () => {
+    Alert.alert(
+      "Pay Invoice",
+      "Processing invoice payment. In production, this will connect to your wallet.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Pay",
+          onPress: () => {
+            showToast("Invoice payment successful! Transaction complete.");
+            // Update application stage
+            if (selectedBuyerApplication) {
+              setSelectedBuyerApplication({
+                ...selectedBuyerApplication,
+                currentStage: 9,
+                status: "Payment Complete",
+              });
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleBuyerConfirmDelivery = () => {
+    Alert.alert(
+      "Confirm Delivery",
+      "Have you received and inspected the goods?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Confirm",
+          onPress: () => {
+            showToast(
+              "Delivery confirmed! You can now proceed to pay the invoice.",
+            );
+            // Update application stage
+            if (selectedBuyerApplication) {
+              setSelectedBuyerApplication({
+                ...selectedBuyerApplication,
+                currentStage: 7,
+                status: "Delivery Confirmed - Pay Invoice",
+              });
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const showToast = (message: string) => {
     if (Platform.OS === "android") {
       ToastAndroid.show(message, ToastAndroid.SHORT);
@@ -146,8 +563,8 @@ export const TradeFinanceScreen = () => {
               prev.map((app) =>
                 app.id === applicationId
                   ? { ...app, status: "Awaiting Certificate" }
-                  : app
-              )
+                  : app,
+              ),
             );
             showToast("Fee payment successful! Certificate issuance pending.");
             break;
@@ -156,11 +573,11 @@ export const TradeFinanceScreen = () => {
             // Update application status after invoice payment
             setApplications((prev) =>
               prev.map((app) =>
-                app.id === applicationId ? { ...app, status: "Fee Paid" } : app
-              )
+                app.id === applicationId ? { ...app, status: "Fee Paid" } : app,
+              ),
             );
             showToast(
-              "Invoice payment successful! Transaction is being processed."
+              "Invoice payment successful! Transaction is being processed.",
             );
             break;
 
@@ -170,11 +587,11 @@ export const TradeFinanceScreen = () => {
               prev.map((app) =>
                 app.id === applicationId
                   ? { ...app, status: "Invoice Settled" }
-                  : app
-              )
+                  : app,
+              ),
             );
             showToast(
-              "Settlement payment successful! Certificate will be issued."
+              "Settlement payment successful! Certificate will be issued.",
             );
             break;
         }
@@ -245,8 +662,8 @@ export const TradeFinanceScreen = () => {
                         stage.status === "completed"
                           ? colors.success
                           : application.currentStage === stage.id
-                          ? colors.primary
-                          : colors.border,
+                            ? colors.primary
+                            : colors.border,
                     },
                   ]}
                 >
@@ -287,8 +704,54 @@ export const TradeFinanceScreen = () => {
     );
   };
 
+  // Network and Token Selector Handlers
+  const { selectedNetwork } = useWallet();
+  const [currentNetworkId, setCurrentNetworkId] =
+    useState<SupportedNetworkId | null>(selectedNetwork?.id || null);
+  const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
+    null,
+  );
+
+  const availableTokens = React.useMemo(() => {
+    if (!currentNetworkId) return [];
+    return getAllSupportedTokens(currentNetworkId);
+  }, [currentNetworkId]);
+
+  const handleNetworkSelect = React.useCallback(
+    (networkId: SupportedNetworkId) => {
+      setCurrentNetworkId(networkId);
+      setShowNetworkSelector(false);
+
+      // Auto-select first token for new network
+      const tokens = getAllSupportedTokens(networkId);
+      if (tokens.length > 0) {
+        const firstToken: StablecoinConfig = {
+          symbol: tokens[0].symbol,
+          name: tokens[0].name,
+          address: tokens[0].address,
+          decimals: tokens[0].decimals,
+          targetPeg: 1.0,
+        };
+        setSelectedToken(firstToken);
+      }
+    },
+    [],
+  );
+
+  const handleTokenSelect = React.useCallback((token: TokenInfo) => {
+    const stablecoinConfig: StablecoinConfig = {
+      symbol: token.symbol,
+      name: token.name,
+      address: token.address,
+      decimals: token.decimals,
+      targetPeg: 1.0,
+    };
+    setSelectedToken(stablecoinConfig);
+    setShowTokenSelector(false);
+  }, []);
+
   const handleDocumentPick = async (
-    type: "proformaInvoice" | "salesContract"
+    type: "proformaInvoice" | "salesContract",
   ) => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -310,7 +773,7 @@ export const TradeFinanceScreen = () => {
         showToast(
           `${
             type === "proformaInvoice" ? "Proforma Invoice" : "Sales Contract"
-          } uploaded successfully`
+          } uploaded successfully`,
         );
       }
     } catch (error) {
@@ -326,7 +789,7 @@ export const TradeFinanceScreen = () => {
       if (permission.granted === false) {
         Alert.alert(
           "Permission Required",
-          "Please grant camera roll permissions to upload images."
+          "Please grant camera roll permissions to upload images.",
         );
         return;
       }
@@ -351,7 +814,7 @@ export const TradeFinanceScreen = () => {
         showToast(
           `${
             type === "proformaInvoice" ? "Proforma Invoice" : "Sales Contract"
-          } uploaded successfully`
+          } uploaded successfully`,
         );
       }
     } catch (error) {
@@ -371,7 +834,7 @@ export const TradeFinanceScreen = () => {
       "guaranteeAmount",
     ];
     const missingFields = requiredFields.filter(
-      (field) => !applicationForm[field as keyof PoolGuaranteeForm]
+      (field) => !applicationForm[field as keyof PoolGuaranteeForm],
     );
 
     if (missingFields.length > 0) {
@@ -382,7 +845,7 @@ export const TradeFinanceScreen = () => {
     if (!applicationForm.proformaInvoice || !applicationForm.salesContract) {
       Alert.alert(
         "Missing Documents",
-        "Please upload both Proforma Invoice and Sales Contract."
+        "Please upload both Proforma Invoice and Sales Contract.",
       );
       return;
     }
@@ -425,7 +888,7 @@ export const TradeFinanceScreen = () => {
             24 *
             60 *
             60 *
-            1000
+            1000,
       ).toLocaleDateString("en-US"),
       financingDuration: parseInt(applicationForm.financingDuration) || 90,
       issuanceFee: `${(
@@ -463,7 +926,7 @@ export const TradeFinanceScreen = () => {
             24 *
             60 *
             60 *
-            1000
+            1000,
       ).toLocaleDateString("en-US"),
       status: "SENT TO SELLER",
       issuanceFee: `${(
@@ -508,7 +971,7 @@ Status: AWAITING SELLER APPROVAL`,
             showToast("Application submitted successfully!");
           },
         },
-      ]
+      ],
     );
   };
 
@@ -521,8 +984,8 @@ Status: AWAITING SELLER APPROVAL`,
         prev.map((draft) =>
           draft.id === draftId
             ? { ...draft, status: "AWAITING FEE PAYMENT" }
-            : draft
-        )
+            : draft,
+        ),
       );
 
       // Create a real application for the buyer when seller approves
@@ -564,7 +1027,7 @@ Status: AWAITING SELLER APPROVAL`,
       }
 
       showToast(
-        "Draft approved successfully! Buyer will be notified to pay the issuance fee."
+        "Draft approved successfully! Buyer will be notified to pay the issuance fee.",
       );
     } else {
       setDrafts((prev) => prev.filter((draft) => draft.id !== draftId));
@@ -619,12 +1082,12 @@ Status: AWAITING SELLER APPROVAL`,
       prev.map((app) =>
         app.id === selectedApplication.id
           ? { ...app, status: "Invoice Settled" }
-          : app
-      )
+          : app,
+      ),
     );
 
     showToast(
-      "Invoice settlement successful! Certificate will be issued by treasury delegators."
+      "Invoice settlement successful! Certificate will be issued by treasury delegators.",
     );
   };
 
@@ -777,181 +1240,56 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
 
   const renderOverviewTab = () => (
     <View style={styles.content}>
-      {/* Treasury Pool Overview Card */}
-      <View style={styles.treasuryOverviewCard}>
-        <View style={styles.treasuryHeader}>
-          <View style={styles.treasuryHeaderLeft}>
-            <MaterialCommunityIcons
-              name="bank"
-              size={24}
-              color={colors.primary}
-            />
-            <View style={styles.treasuryHeaderText}>
-              <Text style={styles.treasuryTitle}>Treasury Pool</Text>
-            </View>
-          </View>
-          <MaterialCommunityIcons
-            name="information-outline"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </View>
-
-        <View style={styles.treasuryBalance}>
-          <Text style={styles.treasuryBalanceLabel}>Available Balance</Text>
-          <Text style={styles.treasuryBalanceValue}>{poolBalance.balance}</Text>
-          <Text style={styles.treasuryBalanceSubtext}>
-            {poolBalance.liveBalance}
-          </Text>
-        </View>
-
-        <View style={styles.treasuryDivider} />
-
-        <View style={styles.treasuryStatsRow}>
-          <View style={styles.treasuryStatItem}>
-            <MaterialCommunityIcons
-              name="progress-clock"
-              size={20}
-              color="#FF9800"
-            />
-            <Text style={styles.treasuryStatValue}>
-              {guaranteeStats.inProgress}
-            </Text>
-            <Text style={styles.treasuryStatLabel}>In Progress</Text>
-          </View>
-
-          <View style={styles.treasuryStatDivider} />
-
-          <View style={styles.treasuryStatItem}>
-            <MaterialCommunityIcons
-              name="clock-outline"
-              size={20}
-              color="#2196F3"
-            />
-            <Text style={styles.treasuryStatValue}>
-              {guaranteeStats.pending}
-            </Text>
-            <Text style={styles.treasuryStatLabel}>Pending</Text>
-          </View>
-
-          <View style={styles.treasuryStatDivider} />
-
-          <View style={styles.treasuryStatItem}>
-            <MaterialCommunityIcons
-              name="shield-check"
-              size={20}
-              color="#4CAF50"
-            />
-            <Text style={styles.treasuryStatValue}>
-              {guaranteeStats.totalGuaranteed}
-            </Text>
-            <Text style={styles.treasuryStatLabel}>Guaranteed</Text>
-          </View>
-        </View>
-      </View>
-
       {/* Role Selection Section */}
-      <View style={styles.roleSelectionSection}>
-        <View style={styles.roleSelectionHeader}>
-          <Text style={styles.roleSelectionTitle}>Select Your Role</Text>
-          <Text style={styles.roleSelectionSubtitle}>
-            Choose how you want to participate in trade finance
-          </Text>
-        </View>
-
-        <View style={styles.roleCardsContainer}>
+      <View style={styles.roleSliderSection}>
+        <Text style={styles.roleSliderLabel}>Your Role</Text>
+        <View style={styles.roleSliderContainer}>
           <TouchableOpacity
             style={[
-              styles.roleCard,
-              userRole === "buyer" && styles.roleCardActive,
+              styles.roleSliderOption,
+              styles.roleSliderOptionLeft,
+              userRole === "buyer" && styles.roleSliderOptionActive,
             ]}
             onPress={() => setUserRole("buyer")}
             activeOpacity={0.7}
           >
-            <View
-              style={[
-                styles.roleCardIcon,
-                userRole === "buyer" && styles.roleCardIconActive,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="cart"
-                size={32}
-                color={userRole === "buyer" ? "white" : colors.primary}
-              />
-            </View>
+            <MaterialCommunityIcons
+              name="cart"
+              size={20}
+              color={userRole === "buyer" ? "white" : colors.primary}
+            />
             <Text
               style={[
-                styles.roleCardTitle,
-                userRole === "buyer" && styles.roleCardTitleActive,
+                styles.roleSliderText,
+                userRole === "buyer" && styles.roleSliderTextActive,
               ]}
             >
               Buyer
             </Text>
-            <Text
-              style={[
-                styles.roleCardDescription,
-                userRole === "buyer" && styles.roleCardDescriptionActive,
-              ]}
-            >
-              Apply for pool guarantees to secure your trade purchases
-            </Text>
-            {userRole === "buyer" && (
-              <View style={styles.roleCardCheckmark}>
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={24}
-                  color={colors.primary}
-                />
-              </View>
-            )}
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
-              styles.roleCard,
-              userRole === "seller" && styles.roleCardActive,
+              styles.roleSliderOption,
+              styles.roleSliderOptionRight,
+              userRole === "seller" && styles.roleSliderOptionActive,
             ]}
             onPress={() => setUserRole("seller")}
             activeOpacity={0.7}
           >
-            <View
-              style={[
-                styles.roleCardIcon,
-                userRole === "seller" && styles.roleCardIconActive,
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="store"
-                size={32}
-                color={userRole === "seller" ? "white" : colors.primary}
-              />
-            </View>
+            <MaterialCommunityIcons
+              name="store"
+              size={20}
+              color={userRole === "seller" ? "white" : colors.primary}
+            />
             <Text
               style={[
-                styles.roleCardTitle,
-                userRole === "seller" && styles.roleCardTitleActive,
+                styles.roleSliderText,
+                userRole === "seller" && styles.roleSliderTextActive,
               ]}
             >
               Seller
             </Text>
-            <Text
-              style={[
-                styles.roleCardDescription,
-                userRole === "seller" && styles.roleCardDescriptionActive,
-              ]}
-            >
-              Review and approve guarantee drafts from buyers
-            </Text>
-            {userRole === "seller" && (
-              <View style={styles.roleCardCheckmark}>
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={24}
-                  color={colors.primary}
-                />
-              </View>
-            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -990,122 +1328,103 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
           {applications.length > 0 ? (
             <View style={styles.applicationsContainer}>
               {applications.map((app) => (
-                <View key={app.id} style={styles.applicationCard}>
-                  {/* Progress Indicator */}
-                  {renderProgressIndicator(app)}
-
-                  <View style={styles.applicationHeader}>
-                    <Text style={styles.companyName}>{app.companyName}</Text>
-                    <View style={styles.applicationActions}>
-                      {/* Stage-specific action buttons */}
-                      {app.status === "Awaiting Fee Payment" && (
-                        <TouchableOpacity
-                          style={styles.payFeeButton}
-                          onPress={() => handlePayFee(app)}
-                        >
-                          <Text style={styles.payFeeButtonText}>Pay Fee</Text>
-                        </TouchableOpacity>
-                      )}
-                      {app.status === "Awaiting Certificate" && (
-                        <TouchableOpacity
-                          style={styles.settleInvoiceButton}
-                          onPress={() => openSettlementModal(app)}
-                        >
-                          <Text style={styles.settleInvoiceButtonText}>
-                            Settle Invoice
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                      {app.status === "Invoice Settled" &&
-                        (userRole as string) === "seller" && (
-                          <TouchableOpacity
-                            style={styles.issueCertButton}
-                            onPress={() => handleCertificateIssuance(app)}
-                          >
-                            <Text style={styles.issueCertButtonText}>
-                              Issue Certificate
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      {app.status === "Certificate Issued" &&
-                        (userRole as string) === "seller" && (
-                          <TouchableOpacity
-                            style={styles.shipGoodsButton}
-                            onPress={() => handleShippingConfirmation(app)}
-                          >
-                            <Text style={styles.shipGoodsButtonText}>
-                              Confirm Shipping
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      {app.status === "Goods Shipped" &&
-                        userRole === "buyer" && (
-                          <TouchableOpacity
-                            style={styles.confirmDeliveryButton}
-                            onPress={() => handleDeliveryConfirmation(app)}
-                          >
-                            <Text style={styles.confirmDeliveryButtonText}>
-                              Confirm Delivery
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      {app.status === "Delivery Confirmed" && (
-                        <TouchableOpacity
-                          style={styles.completeTransactionButton}
-                          onPress={() => handleTransactionCompletion(app)}
-                        >
-                          <Text style={styles.completeTransactionButtonText}>
-                            Complete Transaction
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-
-                      {/* Status badge */}
-                      <View
-                        style={[
-                          styles.statusBadge,
-                          {
-                            backgroundColor: getStatusColor(app.status),
-                          },
-                        ]}
+                <TouchableOpacity
+                  key={app.id}
+                  style={styles.applicationListCard}
+                  onPress={() => {
+                    setSelectedBuyerApplication(app);
+                    setShowBuyerApplicationView(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.applicationListHeader}>
+                    <View style={styles.applicationListIcon}>
+                      <MaterialCommunityIcons
+                        name="file-document"
+                        size={24}
+                        color={colors.primary}
+                      />
+                    </View>
+                    <View style={styles.applicationListInfo}>
+                      <Text style={styles.applicationListTitle}>
+                        {(app as any).applicant?.company || app.companyName}
+                      </Text>
+                      <Text
+                        style={styles.applicationListSubtitle}
+                        numberOfLines={1}
                       >
-                        <Text style={styles.statusText}>{app.status}</Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.applicationDetails}>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Request ID:</Text>
-                      <Text style={styles.detailValue}>{app.requestId}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Trade:</Text>
-                      <Text style={styles.detailValue}>
                         {app.tradeDescription}
                       </Text>
                     </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Amount:</Text>
-                      <Text style={styles.detailValue}>
-                        {app.guaranteeAmount}
+                  </View>
+
+                  <View style={styles.applicationListDetails}>
+                    <View style={styles.applicationListRow}>
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={14}
+                        color={colors.textSecondary}
+                      />
+                      <Text style={styles.applicationListLabel}>Seller:</Text>
+                      <Text
+                        style={styles.applicationListValue}
+                        numberOfLines={1}
+                      >
+                        {(app as any).beneficiary?.name || "Seller"}
                       </Text>
                     </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Fee:</Text>
-                      <Text style={styles.detailValue}>{app.issuanceFee}</Text>
+                    <View style={styles.applicationListRow}>
+                      <MaterialCommunityIcons
+                        name="clock-outline"
+                        size={14}
+                        color={colors.textSecondary}
+                      />
+                      <Text style={styles.applicationListLabel}>Created:</Text>
+                      <Text style={styles.applicationListValue}>
+                        {(app as any).submittedDate ||
+                          (app as any).applicationDate ||
+                          "N/A"}
+                      </Text>
                     </View>
                   </View>
 
-                  <TouchableOpacity style={styles.viewDetailsButton}>
-                    <Text style={styles.viewDetailsText}>View Certificate</Text>
+                  <View style={styles.applicationListFooter}>
+                    <View
+                      style={[
+                        styles.applicationListBadge,
+                        {
+                          backgroundColor:
+                            app.currentStage >= 8
+                              ? "#D4EDDA"
+                              : app.currentStage >= 5
+                                ? "#FFF3CD"
+                                : "#F0F9FF",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.applicationListBadgeText,
+                          {
+                            color:
+                              app.currentStage >= 8
+                                ? "#155724"
+                                : app.currentStage >= 5
+                                  ? "#856404"
+                                  : "#0369A1",
+                          },
+                        ]}
+                      >
+                        Stage {app.currentStage || 1} of 9
+                      </Text>
+                    </View>
                     <MaterialCommunityIcons
                       name="chevron-right"
-                      size={16}
-                      color={colors.primary}
+                      size={20}
+                      color={colors.textSecondary}
                     />
-                  </TouchableOpacity>
-                </View>
+                  </View>
+                </TouchableOpacity>
               ))}
             </View>
           ) : (
@@ -1180,8 +1499,8 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
                     <TouchableOpacity
                       style={styles.viewDraftButton}
                       onPress={() => {
-                        setSelectedCertificate(draft);
-                        setShowCertificateModal(true);
+                        setSelectedSellerDraft(draft);
+                        setShowSellerDraftView(true);
                       }}
                     >
                       <MaterialCommunityIcons
@@ -1269,12 +1588,22 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
     <Screen>
       <StatusBar style="dark" />
       <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        {/* <View style={styles.header}>
           <Text style={styles.title}>Trade Finance Portal</Text>
           <Text style={styles.subtitle}>
             Decentralized liquidity pool for trade financing - replacing
             traditional LC/DLC bank guarantees
           </Text>
+        </View> */}
+
+        {/* Network and Token Selection */}
+        <View style={styles.compactSelectorContainer}>
+          <CompactNetworkTokenSelector
+            selectedNetworkId={selectedNetwork.id}
+            selectedToken={selectedToken}
+            onNetworkChange={handleNetworkSelect}
+            onTokenChange={handleTokenSelect}
+          />
         </View>
 
         {renderOverviewTab()}
@@ -1289,8 +1618,6 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
         <PoolGuaranteeApplicationFlow
           onClose={() => setShowApplicationModal(false)}
           onSubmit={handleSubmitApplication}
-          onDocumentPick={handleDocumentPick}
-          onImagePick={handleImagePick}
           initialFormData={applicationForm}
         />
       </Modal>
@@ -1990,6 +2317,70 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Network Selector Modal */}
+      <NetworkSelector
+        visible={showNetworkSelector}
+        onClose={() => setShowNetworkSelector(false)}
+        onSelectNetwork={handleNetworkSelect}
+      />
+
+      {/* Token Selector Modal */}
+      <TokenSelector
+        visible={showTokenSelector}
+        onClose={() => setShowTokenSelector(false)}
+        onSelectToken={handleTokenSelect}
+        selectedToken={
+          selectedToken
+            ? {
+                symbol: selectedToken.symbol,
+                name: selectedToken.name,
+                address: selectedToken.address,
+                decimals: selectedToken.decimals,
+              }
+            : undefined
+        }
+        networkId={currentNetworkId || "lisk-sepolia"}
+      />
+
+      {/* Seller Draft View Modal */}
+      <Modal
+        visible={showSellerDraftView}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        {selectedSellerDraft && (
+          <SellerDraftView
+            draft={selectedSellerDraft}
+            onApprove={handleSellerDraftApprove}
+            onReject={handleSellerDraftReject}
+            onClose={() => {
+              setShowSellerDraftView(false);
+              setSelectedSellerDraft(null);
+            }}
+          />
+        )}
+      </Modal>
+
+      {/* Buyer Application View Modal */}
+      <Modal
+        visible={showBuyerApplicationView}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        {selectedBuyerApplication && (
+          <BuyerApplicationView
+            application={selectedBuyerApplication}
+            onPayFee={handleBuyerPayFee}
+            onPayInvoice={handleBuyerPayInvoice}
+            onConfirmDelivery={handleBuyerConfirmDelivery}
+            onClose={() => {
+              setShowBuyerApplicationView(false);
+              setSelectedBuyerApplication(null);
+            }}
+          />
+        )}
+      </Modal>
     </Screen>
   );
 };
@@ -2016,6 +2407,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     lineHeight: 20,
+  },
+  compactSelectorContainer: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
   // Portfolio Balance Card
   portfolioCard: {
@@ -2217,169 +2613,54 @@ const styles = StyleSheet.create({
   roleButtonTextActive: {
     color: "white",
   },
-  // Treasury Overview Card Styles
-  treasuryOverviewCard: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  treasuryHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.lg,
-  },
-  treasuryHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  treasuryHeaderText: {
-    gap: spacing.xs / 2,
-  },
-  treasuryTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  treasuryNetwork: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  treasuryBalance: {
-    alignItems: "center",
-    paddingVertical: spacing.md,
-  },
-  treasuryBalanceLabel: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-    fontWeight: "500",
-  },
-  treasuryBalanceValue: {
-    fontSize: 36,
-    fontWeight: "700",
-    color: colors.primary,
-    marginBottom: spacing.xs / 2,
-  },
-  treasuryBalanceSubtext: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-  treasuryDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.md,
-  },
-  treasuryStatsRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-  treasuryStatItem: {
-    alignItems: "center",
-    gap: spacing.xs,
-    flex: 1,
-  },
-  treasuryStatValue: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-  },
-  treasuryStatLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
-  treasuryStatDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: colors.border,
-  },
   // Role Selection Styles
-  roleSelectionSection: {
-    backgroundColor: "white",
-    borderRadius: 16,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  roleSelectionHeader: {
+  roleSliderSection: {
     marginBottom: spacing.lg,
   },
-  roleSelectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  roleSelectionSubtitle: {
+  roleSliderLabel: {
     fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.sm,
   },
-  roleCardsContainer: {
-    gap: spacing.md,
-  },
-  roleCard: {
-    backgroundColor: "white",
-    borderWidth: 2,
-    borderColor: colors.border,
+  roleSliderContainer: {
+    flexDirection: "row",
+    backgroundColor: colors.border,
     borderRadius: 12,
-    padding: spacing.lg,
-    position: "relative",
+    padding: 3,
   },
-  roleCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: "#F5F3FF",
-  },
-  roleCardIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#F5F3FF",
+  roleSliderOption: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    borderRadius: 10,
+    backgroundColor: "transparent",
   },
-  roleCardIconActive: {
+  roleSliderOptionLeft: {
+    marginRight: 2,
+  },
+  roleSliderOptionRight: {
+    marginLeft: 2,
+  },
+  roleSliderOptionActive: {
     backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  roleCardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: colors.text,
-    marginBottom: spacing.xs,
-  },
-  roleCardTitleActive: {
-    color: colors.primary,
-  },
-  roleCardDescription: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  roleCardDescriptionActive: {
+  roleSliderText: {
+    fontSize: 15,
+    fontWeight: "600",
     color: colors.text,
   },
-  roleCardCheckmark: {
-    position: "absolute",
-    top: spacing.md,
-    right: spacing.md,
+  roleSliderTextActive: {
+    color: "white",
   },
   applyButton: {
     backgroundColor: colors.primary,
@@ -3409,6 +3690,139 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginLeft: spacing.xs,
+  },
+  selectionCard: {
+    backgroundColor: palette.white,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: 20,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  selectionLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  selectorButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: palette.surface,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    marginBottom: spacing.sm,
+  },
+  selectorLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flex: 1,
+  },
+  networkIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tokenIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectorTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  selectorSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  // Application List Card Styles (Simplified View)
+  applicationListCard: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  applicationListHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  applicationListIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: `${colors.primary}10`,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: spacing.sm,
+  },
+  applicationListInfo: {
+    flex: 1,
+  },
+  applicationListTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.xs / 2,
+  },
+  applicationListSubtitle: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  applicationListDetails: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    gap: spacing.xs / 2,
+  },
+  applicationListRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs / 2,
+  },
+  applicationListLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  applicationListValue: {
+    flex: 1,
+    fontSize: 12,
+    color: colors.text,
+    fontWeight: "500",
+  },
+  applicationListFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  applicationListBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs / 2,
+    borderRadius: 12,
+  },
+  applicationListBadgeText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
 

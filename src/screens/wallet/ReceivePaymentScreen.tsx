@@ -4,6 +4,7 @@ import { NetworkSelector } from "@/components/ui/NetworkSelector";
 import { Screen } from "@/components/ui/Screen";
 import { Text } from "@/components/ui/Text";
 import { TokenInfo, TokenSelector } from "@/components/ui/TokenSelector";
+import { CompactNetworkTokenSelector } from "@/components/ui/CompactNetworkTokenSelector";
 import {
   getAllSupportedTokens,
   SupportedNetworkId,
@@ -347,101 +348,16 @@ export const ReceivePaymentScreen: React.FC = () => {
         }
       >
         {/* Header */}
-        <View style={styles.header}>
-          <MaterialCommunityIcons
-            name="qrcode-scan"
-            size={28}
-            color={palette.primaryBlue}
+        <View style={styles.header}></View>
+
+        {/* Compact Network & Token Selector */}
+        <View style={styles.compactSelectorContainer}>
+          <CompactNetworkTokenSelector
+            selectedNetworkId={currentNetworkId}
+            selectedToken={selectedToken}
+            onNetworkChange={handleNetworkSelect}
+            onTokenChange={handleTokenSelect}
           />
-          <View style={styles.headerText}>
-            <Text variant="title" style={styles.headerTitle}>
-              Receive Payment
-            </Text>
-            <Text color={palette.neutralMid} style={styles.subtitle}>
-              Share your address or generate a payment request
-            </Text>
-          </View>
-        </View>
-
-        {/* Network & Token Selection */}
-        <View style={styles.selectionCard}>
-          <Text style={styles.selectionLabel}>Network & Token</Text>
-
-          {/* Network Selector */}
-          <Pressable
-            style={styles.selectorButton}
-            onPress={() => setShowNetworkSelector(true)}
-          >
-            <View style={styles.selectorLeft}>
-              <View
-                style={[
-                  styles.networkIcon,
-                  { backgroundColor: getNetworkColor() },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={getNetworkIcon() as any}
-                  size={20}
-                  color={palette.white}
-                />
-              </View>
-              <View>
-                <Text style={styles.selectorTitle}>{selectedNetwork.name}</Text>
-                <Text style={styles.selectorSubtitle}>
-                  Chain ID: {selectedNetwork.chainId}
-                </Text>
-              </View>
-            </View>
-            <MaterialCommunityIcons
-              name="chevron-down"
-              size={20}
-              color={palette.neutralMid}
-            />
-          </Pressable>
-
-          {/* Token Selector */}
-          <Pressable
-            style={styles.selectorButton}
-            onPress={() => setShowTokenSelector(true)}
-          >
-            <View style={styles.selectorLeft}>
-              <View
-                style={[
-                  styles.tokenIcon,
-                  {
-                    backgroundColor: selectedToken
-                      ? getTokenColor(selectedToken.symbol)
-                      : palette.neutralMid,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={
-                    selectedToken
-                      ? (getTokenIcon(selectedToken.symbol) as any)
-                      : "help"
-                  }
-                  size={20}
-                  color={palette.white}
-                />
-              </View>
-              <View>
-                <Text style={styles.selectorTitle}>
-                  {selectedToken ? selectedToken.symbol : "Select Token"}
-                </Text>
-                <Text style={styles.selectorSubtitle}>
-                  {selectedToken
-                    ? selectedToken.name
-                    : "Choose token to receive"}
-                </Text>
-              </View>
-            </View>
-            <MaterialCommunityIcons
-              name="chevron-down"
-              size={20}
-              color={palette.neutralMid}
-            />
-          </Pressable>
         </View>
 
         {/* QR Code Card */}
@@ -728,13 +644,11 @@ export const ReceivePaymentScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.lg,
   },
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: spacing.md,
-    marginBottom: spacing.xl,
   },
   headerText: {
     flex: 1,
@@ -745,6 +659,11 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
+  },
+  compactSelectorContainer: {
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
   selectionCard: {
     backgroundColor: palette.white,
@@ -813,6 +732,7 @@ const styles = StyleSheet.create({
     borderColor: "#E5E7EB",
     alignItems: "center",
     gap: spacing.md,
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   qrHeader: {
@@ -879,6 +799,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     borderWidth: 1,
     borderColor: "#E5E7EB",
+    marginHorizontal: spacing.lg,
     marginBottom: spacing.lg,
   },
   cardHeader: {
