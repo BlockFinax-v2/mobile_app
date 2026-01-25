@@ -146,7 +146,9 @@ export function TreasuryPortalScreenRedesigned() {
   const [activeTab, setActiveTab] = useState<
     "stake" | "create" | "vote" | "pool"
   >("stake");
-  const [actionMode, setActionMode] = useState<"stake" | "unstake">("stake");
+  const [actionMode, setActionMode] = useState<"stake" | "unstake" | "revoke">(
+    "stake",
+  );
   const [stakeAmount, setStakeAmount] = useState("");
   const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
     null,
@@ -190,6 +192,18 @@ export function TreasuryPortalScreenRedesigned() {
   const [isLoadingProposals, setIsLoadingProposals] = useState(false);
   const [isApplyingFinancier, setIsApplyingFinancier] = useState(false);
 
+  const stakedForSelectedToken = useMemo(() => {
+    if (!allStakesInfo || !selectedToken) return 0;
+    const tokenIdx = allStakesInfo.tokens.findIndex(
+      (addr) => addr.toLowerCase() === selectedToken.address.toLowerCase(),
+    );
+    if (tokenIdx >= 0) {
+      const staked = parseFloat(allStakesInfo.amounts[tokenIdx] || "0");
+      return Number.isNaN(staked) ? 0 : staked;
+    }
+    return 0;
+  }, [allStakesInfo, selectedToken]);
+
   // Network configuration
   const networks = [
     {
@@ -224,6 +238,20 @@ export function TreasuryPortalScreenRedesigned() {
       setSelectedToken(tokens[0]);
     }
   }, [selectedNetwork]);
+
+  useEffect(() => {
+    if (isFinancier && actionMode === "unstake") {
+      setActionMode("revoke");
+    } else if (!isFinancier && actionMode === "revoke") {
+      setActionMode("stake");
+    }
+  }, [isFinancier, actionMode]);
+
+  useEffect(() => {
+    if (isFinancier && stakeAsFinancier) {
+      setStakeAsFinancier(false);
+    }
+  }, [isFinancier, stakeAsFinancier]);
 
   const loadInitialData = async () => {
     if (!isUnlocked || !address) return;
@@ -317,7 +345,7 @@ export function TreasuryPortalScreenRedesigned() {
               try {
                 const totalStakedUSD = await poolReader.getTotalStakedUSD();
                 networkPoolUSD = parseFloat(
-                  ethers.utils.formatEther(totalStakedUSD),
+                  ethers.utils.formatUnits(totalStakedUSD, 6),
                 );
               } catch (innerErr) {
                 // Fallback: sum all stakers' totalUsdValue (potentially heavier but acceptable on testnets)
@@ -328,7 +356,7 @@ export function TreasuryPortalScreenRedesigned() {
                     const stakeData =
                       await poolReader.getAllStakesForUser(staker);
                     summed += parseFloat(
-                      ethers.utils.formatEther(stakeData.totalUsdValue),
+                      ethers.utils.formatUnits(stakeData.totalUsdValue, 6),
                     );
                   }
                   networkPoolUSD = summed;
@@ -365,7 +393,7 @@ export function TreasuryPortalScreenRedesigned() {
               );
               const stake = await stakeContract.getStake(address);
               const vp = parseFloat(
-                ethers.utils.formatEther(stake.votingPower),
+                ethers.utils.formatUnits(stake.votingPower, 6),
               );
               if (!Number.isNaN(vp)) {
                 aggregatedVotingPower += vp;
@@ -495,6 +523,41 @@ export function TreasuryPortalScreenRedesigned() {
     } finally {
       setIsTransacting(false);
     }
+  };
+
+  const handleRevokeFinancier = async () => {
+    Alert.alert(
+      "Revoke Financier Status",
+      "This will start the financier revocation process. You will lose proposal/voting rights until completed. Proceed?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Start Revocation",
+          onPress: async () => {
+            try {
+              setIsTransacting(true);
+              stakingService.setNetwork(
+                selectedNetwork.chainId,
+                selectedNetwork,
+              );
+              await stakingService.requestFinancierRevocation();
+              Alert.alert(
+                "Revocation Requested",
+                "Your revocation has been requested. Complete it after the cooldown.",
+              );
+              await Promise.all([loadFinancierStatus(), loadStakingData()]);
+            } catch (error: any) {
+              Alert.alert(
+                "Error",
+                error.message || "Failed to request revocation",
+              );
+            } finally {
+              setIsTransacting(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const handleEmergencyWithdraw = async () => {
@@ -677,17 +740,9 @@ export function TreasuryPortalScreenRedesigned() {
     if (actionMode === "stake") {
       const balance = availableBalances[selectedToken?.symbol || ""] || 0;
       setStakeAmount(balance.toString());
+    } else if (actionMode === "unstake") {
+      setStakeAmount(stakedForSelectedToken.toString());
     } else {
-      if (allStakesInfo && selectedToken) {
-        const tokenIdx = allStakesInfo.tokens.findIndex(
-          (addr) => addr.toLowerCase() === selectedToken.address.toLowerCase(),
-        );
-        if (tokenIdx >= 0) {
-          const staked = parseFloat(allStakesInfo.amounts[tokenIdx] || "0");
-          setStakeAmount(staked.toString());
-          return;
-        }
-      }
       setStakeAmount("0");
     }
   };
@@ -867,13 +922,23 @@ export function TreasuryPortalScreenRedesigned() {
             active={actionMode === "stake"}
             onPress={() => setActionMode("stake")}
           />
-          <ActionModeButton
-            icon="minus"
-            label="Unstake"
-            value="unstake"
-            active={actionMode === "unstake"}
-            onPress={() => setActionMode("unstake")}
-          />
+          {isFinancier ? (
+            <ActionModeButton
+              icon="account-cancel"
+              label="Revoke"
+              value="revoke"
+              active={actionMode === "revoke"}
+              onPress={() => setActionMode("revoke")}
+            />
+          ) : (
+            <ActionModeButton
+              icon="minus"
+              label="Unstake"
+              value="unstake"
+              active={actionMode === "unstake"}
+              onPress={() => setActionMode("unstake")}
+            />
+          )}
         </View>
       </View>
 
@@ -906,28 +971,32 @@ export function TreasuryPortalScreenRedesigned() {
             </View>
           </View>
 
-          {/* Financier Option */}
-          <TouchableOpacity
-            style={styles.financierOption}
-            onPress={() => setStakeAsFinancier(!stakeAsFinancier)}
-          >
-            <MaterialCommunityIcons
-              name={
-                stakeAsFinancier ? "checkbox-marked" : "checkbox-blank-outline"
-              }
-              size={20}
-              color="#2563EB"
-            />
-            <View style={styles.financierOptionText}>
-              <Text style={styles.financierOptionTitle}>
-                Stake as Financier
-              </Text>
-              <Text style={styles.financierOptionDescription}>
-                Grant voting rights and governance access (min 1,000{" "}
-                {selectedToken?.symbol})
-              </Text>
-            </View>
-          </TouchableOpacity>
+          {/* Financier Option (only visible for non-financiers) */}
+          {!isFinancier && (
+            <TouchableOpacity
+              style={styles.financierOption}
+              onPress={() => setStakeAsFinancier(!stakeAsFinancier)}
+            >
+              <MaterialCommunityIcons
+                name={
+                  stakeAsFinancier
+                    ? "checkbox-marked"
+                    : "checkbox-blank-outline"
+                }
+                size={20}
+                color="#2563EB"
+              />
+              <View style={styles.financierOptionText}>
+                <Text style={styles.financierOptionTitle}>
+                  Stake as Financier
+                </Text>
+                <Text style={styles.financierOptionDescription}>
+                  Grant voting rights and governance access (min 1,000{" "}
+                  {selectedToken?.symbol})
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Action Button */}
           <TouchableOpacity
@@ -972,7 +1041,7 @@ export function TreasuryPortalScreenRedesigned() {
       )}
 
       {/* Unstake Section */}
-      {actionMode === "unstake" && (
+      {actionMode === "unstake" && !isFinancier && (
         <View style={styles.inputCard}>
           <View style={styles.inputSection}>
             <Text style={styles.inputLabel}>Amount to Unstake</Text>
@@ -994,61 +1063,77 @@ export function TreasuryPortalScreenRedesigned() {
             </View>
             <View style={styles.inputInfo}>
               <Text style={styles.inputInfoText}>
-                Staked:{" "}
-                {(() => {
-                  if (allStakesInfo && selectedToken) {
-                    const idx = allStakesInfo.tokens.findIndex(
-                      (addr) =>
-                        addr.toLowerCase() ===
-                        selectedToken.address.toLowerCase(),
-                    );
-                    if (idx >= 0) {
-                      const amt = parseFloat(allStakesInfo.amounts[idx] || "0");
-                      return `${amt.toFixed(2)} ${selectedToken.symbol}`;
-                    }
-                  }
-                  return `0.00 ${selectedToken?.symbol ?? ""}`;
-                })()}
+                Staked: {stakedForSelectedToken.toFixed(2)}{" "}
+                {selectedToken?.symbol}
+              </Text>
+              <Text style={styles.inputInfoText}>
+                Unlock or penalty may apply
               </Text>
             </View>
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.unstakeButtons}>
-            <TouchableOpacity
-              style={[styles.unstakeButton, { flex: 1 }]}
-              onPress={handleUnstake}
-              disabled={isTransacting}
-            >
-              <MaterialCommunityIcons name="minus" size={20} color="#FFFFFF" />
-              <Text style={styles.unstakeButtonText}>Unstake</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.emergencyButton, { flex: 1 }]}
-              onPress={handleEmergencyWithdraw}
-              disabled={isTransacting}
-            >
-              <MaterialCommunityIcons
-                name="alert-circle"
-                size={20}
-                color="#FFFFFF"
-              />
-              <Text style={styles.emergencyButtonText}>Emergency</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={[styles.unstakeButton, { flex: 1 }]}
+            onPress={handleUnstake}
+            disabled={isTransacting}
+          >
+            {isTransacting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name="cash-minus"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.unstakeButtonText}>
+                  Unstake {selectedToken?.symbol}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
 
-          {/* Warning Box */}
           <View style={styles.warningBox}>
             <MaterialCommunityIcons
               name="alert-circle"
               size={16}
-              color="#DC2626"
+              color={palette.errorRed}
             />
             <Text style={styles.warningBoxText}>
-              Emergency withdrawal available with 10% penalty. Regular unstaking
-              is locked for 45 more days.
+              Unstaking before lock expiry may incur a penalty. Review the lock
+              timer in your position details.
             </Text>
           </View>
+        </View>
+      )}
+
+      {/* Revoke Section */}
+      {actionMode === "revoke" && (
+        <View style={styles.inputCard}>
+          <Text style={styles.inputLabel}>Financier Revocation</Text>
+          <Text style={styles.infoBoxText}>
+            Request to revoke your financier status. You will keep your stake
+            but lose proposal and voting rights after completion.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.unstakeButton, { flex: 1 }]}
+            onPress={handleRevokeFinancier}
+            disabled={isTransacting}
+          >
+            {isTransacting ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name="account-cancel"
+                  size={20}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.unstakeButtonText}>Request Revocation</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -1275,13 +1360,15 @@ export function TreasuryPortalScreenRedesigned() {
                   </View>
                   <View
                     style={[
-                      styles.statusBadge,
+                      styles.proposalStatusBadge,
                       isActive
-                        ? styles.statusBadgeActive
-                        : styles.statusBadgeEnded,
+                        ? styles.proposalStatusBadgeActive
+                        : styles.proposalStatusBadgeEnded,
                     ]}
                   >
-                    <Text style={styles.statusBadgeText}>{statusLabel}</Text>
+                    <Text style={styles.proposalStatusBadgeText}>
+                      {statusLabel}
+                    </Text>
                   </View>
                 </View>
 
@@ -2015,18 +2102,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 12,
   },
-  statusBadge: {
+  proposalStatusBadge: {
     paddingVertical: 4,
     paddingHorizontal: 10,
     borderRadius: 10,
   },
-  statusBadgeActive: {
+  proposalStatusBadgeActive: {
     backgroundColor: "#DCFCE7",
   },
-  statusBadgeEnded: {
+  proposalStatusBadgeEnded: {
     backgroundColor: "#F3F4F6",
   },
-  statusBadgeText: {
+  proposalStatusBadgeText: {
     fontSize: 12,
     fontWeight: "700",
     color: palette.neutralDark,

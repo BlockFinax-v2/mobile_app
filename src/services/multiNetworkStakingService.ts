@@ -215,7 +215,7 @@ export class MultiNetworkStakingService {
           tokenSymbol: tokenConfig.symbol,
           tokenDecimals: tokenConfig.decimals,
           amount: ethers.utils.formatUnits(amount, tokenConfig.decimals),
-          usdValue: Number(ethers.utils.formatEther(usdEquivalent)),
+          usdValue: Number(ethers.utils.formatUnits(usdEquivalent, 6)), // USD uses 6 decimals
           timestamp: timestamp.toNumber(),
           deadline: deadline.toNumber(),
           pendingRewards: ethers.utils.formatUnits(pendingRewards, tokenConfig.decimals),
@@ -237,8 +237,8 @@ export class MultiNetworkStakingService {
 
       return {
         stakes,
-        totalStakedUSD: Number(ethers.utils.formatEther(totalUsdValue)),
-        totalVotingPower: ethers.utils.formatEther(totalVotingPower),
+        totalStakedUSD: Number(ethers.utils.formatUnits(totalUsdValue, 6)),
+        totalVotingPower: ethers.utils.formatUnits(totalVotingPower, 6),
         isFinancier,
         canUnstake,
         timeUntilUnlock,
@@ -365,8 +365,8 @@ export class MultiNetworkStakingService {
       const supportedTokens = getSupportedStablecoins(network.chainId);
 
       return {
-        minimumStakeUSD: Number(ethers.utils.formatEther(minimumStake)),
-        minimumFinancierStakeUSD: Number(ethers.utils.formatEther(minimumFinancierStake)),
+        minimumStakeUSD: Number(ethers.utils.formatUnits(minimumStake, 6)),
+        minimumFinancierStakeUSD: Number(ethers.utils.formatUnits(minimumFinancierStake, 6)),
         minLockDuration: Number(minLockDuration.toString()),
         minFinancierLockDuration: Number(minFinancierLockDuration.toString()),
         emergencyWithdrawPenalty: Number(emergencyWithdrawPenalty.toString()),

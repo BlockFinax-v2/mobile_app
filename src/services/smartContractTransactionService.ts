@@ -17,7 +17,7 @@
 
 import { ethers } from "ethers";
 import { AlchemyAccountService, TransactionCall } from "./alchemyAccountService";
-import { isAlchemyNetworkSupported, isOfficiallySupported } from "@/config/alchemyAccount";
+import { isAlchemyNetworkSupported, isConfiguredInAlchemyDashboard, getAlchemyGasPolicyId } from "@/config/alchemyAccount";
 import { gaslessLimitService } from "./gaslessLimitService";
 import { WalletNetwork } from "@/contexts/WalletContext";
 import { Hex, encodeFunctionData } from "viem";
@@ -135,9 +135,9 @@ class SmartContractTransactionService {
       }
     }
 
-    // Check if network supports AA
-    if (!isAlchemyNetworkSupported(network.id)) {
-      console.log(`[SmartContractTxService] Network ${network.name} does not support AA`);
+    // Check if network supports AA and is configured for it
+    if (!isAlchemyNetworkSupported(network.id) || !isConfiguredInAlchemyDashboard(network.id)) {
+      console.log(`[SmartContractTxService] Network ${network.name} does not have AA enabled/configured`);
       return null;
     }
 
@@ -269,11 +269,21 @@ class SmartContractTransactionService {
 
     // Determine if we should try AA (check with small proxy amount)
     const gaslessCheck = await gaslessLimitService.canUseGasless(0.01);
+    const gasPolicyId = getAlchemyGasPolicyId();
+    const aaSupported = isAlchemyNetworkSupported(network.id);
+    const aaConfigured = isConfiguredInAlchemyDashboard(network.id);
+    const gasSponsorConfigured = !!gasPolicyId;
     const shouldTryAA =
       !forceEOA &&
       preferSmartAccount &&
-      isAlchemyNetworkSupported(network.id) &&
-      gaslessCheck.allowed;
+      aaSupported &&
+      aaConfigured &&
+      gaslessCheck.allowed &&
+      (!expectGasSponsorship || gasSponsorConfigured);
+
+    if (expectGasSponsorship && !gasSponsorConfigured) {
+      console.log("[SmartContractTxService] Gas sponsorship requested but EXPO_PUBLIC_ALCHEMY_GAS_POLICY_ID is not set → skipping AA and using EOA");
+    }
 
     if (!shouldTryAA) {
       console.log("[SmartContractTxService] Using EOA (AA conditions not met)");
@@ -424,11 +434,21 @@ class SmartContractTransactionService {
 
     // Batch transactions only work with AA (check with small proxy amount per tx)
     const gaslessCheck = await gaslessLimitService.canUseGasless(0.01 * transactions.length);
+    const gasPolicyId = getAlchemyGasPolicyId();
+    const aaSupported = isAlchemyNetworkSupported(network.id);
+    const aaConfigured = isConfiguredInAlchemyDashboard(network.id);
+    const gasSponsorConfigured = !!gasPolicyId;
     const shouldTryAA =
       !forceEOA &&
       preferSmartAccount &&
-      isAlchemyNetworkSupported(network.id) &&
-      gaslessCheck.allowed;
+      aaSupported &&
+      aaConfigured &&
+      gaslessCheck.allowed &&
+      (!expectGasSponsorship || gasSponsorConfigured);
+
+    if (expectGasSponsorship && !gasSponsorConfigured) {
+      console.log("[SmartContractTxService] Gas sponsorship requested for batch but EXPO_PUBLIC_ALCHEMY_GAS_POLICY_ID is not set → executing via EOA");
+    }
 
     if (!shouldTryAA) {
       console.log("[SmartContractTxService] Batch requires AA, executing sequentially with EOA");

@@ -130,6 +130,13 @@ class PerformanceCache {
       utilizationPercent: (this.cache.size / this.maxSize) * 100,
     };
   }
+
+  /**
+   * Get all cache keys
+   */
+  getKeys(): string[] {
+    return Array.from(this.cache.keys());
+  }
 }
 
 // Export singleton instance

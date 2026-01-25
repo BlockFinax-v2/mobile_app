@@ -16,7 +16,7 @@ import { WalletNetwork } from "@/contexts/WalletContext";
 import { secureStorage } from "@/utils/secureStorage";
 import { ethers } from "ethers";
 import { FEATURE_FLAGS } from "@/config/featureFlags";
-import { isAlchemyNetworkSupported } from "@/config/alchemyAccount";
+import { isAlchemyNetworkSupported, isConfiguredInAlchemyDashboard } from "@/config/alchemyAccount";
 import { AlchemyAccountService } from "@/services/alchemyAccountService";
 import { smartContractTransactionService } from "@/services/smartContractTransactionService";
 import { Hex, encodeFunctionData } from "viem";
@@ -294,6 +294,7 @@ class StakingService {
   private static instance: StakingService;
   private currentChainId: number = 4202; // Default to Lisk Sepolia
   private currentNetworkConfig: WalletNetwork = LISK_SEPOLIA_NETWORK;
+  private tokenDecimalsCache: Map<string, number> = new Map();
 
   public static getInstance(): StakingService {
     if (!StakingService.instance) {
@@ -309,6 +310,13 @@ class StakingService {
     this.currentChainId = chainId;
     if (networkConfig) {
       this.currentNetworkConfig = networkConfig;
+      console.log(`[StakingService] ✅ Network config updated:`, {
+        name: networkConfig.name,
+        chainId: networkConfig.chainId,
+        rpcUrl: networkConfig.rpcUrl,
+      });
+    } else {
+      console.warn(`[StakingService] ⚠️  setNetwork called WITHOUT networkConfig parameter! Using default Lisk config.`);
     }
     // Clear cached signer when network changes
     this.currentSigner = null;
@@ -341,6 +349,37 @@ class StakingService {
       name: this.currentNetworkConfig.name,
       chainId: this.currentNetworkConfig.chainId,
     });
+  }
+
+  /**
+   * Safely fetch token decimals with caching and fallback
+   */
+  private async getTokenDecimals(tokenAddress: string): Promise<number> {
+    if (!tokenAddress || tokenAddress === ethers.constants.AddressZero) {
+      return 18;
+    }
+
+    const key = tokenAddress.toLowerCase();
+    if (this.tokenDecimalsCache.has(key)) {
+      return this.tokenDecimalsCache.get(key)!;
+    }
+
+    try {
+      const signer = await this.getSigner();
+      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
+      const decimalsRaw = await tokenContract.decimals();
+      const decimals = typeof decimalsRaw === 'number' ? decimalsRaw : Number(decimalsRaw);
+      const safeDecimals = Number.isFinite(decimals) && decimals > 0 ? decimals : 18;
+      this.tokenDecimalsCache.set(key, safeDecimals);
+      return safeDecimals;
+    } catch (error) {
+      console.warn(
+        `[StakingService] decimals() failed for ${tokenAddress} on chain ${this.currentChainId}; defaulting to 18`,
+        error,
+      );
+      this.tokenDecimalsCache.set(key, 18);
+      return 18;
+    }
   }
 
   private currentSigner: ethers.Wallet | null = null;
@@ -399,10 +438,15 @@ class StakingService {
       return false;
     }
 
-    // Check if Lisk Sepolia is supported by Alchemy (currently it's not, so will fallback to EOA)
-    // This check ensures graceful degradation
-    if (!isAlchemyNetworkSupported(LISK_SEPOLIA_NETWORK.id)) {
-      console.log('[StakingService] AA not supported on Lisk Sepolia, using EOA');
+    // Only attempt AA on networks that are both supported by SDK and configured in dashboard
+    const networkId = this.currentNetworkConfig.id;
+    const supported = isAlchemyNetworkSupported(networkId);
+    const configured = isConfiguredInAlchemyDashboard(networkId);
+
+    if (!supported || !configured) {
+      console.log(
+        `[StakingService] AA not enabled on ${networkId} (supported=${supported}, configured=${configured}), using EOA`,
+      );
       return false;
     }
 
@@ -424,7 +468,7 @@ class StakingService {
         throw new Error("No private key found for AA");
       }
 
-      const alchemyService = new AlchemyAccountService(LISK_SEPOLIA_NETWORK.id);
+      const alchemyService = new AlchemyAccountService(this.currentNetworkConfig.id);
       await alchemyService.initializeSmartAccount(privateKey);
 
       return alchemyService;
@@ -607,8 +651,9 @@ class StakingService {
         aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
         emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
         // minimumStake is stored as USD equivalent with 18 decimals (ethers.parseEther)
-        minimumStake: ethers.utils.formatEther(config.minimumStake),
-        minimumFinancierStake: ethers.utils.formatEther(config.minimumFinancierStake),
+        // Contract stores USD values using 6 decimals (USDC-style)
+        minimumStake: ethers.utils.formatUnits(config.minimumStake, 6),
+        minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
         // Lock durations are plain seconds
         minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
         minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
@@ -689,7 +734,7 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw approve error:", error);
@@ -753,8 +798,8 @@ class StakingService {
 
           const txService = smartContractTransactionService;
           
-          // Execute batch transaction (approve + stake) with AA
-          const result = await txService.executeBatchTransaction({
+              // Execute batch transaction (approve + stake) with AA
+                  const result = await txService.executeBatchTransaction({
             transactions: [
               {
                 contractAddress: usdcAddress,
@@ -766,25 +811,30 @@ class StakingService {
               {
                 contractAddress: this.getDiamondAddress(),
                 abi: LIQUIDITY_POOL_FACET_ABI,
-                functionName: 'stake',
-                args: [amountInWei.toString(), '0']
+                functionName: 'stakeToken',
+                // stakeToken(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
+                args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()]
               }
             ],
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey
           });
 
-          console.log('[StakingService] AA batch stake completed:', result);
+                console.log('[StakingService] AA batch stake completed:', result);
 
-          return {
-            hash: result.txHash,
-            type: 'stake',
-            amount,
-            timestamp: Date.now(),
-            status: 'pending',
-            explorerUrl: result.explorerUrl,
-            usedAA: result.usedSmartAccount
-          };
+                if (!result.success) {
+                  throw new Error(result.error || 'AA batch stake failed');
+                }
+
+                return {
+                  hash: result.txHash,
+                  type: 'stake',
+                  amount,
+                  timestamp: Date.now(),
+                  status: 'pending',
+                  explorerUrl: result.explorerUrl,
+                  usedAA: result.usedSmartAccount
+                };
         } catch (error) {
           console.warn('[StakingService] AA batch transaction failed, falling back to EOA:', error);
           // Continue to EOA method below
@@ -837,83 +887,13 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
       console.error("Raw stake error:", error);
       throw error;
     }
-  }
-
-  /**
-   * Stake via Account Abstraction with batch transaction
-   * Combines approve + stake in single UserOp for gasless operation
-   */
-  private async stakeViaAA(
-    amount: string,
-    amountInWei: ethers.BigNumber,
-    onProgress?: (stage: 'checking' | 'approving' | 'staking' | 'batching', message: string) => void
-  ): Promise<StakingTransaction> {
-    const alchemyService = await this.initializeAA();
-    if (!alchemyService) {
-      throw new Error('Failed to initialize AA service');
-    }
-
-    const accountAddress = alchemyService.getAccountAddress();
-    if (!accountAddress) {
-      throw new Error('Failed to get smart account address');
-    }
-
-    onProgress?.('batching', 'Submitting gasless batch transaction...');
-
-    // Get USDC contract address
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
-    if (!usdcAddress) {
-      throw new Error('USDC address not found');
-    }
-
-    console.log('[StakingService] Executing AA batch stake:', {
-      amount,
-      amountInWei: amountInWei.toString(),
-      usdcAddress,
-      stakingContract: this.getDiamondAddress(),
-      accountAddress
-    });
-
-    // Execute batch transaction via AA
-    const result = await alchemyService.sendBatchUserOperation([
-      {
-        target: usdcAddress as Hex,
-        data: encodeFunctionData({
-          abi: ERC20_ABI,
-          functionName: 'approve',
-          args: [this.getDiamondAddress() as Hex, BigInt(amountInWei.toString())]
-        }),
-        value: BigInt(0)
-      },
-      {
-        target: this.getDiamondAddress() as Hex,
-        data: encodeFunctionData({
-          abi: LIQUIDITY_POOL_FACET_ABI,
-          functionName: 'stakeToken',
-          // stakeToken(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
-          args: [usdcAddress as Hex, BigInt(amountInWei.toString()), BigInt(0), BigInt(amountInWei.toString())]
-        }),
-        value: BigInt(0)
-      }
-    ]);
-
-    console.log('[StakingService] AA batch stake submitted:', result.hash);
-
-    return {
-      hash: result.hash,
-      type: 'stake',
-      amount,
-      timestamp: Date.now(),
-      status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
-    };
   }
 
   /**
@@ -956,9 +936,9 @@ class StakingService {
           const usdcTokenAddress = this.getDefaultTokenAddress();
           
           // Execute unstake transaction with AA
-          const result = await txService.executeTransaction({
+              const result = await txService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
             functionName: 'unstakeToken',
@@ -966,6 +946,10 @@ class StakingService {
           });
 
           console.log('[StakingService] AA unstake completed:', result);
+
+          if (!result.success) {
+            throw new Error(result.error || 'AA unstake failed');
+          }
 
           return {
             hash: result.txHash,
@@ -1017,62 +1001,13 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
       console.error("Raw unstake error:", error);
       throw error;
     }
-  }
-
-  /**
-   * Unstake via Account Abstraction
-   */
-  private async unstakeViaAA(
-    amount: string,
-    amountInWei: ethers.BigNumber
-  ): Promise<StakingTransaction> {
-    const alchemyService = await this.initializeAA();
-    if (!alchemyService) {
-      throw new Error('Failed to initialize AA service');
-    }
-
-    const accountAddress = alchemyService.getAccountAddress();
-    if (!accountAddress) {
-      throw new Error('Failed to get smart account address');
-    }
-
-    console.log('[StakingService] Executing AA unstake:', {
-      amount,
-      amountInWei: amountInWei.toString(),
-      stakingContract: this.getDiamondAddress(),
-      accountAddress
-    });
-
-    // Get USDC token address for multi-token unstaking
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
-    if (!usdcAddress) {
-      throw new Error('USDC address not found');
-    }
-
-    const result = await alchemyService.executeContractFunction(
-      this.getDiamondAddress() as Hex,
-      LIQUIDITY_POOL_FACET_ABI,
-      'unstakeToken',
-      [usdcAddress as Hex, BigInt(amountInWei.toString())]
-    );
-
-    console.log('[StakingService] AA unstake submitted:', result.hash);
-
-    return {
-      hash: result.hash,
-      type: 'unstake',
-      amount,
-      timestamp: Date.now(),
-      status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
-    };
   }
 
   /**
@@ -1103,7 +1038,7 @@ class StakingService {
           onProgress?.('linking', 'Linking smart account to your identity...');
 
           // Get USDC token address for multi-token rewards
-          const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+          const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
           if (!usdcAddress) {
             throw new Error('USDC address not found');
           }
@@ -1111,7 +1046,7 @@ class StakingService {
           // Execute claimTokenRewards transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
             functionName: 'claimTokenRewards',
@@ -1170,7 +1105,7 @@ class StakingService {
       });
 
       // Get USDC token address for multi-token rewards
-      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
       if (!usdcAddress) {
         throw new Error('USDC address not found');
       }
@@ -1187,7 +1122,7 @@ class StakingService {
         type: 'claim',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -1216,7 +1151,7 @@ class StakingService {
     });
 
     // Get USDC token address for multi-token rewards
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
     if (!usdcAddress) {
       throw new Error('USDC address not found');
     }
@@ -1235,7 +1170,7 @@ class StakingService {
       type: 'claim',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -1267,7 +1202,7 @@ class StakingService {
           onProgress?.('linking', 'Linking smart account to your identity...');
 
           // Get USDC token address for multi-token emergency withdrawal
-          const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+          const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
           if (!usdcAddress) {
             throw new Error('USDC address not found');
           }
@@ -1275,7 +1210,7 @@ class StakingService {
           // Execute emergencyWithdrawToken transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
             functionName: 'emergencyWithdrawToken',
@@ -1320,7 +1255,7 @@ class StakingService {
       }
 
       // Get USDC token address for multi-token emergency withdrawal
-      const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+      const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
       if (!usdcAddress) {
         throw new Error('USDC address not found');
       }
@@ -1337,7 +1272,7 @@ class StakingService {
         type: 'emergency',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -1366,7 +1301,7 @@ class StakingService {
     });
 
     // Get USDC token address for multi-token emergency withdrawal
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
     if (!usdcAddress) {
       throw new Error('USDC address not found');
     }
@@ -1385,7 +1320,7 @@ class StakingService {
       type: 'emergency',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -1419,7 +1354,7 @@ class StakingService {
           // Execute applyAsFinancier transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
             functionName: 'applyAsFinancier',
@@ -1488,7 +1423,7 @@ class StakingService {
         type: 'proposal', // Using proposal type for financier actions
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -1530,7 +1465,7 @@ class StakingService {
       type: 'proposal',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -1622,7 +1557,7 @@ class StakingService {
           
           // Execute batch transaction (approve + stakeAsFinancier) with AA
           const result = await smartContractTransactionService.executeBatchTransaction({
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             transactions: [
               {
@@ -1644,6 +1579,10 @@ class StakingService {
           });
 
           console.log('[StakingService] AA batch stakeAsFinancier completed:', result);
+
+          if (!result.success) {
+            throw new Error(result.error || 'AA batch stakeAsFinancier failed');
+          }
 
           return {
             hash: result.txHash,
@@ -1706,7 +1645,7 @@ class StakingService {
         amount,
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -1737,7 +1676,7 @@ class StakingService {
     onProgress?.('batching', 'Submitting gasless batch transaction...');
 
     // Get USDC contract address
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
     if (!usdcAddress) {
       throw new Error('USDC address not found');
     }
@@ -1781,7 +1720,7 @@ class StakingService {
       amount,
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -1991,6 +1930,12 @@ class StakingService {
       if (this.shouldUseAA()) {
         try {
           console.log('[StakingService] Attempting AA createProposal');
+          console.log('[StakingService] Current network config:', {
+            name: this.currentNetworkConfig.name,
+            chainId: this.currentNetworkConfig.chainId,
+            rpcUrl: this.currentNetworkConfig.rpcUrl,
+            diamondAddress: this.getDiamondAddress(),
+          });
           
           // Get private key for linking/fallback
           const password = await secureStorage.getSecureItem('blockfinax.password');
@@ -2007,7 +1952,7 @@ class StakingService {
           // Execute createProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'createProposal',
@@ -2080,7 +2025,7 @@ class StakingService {
         type: 'proposal',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -2153,7 +2098,7 @@ class StakingService {
       type: 'proposal',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -2189,7 +2134,7 @@ class StakingService {
           // Execute voteOnProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'voteOnProposal',
@@ -2228,7 +2173,7 @@ class StakingService {
         type: 'vote',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -2275,7 +2220,7 @@ class StakingService {
       type: 'vote',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -2476,7 +2421,7 @@ class StakingService {
         type: 'proposal',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
       };
     } catch (error: any) {
       console.error("Raw finalize vote error:", error);
@@ -2518,7 +2463,7 @@ class StakingService {
       type: 'proposal',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -2553,7 +2498,7 @@ class StakingService {
           // Execute executeProposal transaction with AA
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'executeProposal',
@@ -2590,7 +2535,7 @@ class StakingService {
         type: 'proposal',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -2633,7 +2578,7 @@ class StakingService {
       type: 'proposal',
       timestamp: Date.now(),
       status: 'pending',
-      explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${result.hash}`,
+      explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${result.hash}`,
     };
   }
 
@@ -2662,20 +2607,19 @@ class StakingService {
       
       const stakeData = await contract.getStakeForToken(address, tokenAddress);
       
-      // Get token decimals for proper formatting
-      const tokenContract = new ethers.Contract(tokenAddress, ERC20_ABI, await this.getSigner());
-      const decimals = await tokenContract.decimals();
+      // Get token decimals for proper formatting with fallback
+      const decimals = await this.getTokenDecimals(tokenAddress);
       
       return {
         tokenAddress,
         amount: ethers.utils.formatUnits(stakeData.amount, decimals),
         timestamp: stakeData.timestamp.toNumber(),
         active: stakeData.active,
-        usdEquivalent: ethers.utils.formatUnits(stakeData.usdEquivalent, 18), // USD is 18 decimals
+        usdEquivalent: ethers.utils.formatUnits(stakeData.usdEquivalent, 6), // USD is 6 decimals (matching USDC/USDT)
         deadline: stakeData.deadline.toNumber(),
         isFinancier: stakeData.financierStatus,
         pendingRewards: ethers.utils.formatUnits(stakeData.pendingRewards, decimals),
-        votingPower: ethers.utils.formatUnits(stakeData.votingPower, 18),
+        votingPower: ethers.utils.formatUnits(stakeData.votingPower, 6), // Voting power uses 6 decimals
       };
     } catch (error) {
       console.error("Error getting stake for token:", error);
@@ -2720,13 +2664,19 @@ class StakingService {
       
       // Get decimals for each token and format amounts
       for (let i = 0; i < tokens.length; i++) {
-        const tokenContract = new ethers.Contract(tokens[i], ERC20_ABI, await this.getSigner());
-        const decimals = await tokenContract.decimals();
-        
-        amounts.push(ethers.utils.formatUnits(allStakes.amounts[i], decimals));
-        usdEquivalents.push(ethers.utils.formatUnits(allStakes.usdEquivalents[i], 18));
-        deadlines.push(allStakes.deadlines[i].toNumber());
-        pendingRewards.push(ethers.utils.formatUnits(allStakes.pendingRewards[i], decimals));
+        try {
+          const decimals = await this.getTokenDecimals(tokens[i]);
+          amounts.push(ethers.utils.formatUnits(allStakes.amounts[i], decimals));
+          usdEquivalents.push(ethers.utils.formatUnits(allStakes.usdEquivalents[i], 6)); // USD uses 6 decimals
+          deadlines.push(allStakes.deadlines[i].toNumber());
+          pendingRewards.push(ethers.utils.formatUnits(allStakes.pendingRewards[i], decimals));
+        } catch (err) {
+          console.warn(`[StakingService] Failed formatting stake for token ${tokens[i]} - using defaults`, err);
+          amounts.push("0");
+          usdEquivalents.push("0");
+          deadlines.push(0);
+          pendingRewards.push("0");
+        }
       }
       
       return {
@@ -2736,7 +2686,7 @@ class StakingService {
         isFinancierFlags,
         deadlines,
         pendingRewards,
-        totalUsdValue: ethers.utils.formatUnits(allStakes.totalUsdValue, 18),
+        totalUsdValue: ethers.utils.formatUnits(allStakes.totalUsdValue, 6), // Total USD uses 6 decimals
       };
     } catch (error) {
       console.error("Error getting all stakes for user:", error);
@@ -2784,7 +2734,7 @@ class StakingService {
           
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'requestFinancierRevocation',
@@ -2823,7 +2773,7 @@ class StakingService {
         type: 'revocation',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -2860,7 +2810,7 @@ class StakingService {
           
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'cancelFinancierRevocation',
@@ -2899,7 +2849,7 @@ class StakingService {
         type: 'revocation',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -2936,7 +2886,7 @@ class StakingService {
           
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: GOVERNANCE_FACET_ABI,
             functionName: 'completeFinancierRevocation',
@@ -2975,7 +2925,7 @@ class StakingService {
         type: 'revocation',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -3052,7 +3002,7 @@ class StakingService {
           
           const result = await smartContractTransactionService.executeTransaction({
             contractAddress: this.getDiamondAddress(),
-            network: LISK_SEPOLIA_NETWORK,
+            network: this.currentNetworkConfig,
             privateKey,
             abi: LIQUIDITY_POOL_FACET_ABI,
             functionName: 'setCustomDeadline',
@@ -3091,7 +3041,7 @@ class StakingService {
         type: 'stake',
         timestamp: Date.now(),
         status: 'pending',
-        explorerUrl: `${LISK_SEPOLIA_NETWORK.explorerUrl}/tx/${tx.hash}`,
+        explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
     } catch (error: any) {
@@ -3108,9 +3058,9 @@ class StakingService {
    * Get the default staking token (USDC) address
    */
   public getDefaultTokenAddress(): string {
-    const usdcAddress = LISK_SEPOLIA_NETWORK.stablecoins?.[0]?.address;
+    const usdcAddress = this.currentNetworkConfig.stablecoins?.[0]?.address;
     if (!usdcAddress) {
-      throw new Error('USDC address not found for Lisk Sepolia network');
+      throw new Error(`USDC address not found for network ${this.currentNetworkConfig.name}`);
     }
     return usdcAddress;
   }
