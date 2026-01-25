@@ -626,7 +626,8 @@ export const MessagesHomeScreen: React.FC = () => {
             </View>
           ) : (
             <View style={styles.callsTab}>
-              {filteredCallHistory.length > 0 ? (
+                {filteredCallHistory.length > 0 ? (
+                  
                 <FlatList
                   data={filteredCallHistory}
                   keyExtractor={(item, index) => `call-${item.id}-${index}`}
