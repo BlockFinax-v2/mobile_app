@@ -29,15 +29,15 @@ export interface TransactionOptions {
   functionName: string;
   args: any[];
   value?: string; // ETH value in ether (e.g., "0.1")
-  
+
   // Network & wallet
   network: WalletNetwork;
   privateKey: string;
-  
+
   // AA preferences
   preferSmartAccount?: boolean; // Default: true if AA supported
   forceEOA?: boolean; // Force EOA even if AA available
-  
+
   // Gas sponsorship
   expectGasSponsorship?: boolean; // Default: true
 }
@@ -75,30 +75,30 @@ export interface SmartAccountLinkingStatus {
 // AddressLinkingFacet ABI
 const ADDRESS_LINKING_FACET_ABI = [
   {
-    "inputs": [{"internalType": "address", "name": "smartAccount", "type": "address"}],
+    "inputs": [{ "internalType": "address", "name": "smartAccount", "type": "address" }],
     "name": "linkSmartAccount",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "address", "name": "account", "type": "address"}],
+    "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
     "name": "getLinkedSmartAccount",
-    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "address", "name": "smartAccount", "type": "address"}],
+    "inputs": [{ "internalType": "address", "name": "smartAccount", "type": "address" }],
     "name": "getLinkedEOA",
-    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
     "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [{"internalType": "address", "name": "account", "type": "address"}],
+    "inputs": [{ "internalType": "address", "name": "account", "type": "address" }],
     "name": "isSmartAccountLinked",
-    "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
     "stateMutability": "view",
     "type": "function"
   },
@@ -109,7 +109,7 @@ class SmartContractTransactionService {
   private alchemyServices: Map<string, AlchemyAccountService> = new Map();
   private smartAccountAddresses: Map<string, string> = new Map(); // network -> smart account address
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): SmartContractTransactionService {
     if (!SmartContractTransactionService.instance) {
@@ -145,10 +145,10 @@ class SmartContractTransactionService {
       // Create and initialize new service
       const service = new AlchemyAccountService(network.id);
       const smartAccountAddress = await service.initializeSmartAccount(privateKey);
-      
+
       this.alchemyServices.set(networkKey, service);
       this.smartAccountAddresses.set(networkKey, smartAccountAddress);
-      
+
       console.log(`[SmartContractTxService] ✅ Smart Account initialized:`, smartAccountAddress);
       return service;
     } catch (error) {
@@ -170,7 +170,7 @@ class SmartContractTransactionService {
 
     const diamondAddress = DIAMOND_ADDRESSES[chainId];
     if (!diamondAddress) return false;
-    
+
     return address.toLowerCase() === diamondAddress.toLowerCase();
   }
 
@@ -303,16 +303,16 @@ class SmartContractTransactionService {
     }
 
     if (!shouldTryAA) {
-      console.log("[SmartContractTxService] Using EOA (AA conditions not met)");
+      console.log("[SmartContractTxService] 🔄 USING EOA FALLBACK (AA conditions not met or forced EOA)");
       return this.executeWithEOA(options);
     }
 
     // Try with Smart Account first
     try {
       const alchemyService = await this.getAlchemyService(network, privateKey);
-      
+
       if (!alchemyService) {
-        console.log("[SmartContractTxService] AA not available, falling back to EOA");
+        console.log("[SmartContractTxService] 🔄 USING EOA FALLBACK (AA service initialization failed)");
         return this.executeWithEOA(options);
       }
 
@@ -324,7 +324,7 @@ class SmartContractTransactionService {
       // Check and perform linking if needed (only for Diamond contracts)
       // Diamond contracts have the AddressLinkingFacet, other contracts (like USDC) don't
       const isDiamondContract = this.isDiamondAddress(contractAddress, network.chainId);
-      
+
       if (isDiamondContract) {
         const wallet = new ethers.Wallet(privateKey);
         const linkingStatus = await this.checkSmartAccountLinking(
@@ -351,7 +351,7 @@ class SmartContractTransactionService {
       }
 
       // Execute with Smart Account
-      console.log("[SmartContractTxService] Executing with Smart Account...");
+      console.log(`[SmartContractTxService] 🚀 USING ACCOUNT ABSTRACTION (AA): Executing ${functionName} via Smart Account...`);
       const result = await alchemyService.executeContractFunction(
         contractAddress as Hex,
         abi,
@@ -378,14 +378,14 @@ class SmartContractTransactionService {
       };
     } catch (error: any) {
       console.error("[SmartContractTxService] AA transaction failed:", error);
-      
+
       // Check if it's a gas sponsorship issue
       if (error.message?.includes("gas") || error.message?.includes("paymaster")) {
         console.log("[SmartContractTxService] Gas sponsorship issue, falling back to EOA");
       }
 
       // Fallback to EOA
-      console.log("[SmartContractTxService] Falling back to EOA...");
+      console.log("[SmartContractTxService] 🔄 USING EOA FALLBACK (AA attempt failed with error)");
       return this.executeWithEOA(options);
     }
   }
@@ -403,6 +403,8 @@ class SmartContractTransactionService {
       network,
       privateKey,
     } = options;
+
+    console.log(`[SmartContractTxService] 🔄 USING EOA FALLBACK: Executing ${functionName} via traditional EOA...`);
 
     try {
       const provider = new ethers.providers.JsonRpcProvider(network.rpcUrl, {
@@ -473,13 +475,13 @@ class SmartContractTransactionService {
     }
 
     if (!shouldTryAA) {
-      console.log("[SmartContractTxService] Batch requires AA, executing sequentially with EOA");
+      console.log("[SmartContractTxService] 🔄 USING EOA FALLBACK (Batch requires AA, but conditions not met)");
       return this.executeBatchWithEOA(options);
     }
 
     try {
       const alchemyService = await this.getAlchemyService(network, privateKey);
-      
+
       if (!alchemyService) {
         return this.executeBatchWithEOA(options);
       }
@@ -505,7 +507,7 @@ class SmartContractTransactionService {
         await gaslessLimitService.recordTransaction(0.01 * transactions.length, 'smart-account-batch');
       }
 
-      console.log(`[SmartContractTxService] ✅ Batch transaction sent:`, result.hash);
+      console.log(`[SmartContractTxService] 🚀 USING ACCOUNT ABSTRACTION (AA): Batch transaction sent:`, result.hash);
 
       return {
         success: true,
@@ -515,7 +517,7 @@ class SmartContractTransactionService {
       };
     } catch (error: any) {
       console.error("[SmartContractTxService] Batch AA transaction failed:", error);
-      console.log("[SmartContractTxService] Falling back to sequential EOA transactions");
+      console.log("[SmartContractTxService] 🔄 USING EOA FALLBACK (Batch AA failed, attempting sequential EOA)");
       return this.executeBatchWithEOA(options);
     }
   }

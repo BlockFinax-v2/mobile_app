@@ -808,16 +808,65 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
 
             <View style={styles.certificateFullSection}>
               <Text style={styles.certificateFullSectionTitle}>
-                Application Details
+                Registration Review: Full Profile
+              </Text>
+              
+              {/* Company Info */}
+              <Text style={styles.reviewSubTitle}>Applicant Information</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Company Name:</Text>
+                <Text style={styles.reviewValue}>{draft.applicant.company}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Registration:</Text>
+                <Text style={styles.reviewValue}>{draft.applicant.registration}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Country:</Text>
+                <Text style={styles.reviewValue}>{draft.applicant.country}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Contact Person:</Text>
+                <Text style={styles.reviewValue}>{draft.applicant.contact}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Email:</Text>
+                <Text style={styles.reviewValue}>{draft.applicant.email}</Text>
+              </View>
+
+              {/* Trade Details */}
+              <Text style={styles.reviewSubTitle}>Trade Details</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Description:</Text>
+                <Text style={styles.reviewValue}>{draft.tradeDescription}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Guarantee Amount:</Text>
+                <Text style={styles.reviewValue}>{draft.guaranteeAmount}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Financing Duration:</Text>
+                <Text style={styles.reviewValue}>{draft.financingDuration} days</Text>
+              </View>
+
+              {/* Financials */}
+              <Text style={styles.reviewSubTitle}>Financials</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Collateral Info:</Text>
+                <Text style={styles.reviewValue}>{draft.collateralDescription}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Collateral Value:</Text>
+                <Text style={styles.reviewValue}>{draft.collateralValue}</Text>
+              </View>
+            </View>
+
+            <View style={styles.certificateFullSection}>
+              <Text style={styles.certificateFullSectionTitle}>
+                Application ID
               </Text>
               <Text style={styles.certificateFullText}>
                 Request ID: {draft.requestId}
-              </Text>
-              <Text style={styles.certificateFullText}>
-                Company: {draft.applicant.company}
-              </Text>
-              <Text style={styles.certificateFullText}>
-                Guarantee Amount: {draft.guaranteeAmount}
               </Text>
               <Text style={styles.certificateFullText}>
                 Status: {draft.status}
@@ -1361,5 +1410,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#0369A1",
     lineHeight: 18,
+  },
+  reviewSubTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  reviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border + "40",
+  },
+  reviewLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  reviewValue: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "600",
+    flex: 2,
+    textAlign: "right",
   },
 });

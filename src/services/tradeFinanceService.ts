@@ -4,7 +4,7 @@ import { ethers } from "ethers";
 import { FEATURE_FLAGS } from "@/config/featureFlags";
 import { isAlchemyNetworkSupported, isConfiguredInAlchemyDashboard } from "@/config/alchemyAccount";
 import { AlchemyAccountService } from "@/services/alchemyAccountService";
-// import { smartContractTransactionService } from "@/services/smartContractTransactionService";
+import { smartContractTransactionService } from "@/services/smartContractTransactionService";
 import { DIAMOND_ADDRESSES } from "@/services/stakingService";
 
 // TradeFinanceFacet ABI
@@ -287,37 +287,61 @@ class TradeFinanceService {
         metadataURI: string;
         documentURIs: string[];
     }) {
-        const contract = await this.getContract();
         const decimals = await this.getPrimaryTokenDecimals();
+        const signer = await this.getSigner();
+        const password = await secureStorage.getSecureItem(PASSWORD_KEY);
+        const privateKey = (await secureStorage.getDecryptedPrivateKey(password!))!;
 
-        const tx = await contract.createPGA(
-            params.pgaId,
-            params.seller,
-            params.companyName,
-            params.registrationNumber,
-            params.tradeDescription,
-            ethers.utils.parseUnits(params.tradeValue, decimals),
-            ethers.utils.parseUnits(params.guaranteeAmount, decimals),
-            ethers.utils.parseUnits(params.collateralAmount, decimals),
-            params.duration,
-            params.beneficiaryName,
-            params.beneficiaryWallet,
-            params.metadataURI,
-            params.documentURIs
-        );
-        return tx.wait();
+        return smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            abi: TRADE_FINANCE_FACET_ABI,
+            functionName: "createPGA",
+            args: [
+                params.pgaId,
+                params.seller,
+                params.companyName,
+                params.registrationNumber,
+                params.tradeDescription,
+                ethers.utils.parseUnits(params.tradeValue, decimals),
+                ethers.utils.parseUnits(params.guaranteeAmount, decimals),
+                ethers.utils.parseUnits(params.collateralAmount, decimals),
+                params.duration,
+                params.beneficiaryName,
+                params.beneficiaryWallet,
+                params.metadataURI,
+                params.documentURIs
+            ],
+            network: this.currentNetworkConfig!,
+            privateKey
+        });
     }
 
     public async voteOnPGA(pgaId: string, support: boolean) {
-        const contract = await this.getContract();
-        const tx = await contract.voteOnPGA(pgaId, support);
-        return tx.wait();
+        const password = await secureStorage.getSecureItem(PASSWORD_KEY);
+        const privateKey = (await secureStorage.getDecryptedPrivateKey(password!))!;
+
+        return smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            abi: TRADE_FINANCE_FACET_ABI,
+            functionName: "voteOnPGA",
+            args: [pgaId, support],
+            network: this.currentNetworkConfig!,
+            privateKey
+        });
     }
 
     public async sellerVoteOnPGA(pgaId: string, approve: boolean) {
-        const contract = await this.getContract();
-        const tx = await contract.sellerVoteOnPGA(pgaId, approve);
-        return tx.wait();
+        const password = await secureStorage.getSecureItem(PASSWORD_KEY);
+        const privateKey = (await secureStorage.getDecryptedPrivateKey(password!))!;
+
+        return smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
+            abi: TRADE_FINANCE_FACET_ABI,
+            functionName: "sellerVoteOnPGA",
+            args: [pgaId, approve],
+            network: this.currentNetworkConfig!,
+            privateKey
+        });
     }
 
     public async payCollateral(pgaId: string, amount: string) {

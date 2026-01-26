@@ -51,6 +51,8 @@ interface ApplicationData {
   invoiceAmount?: string;
   invoicePaidDate?: string;
   submittedDate: string;
+  companyName?: string;
+  tradeValue?: string;
 }
 
 interface BuyerApplicationViewProps {
@@ -1045,16 +1047,82 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
             <View style={styles.certificateFullSection}>
               <Text style={styles.certificateFullSectionTitle}>
-                Application Details
+                Draft Review: Full Application Details
+              </Text>
+              
+              {/* Company Info */}
+              <Text style={styles.reviewSubTitle}>Company Information</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Company Name:</Text>
+                <Text style={styles.reviewValue}>{application.applicant?.company || application.companyName || "N/A"}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Registration:</Text>
+                <Text style={styles.reviewValue}>{application.applicant?.registration || "N/A"}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Country:</Text>
+                <Text style={styles.reviewValue}>{application.applicant?.country || "N/A"}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Contact Person:</Text>
+                <Text style={styles.reviewValue}>{application.applicant?.contact || "N/A"}</Text>
+              </View>
+
+              {/* Trade Details */}
+              <Text style={styles.reviewSubTitle}>Trade Details</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Description:</Text>
+                <Text style={styles.reviewValue}>{application.tradeDescription}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Total Trade Value:</Text>
+                <Text style={styles.reviewValue}>{application.tradeValue}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Guarantee Amount:</Text>
+                <Text style={styles.reviewValue}>{application.guaranteeAmount}</Text>
+              </View>
+
+              {/* Financial & Documents */}
+              <Text style={styles.reviewSubTitle}>Financial & Documents</Text>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Collateral Info:</Text>
+                <Text style={styles.reviewValue}>{application.collateralDescription || "N/A"}</Text>
+              </View>
+              <View style={styles.reviewRow}>
+                <Text style={styles.reviewLabel}>Seller Wallet:</Text>
+                <Text style={styles.reviewValue}>{application.beneficiary?.walletAddress || "N/A"}</Text>
+              </View>
+              
+              <View style={styles.documentLinks}>
+                {application.proformaInvoiceIpfs && (
+                  <TouchableOpacity 
+                    style={styles.docLink} 
+                    onPress={() => Alert.alert("Document Link", application.proformaInvoiceIpfs?.url)}
+                  >
+                    <MaterialCommunityIcons name="file-pdf-box" size={20} color={colors.primary} />
+                    <Text style={styles.docLinkText}>View Proforma Invoice</Text>
+                  </TouchableOpacity>
+                )}
+                {application.salesContractIpfs && (
+                  <TouchableOpacity 
+                    style={styles.docLink} 
+                    onPress={() => Alert.alert("Document Link", application.salesContractIpfs?.url)}
+                  >
+                    <MaterialCommunityIcons name="file-pdf-box" size={20} color={colors.primary} />
+                    <Text style={styles.docLinkText}>View Sales Contract</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.certificateFullSection}>
+              <Text style={styles.certificateFullSectionTitle}>
+                Application Summary
               </Text>
               <Text style={styles.certificateFullText}>
                 Request ID: {application.requestId}
-              </Text>
-              <Text style={styles.certificateFullText}>
-                Company: {application.applicant.company}
-              </Text>
-              <Text style={styles.certificateFullText}>
-                Guarantee Amount: {application.guaranteeAmount}
               </Text>
               <Text style={styles.certificateFullText}>
                 Status: {application.status}
@@ -1873,5 +1941,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: colors.primary,
+  },
+  reviewSubTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  reviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border + "40",
+  },
+  reviewLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  reviewValue: {
+    fontSize: 13,
+    color: colors.text,
+    fontWeight: "600",
+    flex: 2,
+    textAlign: "right",
+  },
+  documentLinks: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  docLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primary + "10",
+    padding: spacing.md,
+    borderRadius: 8,
+    gap: spacing.sm,
+  },
+  docLinkText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: "600",
   },
 });

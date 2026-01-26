@@ -117,8 +117,7 @@ export const TradeFinanceScreen = () => {
   );
   const tokenSymbol = selectedToken?.symbol || "USDC";
 
-  const [userRole, setUserRole] = useState<"buyer" | "seller" | "financier" | "logistics">("buyer");
-  const [isFinancier, setIsFinancier] = useState(false);
+  const [userRole, setUserRole] = useState<"buyer" | "seller" | "logistics">("buyer");
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
@@ -171,16 +170,7 @@ export const TradeFinanceScreen = () => {
     salesContract: null,
   });
 
-  // Check financier status
-  useEffect(() => {
-    const checkFinancier = async () => {
-      if (address) {
-        const status = await stakingService.isFinancier(address);
-        setIsFinancier(status);
-      }
-    };
-    checkFinancier();
-  }, [address]);
+  // No local state for apps/drafts - all from context
 
   // No local state for apps/drafts - all from context
 
@@ -725,7 +715,6 @@ export const TradeFinanceScreen = () => {
           <TouchableOpacity
             style={[
               styles.roleSliderOption,
-              styles.roleSliderOptionLeft,
               userRole === "buyer" && styles.roleSliderOptionActive,
             ]}
             onPress={() => setUserRole("buyer")}
@@ -733,7 +722,7 @@ export const TradeFinanceScreen = () => {
           >
             <MaterialCommunityIcons
               name="cart"
-              size={20}
+              size={18}
               color={userRole === "buyer" ? "white" : colors.primary}
             />
             <Text
@@ -749,7 +738,6 @@ export const TradeFinanceScreen = () => {
           <TouchableOpacity
             style={[
               styles.roleSliderOption,
-              styles.roleSliderOptionRight,
               userRole === "seller" && styles.roleSliderOptionActive,
             ]}
             onPress={() => setUserRole("seller")}
@@ -757,7 +745,7 @@ export const TradeFinanceScreen = () => {
           >
             <MaterialCommunityIcons
               name="store"
-              size={20}
+              size={18}
               color={userRole === "seller" ? "white" : colors.primary}
             />
             <Text
@@ -769,40 +757,32 @@ export const TradeFinanceScreen = () => {
               Seller
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.roleSliderOption,
+              userRole === "logistics" && styles.roleSliderOptionActive,
+            ]}
+            onPress={() => setUserRole("logistics")}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name="truck-delivery"
+              size={18}
+              color={userRole === "logistics" ? "white" : colors.primary}
+            />
+            <Text
+              style={[
+                styles.roleSliderText,
+                userRole === "logistics" && styles.roleSliderTextActive,
+              ]}
+            >
+              Logistics
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Role Selection Slider */}
-      <View style={styles.roleSelector}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roleTabsContainer}>
-          <TouchableOpacity 
-            style={[styles.roleTab, userRole === "buyer" && styles.roleTabActive]} 
-            onPress={() => setUserRole("buyer")}
-          >
-            <Text style={[styles.roleTabText, userRole === "buyer" && styles.roleTabTextActive]}>Buyer</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.roleTab, userRole === "seller" && styles.roleTabActive]} 
-            onPress={() => setUserRole("seller")}
-          >
-            <Text style={[styles.roleTabText, userRole === "seller" && styles.roleTabTextActive]}>Seller</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.roleTab, userRole === "logistics" && styles.roleTabActive]} 
-            onPress={() => setUserRole("logistics")}
-          >
-            <Text style={[styles.roleTabText, userRole === "logistics" && styles.roleTabTextActive]}>Logistics</Text>
-          </TouchableOpacity>
-          {isFinancier && (
-            <TouchableOpacity 
-              style={[styles.roleTab, userRole === "financier" && styles.roleTabActive]} 
-              onPress={() => setUserRole("financier")}
-            >
-              <Text style={[styles.roleTabText, userRole === "financier" && styles.roleTabTextActive]}>Financier</Text>
-            </TouchableOpacity>
-          )}
-        </ScrollView>
-      </View>
 
       {/* My Pool Guarantee Applications Section for Buyers */}
       {userRole === "buyer" && (
@@ -1054,53 +1034,6 @@ export const TradeFinanceScreen = () => {
         </View>
       )}
 
-      {/* Financier Voting Section */}
-      {userRole === "financier" && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Applications for Voting</Text>
-          <Text style={styles.sectionSubtitle}>As a financier, you can vote to approve or reject pool guarantee applications.</Text>
-          
-          {applications.filter(app => app.status === "Draft Sent").length === 0 ? (
-            <View style={styles.emptyApplicationsState}>
-              <MaterialCommunityIcons name="vote" size={48} color={colors.text + "40"} />
-              <Text style={styles.emptyStateText}>No applications awaiting votes</Text>
-            </View>
-          ) : (
-            <View style={styles.applicationsContainer}>
-              {applications.filter(app => app.status === "Draft Sent").map((app) => (
-                <View key={app.id} style={styles.applicationListCard}>
-                  <View style={styles.applicationListHeader}>
-                    <View style={styles.applicationListInfo}>
-                      <Text style={styles.applicationListTitle}>{app.companyName || "Buyer"}</Text>
-                      <Text style={styles.applicationListSubtitle}>{app.tradeDescription}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.applicationListDetails}>
-                    <Text style={styles.applicationListLabel}>Amount: <Text style={styles.applicationListValue}>{app.guaranteeAmount}</Text></Text>
-                    <Text style={styles.applicationListLabel}>Collateral: <Text style={styles.applicationListValue}>{app.collateralValue}</Text></Text>
-                  </View>
-                  <View style={styles.votingButtons}>
-                    <TouchableOpacity 
-                      style={[styles.voteButton, styles.approveButton]} 
-                      onPress={() => votePGABlockchain(app.id, true)}
-                    >
-                      <MaterialCommunityIcons name="thumb-up" size={18} color="white" />
-                      <Text style={styles.voteButtonText}>Approve</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.voteButton, styles.rejectButton]} 
-                      onPress={() => votePGABlockchain(app.id, false)}
-                    >
-                      <MaterialCommunityIcons name="thumb-down" size={18} color="white" />
-                      <Text style={styles.voteButtonText}>Reject</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
 
       {/* Logistics Dashboard Section */}
       {userRole === "logistics" && (
@@ -2235,16 +2168,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    gap: spacing.xs / 2,
     borderRadius: 10,
     backgroundColor: "transparent",
-  },
-  roleSliderOptionLeft: {
-    marginRight: 2,
-  },
-  roleSliderOptionRight: {
-    marginLeft: 2,
   },
   roleSliderOptionActive: {
     backgroundColor: colors.primary,
@@ -2255,7 +2182,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   roleSliderText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "600",
     color: colors.text,
   },
@@ -3469,6 +3396,29 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: 8,
     gap: spacing.xs,
+  },
+  detailRowCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 2,
+  },
+  reviewDraftButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${colors.primary}10`,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    marginVertical: spacing.xs,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: colors.primary,
+    gap: spacing.xs,
+  },
+  reviewDraftButtonText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: "600",
   },
   voteButtonText: {
     color: "white",

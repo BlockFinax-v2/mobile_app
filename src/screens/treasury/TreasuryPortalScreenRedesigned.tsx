@@ -19,6 +19,7 @@ import {
   Animated,
   Dimensions,
   RefreshControl,
+  Modal,
 } from "react-native";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
@@ -51,6 +52,8 @@ import {
   convertToUSD,
   StablecoinConfig,
 } from "@/config/stablecoinPrices";
+import { useTradeFinance } from "@/contexts/TradeFinanceContext";
+import { SellerDraftView } from "@/components/trade/SellerDraftView";
 
 const { width } = Dimensions.get("window");
 
@@ -143,6 +146,8 @@ export function TreasuryPortalScreenRedesigned() {
     getNetworkById,
   } = useWallet();
 
+  const { applications, votePGABlockchain } = useTradeFinance();
+
   // State management
   const [activeTab, setActiveTab] = useState<
     "stake" | "create" | "vote" | "pool"
@@ -180,6 +185,10 @@ export function TreasuryPortalScreenRedesigned() {
   const [stakingConfig, setStakingConfig] = useState<StakingConfig | null>(
     null,
   );
+
+  // Pool Guarantee state
+  const [showDraftReview, setShowDraftReview] = useState(false);
+  const [selectedDraft, setSelectedDraft] = useState<any>(null);
 
   // Governance state
   const [proposalTitle, setProposalTitle] = useState("");
@@ -1465,21 +1474,170 @@ export function TreasuryPortalScreenRedesigned() {
     );
   };
 
-  const renderPoolTab = () => (
-    <View style={styles.content}>
-      <View style={styles.placeholderCard}>
-        <MaterialCommunityIcons
-          name="shield-check"
-          size={48}
-          color={palette.neutralMid}
-        />
-        <Text style={styles.placeholderTitle}>Pool Guarantee</Text>
-        <Text style={styles.placeholderText}>
-          Pool guarantee controls will appear here soon.
-        </Text>
+  const renderPoolTab = () => {
+    const votingApps = applications.filter((app) => app.status === "Draft Sent");
+
+    if (!isFinancier) {
+      return (
+        <View style={styles.content}>
+          <View style={styles.sectionCard}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons
+                name="shield-lock"
+                size={24}
+                color={palette.primaryBlue}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Financier Access Required</Text>
+                <Text style={styles.cardSubtitle}>
+                  Reviewing and voting on pool guarantees is restricted to
+                  authorized financiers.
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.content}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Pool Guarantee Voting</Text>
+          <View style={styles.badgeSmall}>
+            <Text style={styles.badgeTextSmall}>{votingApps.length} Pending</Text>
+          </View>
+        </View>
+
+        {votingApps.length === 0 ? (
+          <View style={styles.placeholderCard}>
+            <MaterialCommunityIcons
+              name="shield-check-outline"
+              size={48}
+              color={palette.neutralMid}
+            />
+            <Text style={styles.placeholderTitle}>All Caught Up!</Text>
+            <Text style={styles.placeholderText}>
+              There are no new pool guarantee applications awaiting votes.
+            </Text>
+          </View>
+        ) : (
+          votingApps.map((app) => (
+            <View key={app.id} style={styles.pgaVoteCard}>
+              <View style={styles.pgaCardHeader}>
+                <View style={styles.pgaIconContainer}>
+                  <MaterialCommunityIcons
+                    name="file-document-outline"
+                    size={24}
+                    color={palette.primaryBlue}
+                  />
+                </View>
+                <View style={styles.pgaHeaderText}>
+                  <Text style={styles.pgaTitle}>
+                    {app.companyName || "Pool Application"}
+                  </Text>
+                  <Text style={styles.pgaSubtitle} numberOfLines={1}>
+                    {app.tradeDescription}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.pgaDetailsRow}>
+                <View style={styles.pgaDetailItem}>
+                  <Text style={styles.pgaDetailLabel}>Guarantee</Text>
+                  <Text style={styles.pgaDetailValue}>
+                    {app.guaranteeAmount}
+                  </Text>
+                </View>
+                <View style={styles.pgaDetailItem}>
+                  <Text style={styles.pgaDetailLabel}>Collateral</Text>
+                  <Text style={styles.pgaDetailValue}>
+                    {app.collateralValue}
+                  </Text>
+                </View>
+                <View style={styles.pgaDetailItem}>
+                  <Text style={styles.pgaDetailLabel}>Duration</Text>
+                  <Text style={styles.pgaDetailValue}>{app.financingDuration}d</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={styles.pgaReviewButton}
+                onPress={() => {
+                  setSelectedDraft({
+                    ...app,
+                    applicant: app.buyer,
+                    beneficiary: app.seller,
+                    guaranteeNo: app.requestId,
+                  });
+                  setShowDraftReview(true);
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="eye"
+                  size={16}
+                  color={palette.primaryBlue}
+                />
+                <Text style={styles.pgaReviewButtonText}>Review Application</Text>
+              </TouchableOpacity>
+
+              <View style={styles.pgaActionButtons}>
+                <TouchableOpacity
+                  style={[styles.pgaVoteButton, styles.pgaButtonReject]}
+                  onPress={() => votePGABlockchain(app.id, false)}
+                >
+                  <MaterialCommunityIcons
+                    name="thumb-down"
+                    size={18}
+                    color="#EF4444"
+                  />
+                  <Text style={[styles.pgaVoteButtonText, { color: "#EF4444" }]}>
+                    Reject
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.pgaVoteButton, styles.pgaButtonApprove]}
+                  onPress={() => votePGABlockchain(app.id, true)}
+                >
+                  <MaterialCommunityIcons
+                    name="thumb-up"
+                    size={18}
+                    color="#10B981"
+                  />
+                  <Text style={[styles.pgaVoteButtonText, { color: "#10B981" }]}>
+                    Approve
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+
+        <Modal
+          visible={showDraftReview}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowDraftReview(false)}
+        >
+          {selectedDraft && (
+            <SellerDraftView
+              draft={selectedDraft}
+              onApprove={() => {
+                votePGABlockchain(selectedDraft.id, true);
+                setShowDraftReview(false);
+              }}
+              onReject={() => {
+                votePGABlockchain(selectedDraft.id, false);
+                setShowDraftReview(false);
+              }}
+              onClose={() => setShowDraftReview(false)}
+            />
+          )}
+        </Modal>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderOtherTabs = () => {
     if (activeTab === "create") return renderCreateTab();
@@ -2297,5 +2455,122 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 14,
     color: palette.neutralMid,
+  },
+  badgeSmall: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: palette.primaryBlue + "15",
+  },
+  badgeTextSmall: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: palette.primaryBlue,
+  },
+  pgaVoteCard: {
+    backgroundColor: palette.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: palette.neutralLighter,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  pgaCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  pgaIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: palette.primaryBlue + "10",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pgaHeaderText: {
+    flex: 1,
+  },
+  pgaTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  pgaSubtitle: {
+    fontSize: 13,
+    color: palette.neutralMid,
+    marginTop: 2,
+  },
+  pgaDetailsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: palette.surface,
+    padding: spacing.md,
+    borderRadius: 12,
+  },
+  pgaDetailItem: {
+    alignItems: "center",
+    flex: 1,
+  },
+  pgaDetailLabel: {
+    fontSize: 11,
+    color: palette.neutralMid,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  pgaDetailValue: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: palette.neutralDark,
+  },
+  pgaReviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    backgroundColor: palette.primaryBlue + "10",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: palette.primaryBlue,
+    gap: spacing.xs,
+  },
+  pgaReviewButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: palette.primaryBlue,
+  },
+  pgaActionButtons: {
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  pgaVoteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.sm,
+  },
+  pgaButtonApprove: {
+    backgroundColor: "#DCFCE7",
+    borderColor: "#10B981",
+  },
+  pgaButtonReject: {
+    backgroundColor: "#FEE2E2",
+    borderColor: "#EF4444",
+  },
+  pgaVoteButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
