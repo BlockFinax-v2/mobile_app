@@ -9,7 +9,8 @@ interface Application {
   guaranteeAmount: string;
   tradeValue: string;
   status:
-    | "Draft Sent"
+    | "Draft Sent to Pool"
+    | "Draft Sent to Seller"
     | "Seller Approved"
     | "Fee Paid"
     | "Awaiting Certificate"
@@ -349,8 +350,8 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
   const mapPGAStatusToAppStatus = (status: PGAStatus): Application["status"] => {
     switch (status) {
-      case PGAStatus.Created: return "Draft Sent";
-      case PGAStatus.GuaranteeApproved: return "Approved";
+      case PGAStatus.Created: return "Draft Sent to Pool";
+      case PGAStatus.GuaranteeApproved: return "Draft Sent to Seller";
       case PGAStatus.SellerApproved: return "Seller Approved";
       case PGAStatus.CollateralPaid: return "Fee Paid";
       case PGAStatus.GoodsShipped: return "Goods Shipped";
@@ -367,15 +368,15 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
   const mapPGAStatusToStage = (status: PGAStatus): number => {
     switch (status) {
-      case PGAStatus.Created: return 2;
-      case PGAStatus.GuaranteeApproved: return 2;
-      case PGAStatus.SellerApproved: return 3;
-      case PGAStatus.CollateralPaid: return 4;
-      case PGAStatus.GoodsShipped: return 6;
-      case PGAStatus.BalancePaymentPaid: return 8;
+      case PGAStatus.Created: return 2; // Pool Review
+      case PGAStatus.GuaranteeApproved: return 3; // Seller Review
+      case PGAStatus.SellerApproved: return 4; // Seller Approved
+      case PGAStatus.CollateralPaid: return 4; // Fee Paid
       case PGAStatus.CertificateIssued: return 5;
+      case PGAStatus.GoodsShipped: return 6;
       case PGAStatus.DeliveryAwaitingConsent: return 7;
-      case PGAStatus.Completed: return 8;
+      case PGAStatus.BalancePaymentPaid: return 8;
+      case PGAStatus.Completed: return 9;
       case PGAStatus.Rejected: return 1;
       case PGAStatus.Expired: return 1;
       case PGAStatus.Disputed: return 7;

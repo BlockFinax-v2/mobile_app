@@ -1475,7 +1475,7 @@ export function TreasuryPortalScreenRedesigned() {
   };
 
   const renderPoolTab = () => {
-    const votingApps = applications.filter((app) => app.status === "Draft Sent");
+    const votingApps = applications.filter((app) => app.status === "Draft Sent to Pool");
 
     if (!isFinancier) {
       return (

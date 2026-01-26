@@ -57,14 +57,14 @@ interface SellerDraftViewProps {
 
 const STAGE_TITLES = [
   "Applied",
-  "Draft Sent",
+  "Pool Review",
+  "Seller Review",
   "Approved",
-  "Fee Paid",
   "Cert Issued",
   "Goods Shipped",
   "Delivery Confirmed",
   "Invoice Paid",
-  "Payment Complete",
+  "Complete",
 ];
 
 const STAGE_ICONS = [
@@ -165,12 +165,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
     switch (draft.currentStage) {
       case 1: // Applied
         return renderAppliedStage();
-      case 2: // Draft Sent
-        return renderDraftSentStage();
-      case 3: // Approved
+      case 2: // Pool Review
+        return renderPoolReviewStage();
+      case 3: // Seller Review
+        return renderSellerReviewStage();
+      case 4: // Approved
         return renderApprovedStage();
-      case 4: // Fee Paid
-        return renderFeePaidStage();
       case 5: // Certificate Issued
         return renderCertificateIssuedStage();
       case 6: // Goods Shipped
@@ -182,7 +182,7 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
       case 9: // Payment Complete
         return renderPaymentCompleteStage();
       default:
-        return renderDraftSentStage();
+        return renderAppliedStage();
     }
   };
 
@@ -219,7 +219,41 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
     </View>
   );
 
-  const renderDraftSentStage = () => (
+  const renderPoolReviewStage = () => (
+    <View style={styles.stageContent}>
+      <View style={styles.statusBanner}>
+        <MaterialCommunityIcons
+          name="clock-outline"
+          size={24}
+          color={colors.warning}
+        />
+        <Text style={styles.statusBannerText}>
+          Awaiting financier approval - Documents under review
+        </Text>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Draft Status</Text>
+        <View style={styles.statusCard}>
+          <MaterialCommunityIcons
+            name="shield-search"
+            size={32}
+            color={colors.warning}
+          />
+          <View style={styles.statusCardContent}>
+            <Text style={styles.statusCardTitle}>Pool Review</Text>
+            <Text style={styles.statusCardDescription}>
+              The pool financiers are currently reviewing the buyer's application
+              and credentials. You will be notified once they approve and it's
+              your turn to review.
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderSellerReviewStage = () => (
     <View style={styles.stageContent}>
       <View style={styles.statusBanner}>
         <MaterialCommunityIcons
@@ -228,7 +262,7 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           color={colors.primary}
         />
         <Text style={styles.statusBannerText}>
-          Draft certificate sent - Awaiting your approval
+          The pool has approved! - Awaiting your final approval
         </Text>
       </View>
 
@@ -267,8 +301,8 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Status:</Text>
-            <Text style={[styles.detailValue, { color: colors.warning }]}>
-              SENT TO SELLER
+            <Text style={[styles.detailValue, { color: colors.primary }]}>
+              AWAITING YOUR APPROVAL
             </Text>
           </View>
         </View>
@@ -288,53 +322,21 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           <View style={styles.obligationItem}>
             <MaterialCommunityIcons
               name="check-circle"
-              size={20}
+              size={18}
               color={colors.success}
             />
             <Text style={styles.obligationText}>
-              Buyer will be notified of your 1% insurance fee obligation
+              Review the payment guarantee details above
             </Text>
           </View>
           <View style={styles.obligationItem}>
             <MaterialCommunityIcons
-              name="alert-circle"
-              size={20}
-              color={colors.warning}
-            />
-            <Text style={styles.obligationText}>
-              You accept 5% risk exposure if you and have 30%
-            </Text>
-          </View>
-          <View style={styles.obligationItem}>
-            <MaterialCommunityIcons
-              name="information"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={styles.obligationText}>
-              You must provide 5% of collateral with buyer pays 30% of Issuance
-              goods as collateral
-            </Text>
-          </View>
-          <View style={styles.obligationItem}>
-            <MaterialCommunityIcons
-              name="cash"
-              size={20}
+              name="check-circle"
+              size={18}
               color={colors.success}
             />
             <Text style={styles.obligationText}>
-              Treasury will hold fees until invoice goods settlement issue
-              pool-based 75% late, then will be returned
-            </Text>
-          </View>
-          <View style={styles.obligationItem}>
-            <MaterialCommunityIcons
-              name="shield-check"
-              size={20}
-              color={colors.primary}
-            />
-            <Text style={styles.obligationText}>
-              You can transfer an insured 6% of collateral risk pool of defaults
+              Ensure shipping dates align with your schedule
             </Text>
           </View>
         </View>
@@ -1438,5 +1440,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 2,
     textAlign: "right",
+  },
+  statusCard: {
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: "#F8F9FA",
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  statusCardContent: {
+    flex: 1,
+  },
+  statusCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: 4,
+  },
+  statusCardDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });

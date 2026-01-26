@@ -65,14 +65,14 @@ interface BuyerApplicationViewProps {
 
 const STAGE_TITLES = [
   "Applied",
-  "Draft Sent",
+  "Pool Review",
+  "Seller Review",
   "Approved",
-  "Fee Paid",
   "Cert Issued",
   "Goods Shipped",
   "Delivery Confirmed",
   "Invoice Paid",
-  "Payment Complete",
+  "Complete",
 ];
 
 const STAGE_ICONS = [
@@ -175,12 +175,12 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
     switch (application.currentStage) {
       case 1: // Applied
         return renderAppliedStage();
-      case 2: // Draft Sent
-        return renderDraftSentStage();
-      case 3: // Approved
+      case 2: // Pool Review
+        return renderPoolReviewStage();
+      case 3: // Seller Review
+        return renderSellerReviewStage();
+      case 4: // Approved
         return renderApprovedStage();
-      case 4: // Fee Paid
-        return renderFeePaidStage();
       case 5: // Certificate Issued
         return renderCertificateIssuedStage();
       case 6: // Goods Shipped
@@ -267,7 +267,54 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
     </View>
   );
 
-  const renderDraftSentStage = () => (
+  const renderPoolReviewStage = () => (
+    <View style={styles.stageContent}>
+      <View style={styles.statusBanner}>
+        <MaterialCommunityIcons
+          name="account-search-outline"
+          size={24}
+          color={colors.warning}
+        />
+        <Text style={styles.statusBannerText}>
+          Draft sent to pool - Awaiting financier approval
+        </Text>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Application Status</Text>
+        <View style={styles.statusCard}>
+          <MaterialCommunityIcons
+            name="clock-outline"
+            size={32}
+            color={colors.warning}
+          />
+          <View style={styles.statusCardContent}>
+            <Text style={styles.statusCardTitle}>Financier Review</Text>
+            <Text style={styles.statusCardDescription}>
+              The pool financiers are currently reviewing your guarantee
+              application credentials and trade details.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.nextStepsCard}>
+        <MaterialCommunityIcons
+          name="information"
+          size={24}
+          color={colors.primary}
+        />
+        <View style={styles.nextStepsContent}>
+          <Text style={styles.nextStepsTitle}>Whose next?</Text>
+          <Text style={styles.nextStepsText}>
+            Once financiers approve, the draft will be automatically sent to the seller for their consideration.
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  const renderSellerReviewStage = () => (
     <View style={styles.stageContent}>
       <View style={styles.statusBanner}>
         <MaterialCommunityIcons
@@ -284,35 +331,18 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         <Text style={styles.sectionTitle}>Draft Status</Text>
         <View style={styles.statusCard}>
           <MaterialCommunityIcons
-            name="clock-outline"
+            name="account-check-outline"
             size={32}
-            color={colors.warning}
+            color={colors.primary}
           />
           <View style={styles.statusCardContent}>
-            <Text style={styles.statusCardTitle}>Pending Seller Approval</Text>
+            <Text style={styles.statusCardTitle}>Seller Review</Text>
             <Text style={styles.statusCardDescription}>
-              The seller is reviewing the draft pool guarantee certificate. You
-              will be notified once they make a decision.
+              The pool has approved your application! It has now been forwarded
+              to the seller for their final acceptance.
             </Text>
           </View>
         </View>
-      </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Certificate Preview</Text>
-        <TouchableOpacity
-          style={styles.viewCertificateButton}
-          onPress={() => setShowFullCertificate(true)}
-        >
-          <MaterialCommunityIcons
-            name="file-eye"
-            size={20}
-            color={colors.primary}
-          />
-          <Text style={styles.viewCertificateButtonText}>
-            View Draft Certificate
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <View style={styles.documentsSection}>

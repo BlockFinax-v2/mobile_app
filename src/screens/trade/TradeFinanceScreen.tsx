@@ -142,6 +142,18 @@ export const TradeFinanceScreen = () => {
     stakedInDB: `Staked in DB: 100.00 ${tokenSymbol}`,
   });
 
+  const sellerAwaitingDrafts = [
+    ...drafts,
+    ...applications
+      .filter((app) => app.status === "Draft Sent to Seller")
+      .map((app) => ({
+        ...app,
+        applicant: app.buyer,
+        beneficiary: app.seller,
+        guaranteeNo: app.requestId,
+      })),
+  ];
+
   const [guaranteeStats] = useState({
     pending: 0,
     totalGuaranteed: `241.00 ${tokenSymbol}`,
@@ -938,13 +950,13 @@ export const TradeFinanceScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Drafts Awaiting Your Approval</Text>
 
-          {drafts.length === 0 ? (
+          {sellerAwaitingDrafts.length === 0 ? (
             <Text style={styles.emptyMessage}>
               No pending draft approvals at this time.
             </Text>
           ) : (
             <View style={styles.draftsContainer}>
-              {drafts.map((draft) => (
+              {sellerAwaitingDrafts.map((draft) => (
                 <View key={draft.id} style={styles.draftCard}>
                   <View style={styles.draftHeader}>
                     <Text style={styles.draftTitle}>
