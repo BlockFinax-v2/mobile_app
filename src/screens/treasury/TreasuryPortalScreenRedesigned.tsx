@@ -43,6 +43,7 @@ import {
   DAOConfig,
   AllStakesInfo,
   RevocationStatus,
+  VoteStatus,
   DIAMOND_ADDRESSES,
 } from "@/services/stakingService";
 import {
@@ -191,6 +192,9 @@ export function TreasuryPortalScreenRedesigned() {
   const [daoConfig, setDAOConfig] = useState<DAOConfig | null>(null);
   const [isLoadingProposals, setIsLoadingProposals] = useState(false);
   const [isApplyingFinancier, setIsApplyingFinancier] = useState(false);
+  const [voteStatuses, setVoteStatuses] = useState<Record<string, VoteStatus>>(
+    {},
+  );
 
   const stakedForSelectedToken = useMemo(() => {
     if (!allStakesInfo || !selectedToken) return 0;
@@ -604,6 +608,24 @@ export function TreasuryPortalScreenRedesigned() {
       setProposals(allProposals);
       setDAOStats(stats);
       setDAOConfig(config);
+
+      // Fetch vote status for each proposal
+      const voteStatusMap: Record<string, VoteStatus> = {};
+      await Promise.all(
+        allProposals.map(async (proposal) => {
+          try {
+            const status = await stakingService.getVoteStatus(proposal.id);
+            voteStatusMap[proposal.id] = status;
+          } catch (error) {
+            console.error(
+              `Error fetching vote status for ${proposal.id}:`,
+              error,
+            );
+            voteStatusMap[proposal.id] = { hasVoted: false, support: false };
+          }
+        }),
+      );
+      setVoteStatuses(voteStatusMap);
     } catch (error) {
       console.error("Error loading governance data:", error);
     } finally {
@@ -679,7 +701,7 @@ export function TreasuryPortalScreenRedesigned() {
 
       Alert.alert(
         "Vote Submitted!",
-        `Tx Hash: ${tx.hash}\nYou voted ${support ? "FOR" : "AGAINST"}.`,
+        `Tx Hash: ${tx.hash}\nYou voted ${support ? "IN SUPPORT" : "AGAINST"}.`,
       );
 
       setTimeout(() => loadGovernanceData(), 2000);
@@ -1395,20 +1417,44 @@ export function TreasuryPortalScreenRedesigned() {
 
                 {isActive && (
                   <View style={styles.voteActions}>
-                    <TouchableOpacity
-                      style={[styles.voteButton, styles.voteButtonFor]}
-                      onPress={() => handleVoteOnProposal(proposal.id, true)}
-                      disabled={isTransacting}
-                    >
-                      <Text style={styles.voteButtonText}>Vote For</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.voteButton, styles.voteButtonAgainst]}
-                      onPress={() => handleVoteOnProposal(proposal.id, false)}
-                      disabled={isTransacting}
-                    >
-                      <Text style={styles.voteButtonText}>Vote Against</Text>
-                    </TouchableOpacity>
+                    {voteStatuses[proposal.id]?.hasVoted ? (
+                      <View style={styles.votedIndicator}>
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={20}
+                          color={palette.primaryBlue}
+                        />
+                        <Text style={styles.votedText}>
+                          You voted{" "}
+                          {voteStatuses[proposal.id]?.support
+                            ? "FOR"
+                            : "AGAINST"}
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.voteButton, styles.voteButtonFor]}
+                          onPress={() =>
+                            handleVoteOnProposal(proposal.id, true)
+                          }
+                          disabled={isTransacting}
+                        >
+                          <Text style={styles.voteButtonText}>Vote For</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.voteButton, styles.voteButtonAgainst]}
+                          onPress={() =>
+                            handleVoteOnProposal(proposal.id, false)
+                          }
+                          disabled={isTransacting}
+                        >
+                          <Text style={styles.voteButtonText}>
+                            Vote Against
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
                   </View>
                 )}
               </View>
@@ -2172,6 +2218,23 @@ const styles = StyleSheet.create({
   voteButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
+  },
+  votedIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: "#E8F4FD",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: palette.primaryBlue,
+  },
+  votedText: {
+    color: palette.primaryBlue,
+    fontWeight: "600",
+    fontSize: 14,
   },
   // Unstake Buttons
   unstakeButtons: {

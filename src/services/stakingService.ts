@@ -712,6 +712,61 @@ class StakingService {
   }
 
   /**
+   * Check if staking activation (approval) is needed for the requested amount
+   * Returns activation info with gas estimate
+   */
+  public async checkStakingActivation(amount: string): Promise<{
+    needsActivation: boolean;
+    currentAllowance: string;
+    requiredAmount: string;
+    estimatedGasCost?: string;
+  }> {
+    try {
+      const usdcContract = await this.getUSDCContract();
+      const signer = await this.getSigner();
+      const address = await signer.getAddress();
+
+      const allowance = await usdcContract.allowance(address, this.getDiamondAddress());
+      const requiredAmount = ethers.utils.parseUnits(amount, 6);
+      
+      const needsActivation = !allowance.gte(requiredAmount);
+      
+      let estimatedGasCost;
+      if (needsActivation) {
+        try {
+          // Estimate gas for approval
+          const gasEstimate = await usdcContract.estimateGas.approve(
+            this.getDiamondAddress(), 
+            requiredAmount
+          );
+          const provider = this.getProvider();
+          const gasPrice = await provider.getGasPrice();
+          const gasCostWei = gasEstimate.mul(gasPrice);
+          estimatedGasCost = ethers.utils.formatEther(gasCostWei);
+        } catch (error) {
+          console.warn('[StakingService] Could not estimate gas cost:', error);
+          estimatedGasCost = '0.001'; // Fallback estimate
+        }
+      }
+
+      return {
+        needsActivation,
+        currentAllowance: ethers.utils.formatUnits(allowance, 6),
+        requiredAmount: ethers.utils.formatUnits(requiredAmount, 6),
+        estimatedGasCost
+      };
+    } catch (error) {
+      console.error("Error checking staking activation:", error);
+      return {
+        needsActivation: true,
+        currentAllowance: '0',
+        requiredAmount: amount,
+        estimatedGasCost: '0.001'
+      };
+    }
+  }
+
+  /**
    * Approve USDC spending for staking contract (standalone - use stake() instead for combined flow)
    * @deprecated Use stake() method instead which handles approval automatically
    */
@@ -784,7 +839,7 @@ class StakingService {
       // Check if should use AA
       if (this.shouldUseAA()) {
         try {
-          onProgress?.('batching', 'Preparing gasless batch transaction...');
+          onProgress?.('batching', 'Preparing gasless staking transaction...');
           
           // Get private key for linking/fallback
           const password = await secureStorage.getSecureItem('blockfinax.password');
@@ -796,47 +851,60 @@ class StakingService {
             throw new Error('Private key not found for AA transaction');
           }
 
+          // CRITICAL: EOA must approve Diamond first (Diamond will pull from EOA)
+          const hasAllowance = await this.checkAllowance(amount);
+          if (!hasAllowance) {
+            onProgress?.('approving', '⚡ One-time activation: Approving USDC for gasless staking...');
+            
+            const usdcContract = await this.getUSDCContract();
+            console.log('[StakingService] EOA approving Diamond for USDC:', {
+              amount,
+              amountInWei: amountInWei.toString(),
+              spender: this.getDiamondAddress(),
+            });
+
+            const approveTx = await usdcContract.approve(this.getDiamondAddress(), amountInWei);
+            console.log('[StakingService] Approval transaction:', approveTx.hash);
+            
+            onProgress?.('approving', 'Confirming activation... After this, all staking is gasless! 🎉');
+            await approveTx.wait();
+            console.log('[StakingService] Approval confirmed');
+          } else {
+            console.log('[StakingService] ✅ Staking already activated - proceeding gasless!');
+          }
+
           const txService = smartContractTransactionService;
           
-              // Execute batch transaction (approve + stake) with AA
-                  const result = await txService.executeBatchTransaction({
-            transactions: [
-              {
-                contractAddress: usdcAddress,
-                abi: ERC20_ABI,
-                functionName: 'approve',
-                args: [this.getDiamondAddress(), amountInWei.toString()],
-                value: '0'
-              },
-              {
-                contractAddress: this.getDiamondAddress(),
-                abi: LIQUIDITY_POOL_FACET_ABI,
-                functionName: 'stakeToken',
-                // stakeToken(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
-                args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()]
-              }
-            ],
+          onProgress?.('linking', 'Linking smart account to your identity...');
+          
+          // Smart Account calls stakeToken - Diamond will pull from linked EOA
+          onProgress?.('staking', 'Staking USDC with smart account (gasless)...');
+          const stakeResult = await txService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
             network: this.currentNetworkConfig,
-            privateKey
+            privateKey,
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'stakeToken',
+            args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()]
           });
 
-                console.log('[StakingService] AA batch stake completed:', result);
+          console.log('[StakingService] AA stake completed:', stakeResult);
 
-                if (!result.success) {
-                  throw new Error(result.error || 'AA batch stake failed');
-                }
+          if (!stakeResult.success) {
+            throw new Error(stakeResult.error || 'AA stake failed');
+          }
 
-                return {
-                  hash: result.txHash,
-                  type: 'stake',
-                  amount,
-                  timestamp: Date.now(),
-                  status: 'pending',
-                  explorerUrl: result.explorerUrl,
-                  usedAA: result.usedSmartAccount
-                };
+          return {
+            hash: stakeResult.txHash,
+            type: 'stake',
+            amount,
+            timestamp: Date.now(),
+            status: 'pending',
+            explorerUrl: stakeResult.explorerUrl,
+            usedAA: stakeResult.usedSmartAccount
+          };
         } catch (error) {
-          console.warn('[StakingService] AA batch transaction failed, falling back to EOA:', error);
+          console.warn('[StakingService] AA transaction failed, falling back to EOA:', error);
           // Continue to EOA method below
         }
       }
@@ -1538,10 +1606,10 @@ class StakingService {
       // Get USDC contract address
       const usdcAddress = this.getDefaultTokenAddress();
 
-      // Try AA batch transaction if available
+      // Try AA transaction if available
       if (this.shouldUseAA()) {
         try {
-          onProgress?.('batching', 'Preparing gasless batch transaction...');
+          onProgress?.('batching', 'Preparing gasless financier staking...');
           
           // Get private key for linking/fallback
           const password = await secureStorage.getSecureItem('blockfinax.password');
@@ -1553,48 +1621,58 @@ class StakingService {
             throw new Error('Private key not found for AA transaction');
           }
 
+          // CRITICAL: EOA must approve Diamond first (Diamond will pull from EOA)
+          const hasAllowance = await this.checkAllowance(amount);
+          if (!hasAllowance) {
+            onProgress?.('approving', '⚡ One-time activation: Approving USDC for gasless staking...');
+            
+            const usdcContract = await this.getUSDCContract();
+            console.log('[StakingService] EOA approving Diamond for USDC (financier):', {
+              amount,
+              amountInWei: amountInWei.toString(),
+              spender: this.getDiamondAddress(),
+            });
+
+            const approveTx = await usdcContract.approve(this.getDiamondAddress(), amountInWei);
+            console.log('[StakingService] Approval transaction:', approveTx.hash);
+            
+            onProgress?.('approving', 'Confirming activation... After this, all staking is gasless! 🎉');
+            await approveTx.wait();
+            console.log('[StakingService] Approval confirmed');
+          } else {
+            console.log('[StakingService] ✅ Staking already activated - proceeding gasless!');
+          }
+
           onProgress?.('linking', 'Linking smart account to your identity...');
           
-          // Execute batch transaction (approve + stakeAsFinancier) with AA
-          const result = await smartContractTransactionService.executeBatchTransaction({
+          // Smart Account calls stakeTokenAsFinancier - Diamond will pull from linked EOA
+          onProgress?.('staking', 'Staking USDC as financier with smart account (gasless)...');
+          const stakeResult = await smartContractTransactionService.executeTransaction({
+            contractAddress: this.getDiamondAddress(),
             network: this.currentNetworkConfig,
             privateKey,
-            transactions: [
-              {
-                contractAddress: usdcAddress,
-                abi: ERC20_ABI,
-                functionName: 'approve',
-                args: [this.getDiamondAddress(), amountInWei.toString()],
-                value: '0'
-              },
-              {
-                contractAddress: this.getDiamondAddress(),
-                abi: LIQUIDITY_POOL_FACET_ABI,
-                functionName: 'stakeTokenAsFinancier',
-                // stakeTokenAsFinancier(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
-                args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()],
-                value: '0'
-              }
-            ]
+            abi: LIQUIDITY_POOL_FACET_ABI,
+            functionName: 'stakeTokenAsFinancier',
+            args: [usdcAddress, amountInWei.toString(), '0', amountInWei.toString()]
           });
 
-          console.log('[StakingService] AA batch stakeAsFinancier completed:', result);
+          console.log('[StakingService] AA stakeAsFinancier completed:', stakeResult);
 
-          if (!result.success) {
-            throw new Error(result.error || 'AA batch stakeAsFinancier failed');
+          if (!stakeResult.success) {
+            throw new Error(stakeResult.error || 'AA stakeAsFinancier failed');
           }
 
           return {
-            hash: result.txHash,
+            hash: stakeResult.txHash,
             type: 'stake',
             amount,
             timestamp: Date.now(),
             status: 'pending',
-            explorerUrl: result.explorerUrl,
-            usedAA: result.usedSmartAccount
+            explorerUrl: stakeResult.explorerUrl,
+            usedAA: stakeResult.usedSmartAccount
           };
         } catch (error) {
-          console.warn('[StakingService] AA batch stakeAsFinancier failed, falling back to EOA:', error);
+          console.warn('[StakingService] AA stakeAsFinancier failed, falling back to EOA:', error);
           // Continue to EOA method below
         }
       }

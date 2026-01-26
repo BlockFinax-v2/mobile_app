@@ -158,6 +158,23 @@ class SmartContractTransactionService {
   }
 
   /**
+   * Check if an address is a Diamond contract
+   */
+  private isDiamondAddress(address: string, chainId: number): boolean {
+    // Import DIAMOND_ADDRESSES from stakingService
+    const DIAMOND_ADDRESSES: { [chainId: number]: string } = {
+      11155111: "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284", // Ethereum Sepolia
+      4202: "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34", // Lisk Sepolia
+      84532: "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711", // Base Sepolia
+    };
+
+    const diamondAddress = DIAMOND_ADDRESSES[chainId];
+    if (!diamondAddress) return false;
+    
+    return address.toLowerCase() === diamondAddress.toLowerCase();
+  }
+
+  /**
    * Check if Smart Account is linked to EOA in the smart contract
    */
   async checkSmartAccountLinking(
@@ -304,27 +321,32 @@ class SmartContractTransactionService {
         throw new Error("Smart account address not available");
       }
 
-      // Check and perform linking if needed (only for first AA transaction)
-      const wallet = new ethers.Wallet(privateKey);
-      const linkingStatus = await this.checkSmartAccountLinking(
-        contractAddress,
-        wallet.address,
-        smartAccountAddress,
-        network
-      );
-
-      if (linkingStatus.needsLinking) {
-        console.log("[SmartContractTxService] 🔗 Linking Smart Account to EOA first...");
-        const linkResult = await this.linkSmartAccountToEOA(
+      // Check and perform linking if needed (only for Diamond contracts)
+      // Diamond contracts have the AddressLinkingFacet, other contracts (like USDC) don't
+      const isDiamondContract = this.isDiamondAddress(contractAddress, network.chainId);
+      
+      if (isDiamondContract) {
+        const wallet = new ethers.Wallet(privateKey);
+        const linkingStatus = await this.checkSmartAccountLinking(
           contractAddress,
+          wallet.address,
           smartAccountAddress,
-          network,
-          privateKey
+          network
         );
 
-        if (!linkResult.success) {
-          console.warn("[SmartContractTxService] Linking failed, falling back to EOA");
-          return this.executeWithEOA(options);
+        if (linkingStatus.needsLinking) {
+          console.log("[SmartContractTxService] 🔗 Linking Smart Account to EOA first...");
+          const linkResult = await this.linkSmartAccountToEOA(
+            contractAddress,
+            smartAccountAddress,
+            network,
+            privateKey
+          );
+
+          if (!linkResult.success) {
+            console.warn("[SmartContractTxService] Linking failed, falling back to EOA");
+            return this.executeWithEOA(options);
+          }
         }
       }
 
