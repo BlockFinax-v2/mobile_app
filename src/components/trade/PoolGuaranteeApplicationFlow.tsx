@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -416,19 +417,40 @@ export const PoolGuaranteeApplicationFlow: React.FC<
   ) => {
     setIsUploading(true);
     try {
+      // Use original URI from picker
+      const uploadUri = file.uri;
+
       // Upload to IPFS
       const { ipfsHash, ipfsUrl } = await uploadToIPFS(
-        file.uri,
+        uploadUri,
         file.name,
         file.mimeType,
       );
+
+      // Create document object for storage
+      const newDoc: StoredDocument = {
+        id: `doc_${Date.now()}`,
+        title: type === 'proformaInvoice' ? 'Proforma Invoice' : 'Sales Contract',
+        fileName: file.name,
+        fileUri: uploadUri,
+        ipfsHash,
+        ipfsUrl,
+        fileType: file.mimeType,
+        fileSize: file.size,
+        uploadedAt: new Date().toISOString(),
+      };
+
+      // Save to local stored documents
+      const updatedStoredDocs = [newDoc, ...storedDocuments];
+      setStoredDocuments(updatedStoredDocs);
+      await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(updatedStoredDocs));
 
       // Update form data with document info and IPFS data
       setFormData((prev) => ({
         ...prev,
         [type]: {
           name: file.name,
-          uri: file.uri,
+          uri: uploadUri,
           size: file.size,
           mimeType: file.mimeType,
         },
@@ -442,11 +464,11 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         "Upload Successful",
         `Document uploaded to IPFS successfully!\n\nIPFS Hash: ${ipfsHash}`,
       );
-    } catch (error) {
+    } catch (error: any) {
       console.error("IPFS upload error:", error);
       Alert.alert(
         "Upload Failed",
-        "Failed to upload document to IPFS. Please try again.",
+        `Failed to upload document to IPFS: ${error.message || 'Please try again.'}`,
       );
     } finally {
       setIsUploading(false);

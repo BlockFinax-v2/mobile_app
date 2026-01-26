@@ -59,6 +59,7 @@ export interface WalletNetwork {
     address: string;
     decimals: number;
   }>;
+  diamondAddress?: string;
 }
 
 const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
@@ -178,8 +179,8 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         decimals: 6,
       },
-      // USDT removed - contract not working on Base Sepolia
     ],
+    diamondAddress: "0x78564F56Ab195da6043236376510FD53D8002df3",
   },
   "lisk-sepolia": {
     id: "lisk-sepolia",
@@ -203,6 +204,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         decimals: 6,
       },
     ],
+    diamondAddress: "0x98154D597A8161749896084803513361E63673F8",
   },
 };
 

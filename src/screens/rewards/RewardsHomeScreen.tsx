@@ -112,7 +112,7 @@ export function RewardsHomeScreen() {
       // Use pool stats for each token (simplified - using same totalStaked for all)
       tokens.forEach((token) => {
         try {
-          const totalStaked = poolStatsData.totalStaked;
+          const totalStaked = "0"; // poolStatsData removed
           const usdValue = parseFloat(totalStaked);
 
           poolStatsMap[token.address] = {

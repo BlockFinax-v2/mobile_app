@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from "react";
+import { tradeFinanceService, PGAInfo, PGAStatus } from "@/services/tradeFinanceService";
+import { useWallet } from "./WalletContext";
 
 interface Application {
   id: string;
@@ -71,6 +73,10 @@ interface Application {
   currentStage: number; // 1-8
   isDraft: boolean;
   lastUpdated: string;
+
+  // Blockchain specific
+  certificateIssuedAt?: number;
+  deliveryAgreementId?: string;
 }
 
 interface DraftCertificate {
@@ -150,6 +156,19 @@ interface TradeFinanceContextType {
   // Progress and persistence
   updateApplicationStage: (id: string, stage: number) => void;
   saveDraft: (application: Application) => void;
+
+  // Blockchain Sync
+  fetchBlockchainData: () => Promise<void>;
+  createPGABlockchain: (params: any) => Promise<void>;
+  votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
+  sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
+  payCollateralBlockchain: (pgaId: string, amount: string) => Promise<void>;
+  confirmGoodsShippedBlockchain: (pgaId: string, logisticPartnerName: string) => Promise<void>;
+  payBalancePaymentBlockchain: (pgaId: string, amount: string) => Promise<void>;
+  issueCertificateBlockchain: (pgaId: string) => Promise<void>;
+  createDeliveryAgreementBlockchain: (params: any) => Promise<void>;
+  buyerConsentToDeliveryBlockchain: (agreementId: string, consent: boolean) => Promise<void>;
+  releasePaymentToSellerBlockchain: (pgaId: string) => Promise<void>;
 }
 
 const TradeFinanceContext = createContext<TradeFinanceContextType | undefined>(
@@ -319,6 +338,157 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     });
   };
 
+  const { selectedNetwork, address, isUnlocked } = useWallet();
+
+  // Sync network with service
+  useEffect(() => {
+    if (selectedNetwork) {
+      tradeFinanceService.setNetwork(selectedNetwork.chainId, selectedNetwork);
+    }
+  }, [selectedNetwork]);
+
+  const mapPGAStatusToAppStatus = (status: PGAStatus): Application["status"] => {
+    switch (status) {
+      case PGAStatus.Created: return "Draft Sent";
+      case PGAStatus.GuaranteeApproved: return "Approved";
+      case PGAStatus.SellerApproved: return "Seller Approved";
+      case PGAStatus.CollateralPaid: return "Fee Paid";
+      case PGAStatus.GoodsShipped: return "Goods Shipped";
+      case PGAStatus.BalancePaymentPaid: return "Invoice Settled";
+      case PGAStatus.CertificateIssued: return "Certificate Issued";
+      case PGAStatus.DeliveryAwaitingConsent: return "Awaiting Certificate"; 
+      case PGAStatus.Completed: return "Transaction Complete";
+      case PGAStatus.Rejected: return "Pending Draft";
+      case PGAStatus.Expired: return "Pending Draft";
+      case PGAStatus.Disputed: return "Processing";
+      default: return "Pending Draft";
+    }
+  };
+
+  const mapPGAStatusToStage = (status: PGAStatus): number => {
+    switch (status) {
+      case PGAStatus.Created: return 2;
+      case PGAStatus.GuaranteeApproved: return 2;
+      case PGAStatus.SellerApproved: return 3;
+      case PGAStatus.CollateralPaid: return 4;
+      case PGAStatus.GoodsShipped: return 6;
+      case PGAStatus.BalancePaymentPaid: return 8;
+      case PGAStatus.CertificateIssued: return 5;
+      case PGAStatus.DeliveryAwaitingConsent: return 7;
+      case PGAStatus.Completed: return 8;
+      case PGAStatus.Rejected: return 1;
+      case PGAStatus.Expired: return 1;
+      case PGAStatus.Disputed: return 7;
+      default: return 1;
+    }
+  };
+
+  const mapPGAInfoToApplication = (pga: PGAInfo): Application => {
+    const symbol = selectedNetwork?.stablecoins?.[0]?.symbol || "USDC";
+    return {
+      id: pga.pgaId,
+      requestId: pga.pgaId,
+      companyName: "", // Need metadata
+      guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
+      tradeValue: `${pga.tradeValue} ${symbol}`,
+      status: mapPGAStatusToAppStatus(pga.status),
+      submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
+      contractNumber: "", 
+      tradeDescription: pga.tradeDescription || "",
+      buyer: {
+        company: "",
+        registration: "",
+        country: "",
+        contact: "",
+        email: "",
+        phone: "",
+        walletAddress: pga.buyer,
+        applicationDate: new Date(pga.createdAt * 1000).toISOString(),
+      },
+      seller: {
+        walletAddress: pga.seller,
+      },
+      applicationDate: new Date(pga.createdAt * 1000).toISOString(),
+      paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
+      financingDuration: pga.duration,
+      issuanceFee: `${(parseFloat(pga.guaranteeAmount) * 0.1).toFixed(2)} ${symbol}`,
+      collateralDescription: "",
+      collateralValue: `${pga.collateralAmount} ${symbol}`,
+      currentStage: mapPGAStatusToStage(pga.status),
+      isDraft: false,
+      lastUpdated: new Date().toISOString(),
+      certificateIssuedAt: pga.certificateIssuedAt,
+      deliveryAgreementId: pga.deliveryAgreementId,
+    };
+  };
+
+  const fetchBlockchainData = useCallback(async () => {
+    if (!address || !isUnlocked) return;
+    try {
+      const buyerPGAs = await tradeFinanceService.getAllPGAsByBuyer(address);
+      const sellerPGAs = await tradeFinanceService.getAllPGAsBySeller(address);
+      
+      const allApps = [...buyerPGAs, ...sellerPGAs].map(mapPGAInfoToApplication);
+      setApplications(allApps);
+    } catch (error) {
+      console.error("Error fetching blockchain data:", error);
+    }
+  }, [address, isUnlocked]);
+
+  useEffect(() => {
+    fetchBlockchainData();
+  }, [fetchBlockchainData]);
+
+  const createPGABlockchain = async (params: any) => {
+    await tradeFinanceService.createPGA(params);
+    await fetchBlockchainData();
+  };
+
+  const votePGABlockchain = async (pgaId: string, support: boolean) => {
+    await tradeFinanceService.voteOnPGA(pgaId, support);
+    await fetchBlockchainData();
+  };
+
+  const sellerVotePGABlockchain = async (pgaId: string, approve: boolean) => {
+    await tradeFinanceService.sellerVoteOnPGA(pgaId, approve);
+    await fetchBlockchainData();
+  };
+
+  const payCollateralBlockchain = async (pgaId: string, amount: string) => {
+    await tradeFinanceService.payCollateral(pgaId, amount);
+    await fetchBlockchainData();
+  };
+
+  const confirmGoodsShippedBlockchain = async (pgaId: string, logisticPartnerName: string) => {
+    await tradeFinanceService.confirmGoodsShipped(pgaId, logisticPartnerName);
+    await fetchBlockchainData();
+  };
+
+  const payBalancePaymentBlockchain = async (pgaId: string, amount: string) => {
+    await tradeFinanceService.payBalancePayment(pgaId, amount);
+    await fetchBlockchainData();
+  };
+
+  const issueCertificateBlockchain = async (pgaId: string) => {
+    await tradeFinanceService.issueCertificate(pgaId);
+    await fetchBlockchainData();
+  };
+
+  const createDeliveryAgreementBlockchain = async (params: any) => {
+    await tradeFinanceService.createDeliveryAgreement(params);
+    await fetchBlockchainData();
+  };
+
+  const buyerConsentToDeliveryBlockchain = async (agreementId: string, consent: boolean) => {
+    await tradeFinanceService.buyerConsentToDelivery(agreementId, consent);
+    await fetchBlockchainData();
+  };
+
+  const releasePaymentToSellerBlockchain = async (pgaId: string) => {
+    await tradeFinanceService.releasePaymentToSeller(pgaId);
+    await fetchBlockchainData();
+  };
+
   return (
     <TradeFinanceContext.Provider
       value={{
@@ -336,6 +506,17 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         completeTransaction,
         updateApplicationStage,
         saveDraft,
+        fetchBlockchainData,
+        createPGABlockchain,
+        votePGABlockchain,
+        sellerVotePGABlockchain,
+        payCollateralBlockchain,
+        confirmGoodsShippedBlockchain,
+        payBalancePaymentBlockchain,
+        issueCertificateBlockchain,
+        createDeliveryAgreementBlockchain,
+        buyerConsentToDeliveryBlockchain,
+        releasePaymentToSellerBlockchain,
       }}
     >
       {children}

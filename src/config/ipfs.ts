@@ -8,16 +8,14 @@
  */
 
 export const IPFS_CONFIG = {
-  // Get these from https://app.pinata.cloud/developers/api-keys
-  PINATA_API_KEY: process.env.EXPO_PUBLIC_PINATA_API_KEY || 'YOUR_PINATA_API_KEY',
-  PINATA_SECRET_KEY: process.env.EXPO_PUBLIC_PINATA_SECRET_KEY || 'YOUR_PINATA_SECRET_KEY',
-  
-  // Set to true to use mock IPFS (for testing without Pinata)
-  USE_MOCK: process.env.EXPO_PUBLIC_PINATA_API_KEY ? false : true,
-  
+  // Pinata Authentication
+  PINATA_API_KEY: process.env.EXPO_PUBLIC_PINATA_API_KEY || '',
+  PINATA_SECRET_KEY: process.env.EXPO_PUBLIC_PINATA_SECRET_KEY || '',
+  PINATA_JWT: process.env.EXPO_PUBLIC_PINATA_JWT || '',
+
   // Pinata gateway URL
   GATEWAY_URL: 'https://gateway.pinata.cloud/ipfs/',
-  
+
   // Alternative public gateways (fallback options)
   PUBLIC_GATEWAYS: [
     'https://gateway.pinata.cloud/ipfs/',
@@ -30,50 +28,61 @@ export const IPFS_CONFIG = {
  * Upload file to IPFS via Pinata
  */
 export async function uploadToIPFS(fileUri: string, fileName: string, fileType: string) {
-  // Mock mode for development/testing
-  if (IPFS_CONFIG.USE_MOCK) {
-    console.log('📦 Using mock IPFS upload (no Pinata credentials configured)');
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate upload delay
-    
-    const mockHash = `QmMock${Date.now()}${Math.random().toString(36).substr(2, 9)}`;
-    return {
-      ipfsHash: mockHash,
-      ipfsUrl: fileUri, // Use local file URI in mock mode
-    };
-  }
-
-  // Real Pinata upload
   try {
     const formData = new FormData();
-    formData.append('file', {
+
+    // Ensure file object is formatted correctly for React Native fetch
+    const fileToUpload = {
       uri: fileUri,
-      type: fileType,
+      type: fileType || 'application/octet-stream',
+      name: fileName || `file_${Date.now()}`,
+    };
+
+    formData.append('file', fileToUpload as any);
+
+    // Optional metadata to help identify files in Pinata dashboard
+    const metadata = JSON.stringify({
       name: fileName,
-    } as any);
+      keyvalues: {
+        platform: 'mobile_app',
+        uploaded_at: new Date().toISOString(),
+      }
+    });
+    formData.append('pinataMetadata', metadata);
+
+    // Set headers - Prefer JWT if available, fallback to Key/Secret
+    const headers: any = {};
+    if (IPFS_CONFIG.PINATA_JWT) {
+      headers['Authorization'] = `Bearer ${IPFS_CONFIG.PINATA_JWT}`;
+    } else {
+      headers['pinata_api_key'] = IPFS_CONFIG.PINATA_API_KEY;
+      headers['pinata_secret_api_key'] = IPFS_CONFIG.PINATA_SECRET_KEY;
+    }
+
+    console.log(`🚀 Uploading ${fileName} to IPFS...`);
 
     const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
       method: 'POST',
-      headers: {
-        'pinata_api_key': IPFS_CONFIG.PINATA_API_KEY,
-        'pinata_secret_api_key': IPFS_CONFIG.PINATA_SECRET_KEY,
-      },
+      headers,
       body: formData,
     });
 
     const result = await response.json();
-    
+
     if (!response.ok) {
-      throw new Error(result.error?.details || 'Failed to upload to IPFS');
+      console.error('IPFS error response:', result);
+      throw new Error(result.error?.details || result.error || 'Failed to upload to IPFS');
     }
-    
+
     if (result.IpfsHash) {
+      console.log(`✅ IPFS Hash received: ${result.IpfsHash}`);
       return {
         ipfsHash: result.IpfsHash,
         ipfsUrl: `${IPFS_CONFIG.GATEWAY_URL}${result.IpfsHash}`,
       };
     }
-    
-    throw new Error('No IPFS hash received');
+
+    throw new Error('No IPFS hash received in Pinata response');
   } catch (error) {
     console.error('IPFS upload error:', error);
     throw error;

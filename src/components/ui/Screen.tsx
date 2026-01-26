@@ -6,6 +6,7 @@ import {
   StatusBar,
   StyleSheet,
   View,
+  RefreshControlProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,7 +15,7 @@ interface ScreenProps {
   backgroundColor?: string;
   padded?: boolean;
   preset?: "fixed" | "scroll";
-  refreshControl?: React.ReactElement;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
 }
 
 export const Screen: React.FC<ScreenProps> = ({

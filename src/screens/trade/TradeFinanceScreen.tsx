@@ -8,10 +8,11 @@ import {
   DraftCertificate,
 } from "@/contexts/TradeFinanceContext";
 import {
+  getAllSupportedTokens,
   useWallet,
   SupportedNetworkId,
-  getAllSupportedTokens,
 } from "@/contexts/WalletContext";
+import { stakingService } from "@/services/stakingService";
 import { NetworkSelector } from "@/components/ui/NetworkSelector";
 import { TokenSelector, TokenInfo } from "@/components/ui/TokenSelector";
 import { CompactNetworkTokenSelector } from "@/components/ui/CompactNetworkTokenSelector";
@@ -60,6 +61,8 @@ interface PoolGuaranteeForm {
   contractDate: string;
   proformaInvoice: any;
   salesContract: any;
+  proformaInvoiceIpfs?: { hash: string; url: string };
+  salesContractIpfs?: { hash: string; url: string };
 }
 
 // Application and DraftCertificate interfaces now come from context
@@ -67,268 +70,11 @@ interface PoolGuaranteeForm {
 type NavigationProp = StackNavigationProp<TradeStackParamList, "TradeFinance">;
 type RouteProps = RouteProp<TradeStackParamList, "TradeFinance">;
 
-// Dummy applications data for testing buyer view
-const DUMMY_BUYER_APPLICATIONS = [
-  {
-    id: "app-buyer-1",
-    requestId: "PG-1762503009626-PI4MD88",
-    guaranteeNo: "PG-1762503009626-PI4MD88",
-    applicant: {
-      company: "ACME Imports Ltd.",
-      registration: "REG-123456",
-      country: "United States",
-      contact: "Alice Buyer",
-      email: "alice@acmeimports.com",
-      walletAddress: "0x759ed3d2...fe5e5582a",
-    },
-    beneficiary: {
-      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
-      name: "Global Exports Co.",
-    },
-    tradeDescription: "Import of 1,000 widgets from EU",
-    collateralDescription: "Half percent of the goods as collateral",
-    guaranteeAmount: "8000.00 USDC",
-    collateralValue: "40.00 USDC",
-    financingDuration: 90,
-    contractNumber: "SC-2025-001",
-    paymentDueDate: "12/4/2025",
-    status: "Awaiting Seller Approval",
-    currentStage: 2, // Draft Sent stage
-    issuanceFee: "80.00 USDC (1%)",
-    submittedDate: "Jan 16, 2025",
-    content: `[BlockFinaX Treasury Pool]\n\nIRREVOCABLE POOL GUARANTEE\n\nGuarantee No: PG-1762503009626-PI4MD88\nDate of Issue: January 16, 2025\n\nWE, BLOCKFINAX TREASURY POOL, hereby irrevocably and unconditionally guarantee payment of up to Eight Thousand United States Dollars (USD 8,000.00) to the Beneficiary named below.\n\nAPPLICANT DETAILS:\nName: ACME Imports Ltd.\nRegistration: REG-123456\nCountry: United States\n\nBENEFICIARY:\nWallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d\nName: Global Exports Co.\n\nUNDERLYING TRANSACTION:\nPurpose: Import of 1,000 widgets from EU\nContract Number: SC-2025-001\nTrade Value: USD 8,000.00\n\nThis guarantee is governed by the ICC Uniform Rules for Demand Guarantees (URDG 758) and is valid for 90 days from the date of issue.\n\nAny claim under this guarantee must be submitted in writing with supporting documentation before the expiry date.\n\nTHIS IS A DIGITALLY VERIFIED POOL GUARANTEE\nBlockchain Network: Ethereum Sepolia\nSmart Contract: 0x...\n\nFor BlockFinaX Treasury Pool\n[Digital Signature]`,
-    proformaInvoiceIpfs: {
-      hash: "QmX7Yn9K2vPqw3ZRt8Hm5kL9Jn4Wp6Vb2Xq1Yz5Tc8Kd3",
-      url: "https://gateway.pinata.cloud/ipfs/QmX7Yn9K2vPqw3ZRt8Hm5kL9Jn4Wp6Vb2Xq1Yz5Tc8Kd3",
-    },
-    salesContractIpfs: {
-      hash: "QmP4Bf9N3vLm2Wn6Tp5Vk8Jc7Xr1Hq9Yz4Kd6Mb3Lp2Nq8",
-      url: "https://gateway.pinata.cloud/ipfs/QmP4Bf9N3vLm2Wn6Tp5Vk8Jc7Xr1Hq9Yz4Kd6Mb3Lp2Nq8",
-    },
-  },
-  {
-    id: "app-buyer-2",
-    requestId: "PG-1762504120837-XM9PL22",
-    guaranteeNo: "PG-1762504120837-XM9PL22",
-    applicant: {
-      company: "Tech Supply Inc.",
-      registration: "REG-789012",
-      country: "Canada",
-      contact: "Bob Chen",
-      email: "bob@techsupply.ca",
-      walletAddress: "0x8a3c5e9d...ab2f7691c",
-    },
-    beneficiary: {
-      walletAddress: "0x2b8f4c7a9d3e6b1f5a8c4d7e2f9b6a3c8e1d4f7b",
-      name: "Asian Electronics Ltd.",
-    },
-    tradeDescription: "Purchase of 500 electronic components",
-    collateralDescription: "Electronics inventory as collateral",
-    guaranteeAmount: "5000.00 USDC",
-    collateralValue: "25.00 USDC",
-    financingDuration: 60,
-    contractNumber: "SC-2025-002",
-    paymentDueDate: "11/28/2025",
-    status: "Fee Paid - Awaiting Certificate",
-    currentStage: 4, // Fee Paid stage
-    issuanceFee: "50.00 USDC (1%)",
-    submittedDate: "Jan 10, 2025",
-    content: `[BlockFinaX Treasury Pool]\n\nIRREVOCABLE POOL GUARANTEE\n\nGuarantee No: PG-1762504120837-XM9PL22\nDate of Issue: January 10, 2025\n\nWE, BLOCKFINAX TREASURY POOL, hereby irrevocably and unconditionally guarantee payment of up to Five Thousand United States Dollars (USD 5,000.00) to the Beneficiary named below.\n\nAPPLICANT DETAILS:\nName: Tech Supply Inc.\nRegistration: REG-789012\nCountry: Canada\n\nBENEFICIARY:\nWallet Address: 0x2b8f4c7a9d3e6b1f5a8c4d7e2f9b6a3c8e1d4f7b\nName: Asian Electronics Ltd.\n\nUNDERLYING TRANSACTION:\nPurpose: Purchase of 500 electronic components\nContract Number: SC-2025-002\nTrade Value: USD 5,000.00\n\nThis guarantee is governed by the ICC Uniform Rules for Demand Guarantees (URDG 758) and is valid for 60 days from the date of issue.`,
-    proformaInvoiceIpfs: {
-      hash: "QmT8Zm5L3wQn4Vp7Yk9Jm6Bc2Xd5Np8Lq1Tr4Km7Wp3Hf9",
-      url: "https://gateway.pinata.cloud/ipfs/QmT8Zm5L3wQn4Vp7Yk9Jm6Bc2Xd5Np8Lq1Tr4Km7Wp3Hf9",
-    },
-    salesContractIpfs: {
-      hash: "QmR2Hm8N4vKp7Wq3Yd6Lm9Jc5Xn2Bp4Fq8Tr1Km6Np5Lp7",
-      url: "https://gateway.pinata.cloud/ipfs/QmR2Hm8N4vKp7Wq3Yd6Lm9Jc5Xn2Bp4Fq8Tr1Km6Np5Lp7",
-    },
-  },
-];
-
-// Dummy draft data for testing seller view
-const DUMMY_DRAFTS = [
-  {
-    id: "draft-1",
-    requestId: "PG-1762503009626-PI4MD88",
-    guaranteeNo: "PG-1762503009626-PI4MD88",
-    applicant: {
-      company: "ACME Imports Ltd.",
-      registration: "REG-123456",
-      country: "United States",
-      contact: "Alice Buyer",
-      email: "alice@acmeimports.com",
-      phone: "+1 234 567 8900",
-      walletAddress: "0x759ed3d2...fe5e5582a",
-      applicationDate: "Nov 16, 2025",
-    },
-    beneficiary: {
-      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
-    },
-    tradeDescription: "Import of 1,000 widgets from EU",
-    collateralDescription: "Half percent of the goods as collateral",
-    guaranteeAmount: "8000.00 USDC",
-    collateralValue: "0.40 USDC",
-    financingDuration: 90,
-    contractNumber: "SC-2025-001",
-    paymentDueDate: "12/4/2025",
-    status: "SENT TO SELLER",
-    currentStage: 2, // Draft Sent stage
-    issuanceFee: "80.00 USDC (1%)",
-    content: `[BlockFinaX Treasury Pool]
-
-IRREVOCABLE POOL GUARANTEE
-
-═══════════════════════════════════════════════════════════════════════
-
-To: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
-
-Date: 2025-11-07
-
-───────────────────────────────────────────────────────────────────────
-
-– TYPE OF GUARANTEE: Performance Guarantee (Goods-as-Collateral Pool Guarantee)
-– GUARANTEE NO.: PG-1762503009626-PI4MD88
-– THE GUARANTOR: BlockFinaX Treasury Pool
-   Pool Contract Address: [Treasury Pool Smart Contract]
-   Place of Issue: Base Sepolia Blockchain Network
-   Status: DRAFT - Subject to Seller Approval and Fee Payment
-   
-– THE APPLICANT (Principal/Buyer):
-   Company: ACME Imports Ltd.
-   Registration: REG-123456
-   Country: United States
-   Contact: Alice Buyer
-   Email: alice@acmeimports.com
-   Wallet Address: 0x759ed3d2...fe5e5582a
-   
-– THE BENEFICIARY (Seller):
-   Wallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
-   
-– TRADE DESCRIPTION:
-   Import of 1,000 widgets from EU
-   Total Trade Value: 16,000.00 USDC
-   Contract Number: SC-2025-001
-   
-– GUARANTEE AMOUNT: 8,000.00 USDC (50% of trade value)
-   
-– COLLATERAL:
-   Description: Half percent of the goods as collateral
-   Estimated Value: 0.40 USDC
-   
-– FINANCING DURATION: 90 days
-   Payment Due Date: 12/4/2025
-   
-– ISSUANCE FEE: 80.00 USDC (1% of guarantee amount)
-   Payable by: Applicant (Buyer)
-   Payment Status: PENDING - Due upon seller approval
-   
-– TERMS & CONDITIONS:
-   1. This guarantee becomes effective upon seller approval and buyer fee payment
-   2. The guarantee is irrevocable once activated
-   3. Payment is guaranteed by the BlockFinaX Treasury Pool
-   4. Seller must ship goods within 30 days of certificate issuance
-   5. Buyer must confirm delivery within 7 days of receipt
-   6. Invoice settlement triggers release of guarantee
-   
-– RISK & OBLIGATIONS:
-   • Buyer pays 30% issuance fee and posts 10% collateral
-   • Seller accepts 5% risk exposure and posts 5% collateral
-   • Treasury pool covers 60% backed by staked capital
-   • All parties protected by smart contract enforcement
-   
-═══════════════════════════════════════════════════════════════════════
-
-Issued by: BlockFinaX Treasury Pool
-Blockchain: Base Sepolia Network
-Smart Contract: [Diamond Proxy Address]
-Timestamp: 2025-11-07 14:30:15 UTC
-
-This is a legally binding instrument subject to ICC URDG 758 rules.`,
-  },
-  {
-    id: "draft-2",
-    requestId: "PG-1763321117688-XYZ123",
-    guaranteeNo: "PG-1763321117688-XYZ123",
-    applicant: {
-      company: "XYZ LTD",
-      registration: "REG-789012",
-      country: "Nigeria",
-      contact: "Bilal",
-      email: "bilal@xyzltd.com",
-      phone: "+234 123 456 789",
-      walletAddress: "0x324ffda4...b9f141",
-      applicationDate: "Nov 16, 2025",
-    },
-    beneficiary: {
-      walletAddress: "0xef5bed7c221c85a2c88e3c0223ee45482d6f037d",
-    },
-    tradeDescription: "Import of Cloth from Ghana",
-    collateralDescription: "Goods as collateral",
-    guaranteeAmount: "4.00 USDC",
-    collateralValue: "0.40 USDC",
-    financingDuration: 30,
-    contractNumber: "SC-2025-002",
-    paymentDueDate: "12/16/2025",
-    status: "SENT TO SELLER",
-    currentStage: 3, // Approved stage (for testing different stages)
-    issuanceFee: "0.04 USDC (1%)",
-    content: `[BlockFinaX Treasury Pool]
-
-IRREVOCABLE POOL GUARANTEE
-
-═══════════════════════════════════════════════════════════════════════
-
-To: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
-
-Date: 2025-11-16
-
-───────────────────────────────────────────────────────────────────────
-
-– TYPE OF GUARANTEE: Performance Guarantee (Goods-as-Collateral Pool Guarantee)
-– GUARANTEE NO.: PG-1763321117688-XYZ123
-– THE GUARANTOR: BlockFinaX Treasury Pool
-   Pool Contract Address: [Treasury Pool Smart Contract]
-   Place of Issue: Base Sepolia Blockchain Network
-   Status: APPROVED - Awaiting buyer fee payment
-   
-– THE APPLICANT (Principal/Buyer):
-   Company: XYZ LTD
-   Registration: REG-789012
-   Country: Nigeria
-   Contact: Bilal
-   Email: bilal@xyzltd.com
-   Wallet Address: 0x324ffda4...b9f141
-   
-– THE BENEFICIARY (Seller):
-   Wallet Address: 0xef5bed7c221c85a2c88e3c0223ee45482d6f037d
-   
-– TRADE DESCRIPTION:
-   Import of Cloth from Ghana
-   Total Trade Value: 8.00 USDC
-   Contract Number: SC-2025-002
-   
-– GUARANTEE AMOUNT: 4.00 USDC (50% of trade value)
-   
-– COLLATERAL:
-   Description: Goods as collateral
-   Estimated Value: 0.40 USDC
-   
-– FINANCING DURATION: 30 days
-   Payment Due Date: 12/16/2025
-   
-– ISSUANCE FEE: 0.04 USDC (1% of guarantee amount)
-   Payable by: Applicant (Buyer)
-   Payment Status: PENDING
-   
-═══════════════════════════════════════════════════════════════════════`,
-  },
-];
 
 export const TradeFinanceScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProps>();
 
-  // Use the shared context for real-time data
   const {
     applications,
     setApplications,
@@ -344,9 +90,35 @@ export const TradeFinanceScreen = () => {
     completeTransaction,
     updateApplicationStage,
     saveDraft,
+    fetchBlockchainData,
+    createPGABlockchain,
+    votePGABlockchain,
+    sellerVotePGABlockchain,
+    payCollateralBlockchain,
+    confirmGoodsShippedBlockchain,
+    payBalancePaymentBlockchain,
+    issueCertificateBlockchain,
+    createDeliveryAgreementBlockchain,
+    buyerConsentToDeliveryBlockchain,
+    releasePaymentToSellerBlockchain,
   } = useTradeFinance();
 
-  const [userRole, setUserRole] = useState<"buyer" | "seller">("buyer");
+  const { selectedNetwork, address } = useWallet();
+  const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
+    selectedNetwork?.stablecoins?.[0]
+      ? {
+          symbol: selectedNetwork.stablecoins[0].symbol,
+          name: selectedNetwork.stablecoins[0].name,
+          address: selectedNetwork.stablecoins[0].address,
+          decimals: selectedNetwork.stablecoins[0].decimals,
+          targetPeg: 1.0,
+        }
+      : null,
+  );
+  const tokenSymbol = selectedToken?.symbol || "USDC";
+
+  const [userRole, setUserRole] = useState<"buyer" | "seller" | "financier" | "logistics">("buyer");
+  const [isFinancier, setIsFinancier] = useState(false);
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
@@ -366,14 +138,14 @@ export const TradeFinanceScreen = () => {
     useState<any>(null);
 
   const [poolBalance] = useState({
-    balance: "223.76 USDC",
+    balance: `223.76 ${tokenSymbol}`,
     liveBalance: "Live blockchain balance",
-    stakedInDB: "Staked in DB: 100.00 USDC",
+    stakedInDB: `Staked in DB: 100.00 ${tokenSymbol}`,
   });
 
   const [guaranteeStats] = useState({
     pending: 0,
-    totalGuaranteed: "241.00 USDC",
+    totalGuaranteed: `241.00 ${tokenSymbol}`,
     approved: 0,
     inProgress: 0,
     totalApproved: 0,
@@ -399,21 +171,18 @@ export const TradeFinanceScreen = () => {
     salesContract: null,
   });
 
-  // Applications and drafts now come from context - no local state needed
-
-  // Load dummy data for testing
+  // Check financier status
   useEffect(() => {
-    if (userRole === "seller" && drafts.length === 0) {
-      DUMMY_DRAFTS.forEach((draft) =>
-        setDrafts((prev) => [...prev, draft as any]),
-      );
-    }
-    if (userRole === "buyer" && applications.length === 0) {
-      DUMMY_BUYER_APPLICATIONS.forEach((app) =>
-        setApplications((prev) => [...prev, app as any]),
-      );
-    }
-  }, [userRole]);
+    const checkFinancier = async () => {
+      if (address) {
+        const status = await stakingService.isFinancier(address);
+        setIsFinancier(status);
+      }
+    };
+    checkFinancier();
+  }, [address]);
+
+  // No local state for apps/drafts - all from context
 
   const handleSellerDraftApprove = () => {
     Alert.alert(
@@ -456,90 +225,6 @@ export const TradeFinanceScreen = () => {
     );
   };
 
-  const handleBuyerPayFee = () => {
-    Alert.alert(
-      "Pay Issuance Fee",
-      "Processing payment of issuance fee. In production, this will connect to your wallet.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Pay",
-          onPress: () => {
-            showToast(
-              "Fee payment successful! Certificate is being generated.",
-            );
-            // Update application stage
-            if (selectedBuyerApplication) {
-              setSelectedBuyerApplication({
-                ...selectedBuyerApplication,
-                currentStage: 4,
-                status: "Fee Paid - Awaiting Certificate",
-              });
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  const handleBuyerPayInvoice = () => {
-    Alert.alert(
-      "Pay Invoice",
-      "Processing invoice payment. In production, this will connect to your wallet.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Pay",
-          onPress: () => {
-            showToast("Invoice payment successful! Transaction complete.");
-            // Update application stage
-            if (selectedBuyerApplication) {
-              setSelectedBuyerApplication({
-                ...selectedBuyerApplication,
-                currentStage: 9,
-                status: "Payment Complete",
-              });
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  const handleBuyerConfirmDelivery = () => {
-    Alert.alert(
-      "Confirm Delivery",
-      "Have you received and inspected the goods?",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Confirm",
-          onPress: () => {
-            showToast(
-              "Delivery confirmed! You can now proceed to pay the invoice.",
-            );
-            // Update application stage
-            if (selectedBuyerApplication) {
-              setSelectedBuyerApplication({
-                ...selectedBuyerApplication,
-                currentStage: 7,
-                status: "Delivery Confirmed - Pay Invoice",
-              });
-            }
-          },
-        },
-      ],
-    );
-  };
 
   const showToast = (message: string) => {
     if (Platform.OS === "android") {
@@ -556,43 +241,18 @@ export const TradeFinanceScreen = () => {
         route.params.paymentResult;
 
       if (success && applicationId) {
+        const app = applications.find(a => a.id === applicationId);
+        const amount = app ? (paymentType === "fee" ? app.collateralValue : app.tradeValue).split(" ")[0] : "0";
+
         switch (paymentType) {
           case "fee":
-            // Update application status after fee payment
-            setApplications((prev) =>
-              prev.map((app) =>
-                app.id === applicationId
-                  ? { ...app, status: "Awaiting Certificate" }
-                  : app,
-              ),
-            );
-            showToast("Fee payment successful! Certificate issuance pending.");
+            showToast("Issuance fee paid to Treasury! Treasury delegators will now issue the certificate.");
             break;
 
           case "invoice":
-            // Update application status after invoice payment
-            setApplications((prev) =>
-              prev.map((app) =>
-                app.id === applicationId ? { ...app, status: "Fee Paid" } : app,
-              ),
-            );
-            showToast(
-              "Invoice payment successful! Transaction is being processed.",
-            );
-            break;
-
           case "settlement":
-            // Update application status after settlement payment
-            setApplications((prev) =>
-              prev.map((app) =>
-                app.id === applicationId
-                  ? { ...app, status: "Invoice Settled" }
-                  : app,
-              ),
-            );
-            showToast(
-              "Settlement payment successful! Certificate will be issued.",
-            );
+            payBalancePaymentBlockchain(applicationId, amount).catch(console.error);
+            showToast("Processing balance payment on-chain...");
             break;
         }
       }
@@ -600,7 +260,7 @@ export const TradeFinanceScreen = () => {
       // Clear the payment result params
       navigation.setParams({ paymentResult: undefined } as any);
     }
-  }, [route.params?.paymentResult, navigation, setApplications]);
+  }, [route.params?.paymentResult, navigation, applications]);
 
   // Progress Indicator Component
   const renderProgressIndicator = (application: Application) => {
@@ -705,12 +365,8 @@ export const TradeFinanceScreen = () => {
   };
 
   // Network and Token Selector Handlers
-  const { selectedNetwork } = useWallet();
   const [currentNetworkId, setCurrentNetworkId] =
     useState<SupportedNetworkId | null>(selectedNetwork?.id || null);
-  const [selectedToken, setSelectedToken] = useState<StablecoinConfig | null>(
-    null,
-  );
 
   const availableTokens = React.useMemo(() => {
     if (!currentNetworkId) return [];
@@ -823,226 +479,61 @@ export const TradeFinanceScreen = () => {
     }
   };
 
-  const handleSubmitApplication = () => {
-    const requiredFields = [
-      "companyName",
-      "registrationNumber",
-      "contactPerson",
-      "email",
-      "tradeDescription",
-      "totalTradeValue",
-      "guaranteeAmount",
-    ];
-    const missingFields = requiredFields.filter(
-      (field) => !applicationForm[field as keyof PoolGuaranteeForm],
-    );
+  const handleSubmitApplication = async (data: PoolGuaranteeForm) => {
+    try {
+      const pgaId = `PG-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+      
+      await createPGABlockchain({
+        pgaId,
+        seller: data.sellerWalletAddress,
+        companyName: data.companyName,
+        registrationNumber: data.registrationNumber,
+        tradeDescription: data.tradeDescription,
+        tradeValue: data.totalTradeValue,
+        guaranteeAmount: data.guaranteeAmount,
+        collateralAmount: data.collateralValue || (parseFloat(data.guaranteeAmount) * 0.1).toString(),
+        duration: parseInt(data.financingDuration) || 90,
+        beneficiaryName: data.contactPerson, // Using contact person as name for now
+        beneficiaryWallet: data.sellerWalletAddress,
+        metadataURI: "ipfs://dummy",
+        documentURIs: [
+          data.proformaInvoiceIpfs?.hash ? `ipfs://${data.proformaInvoiceIpfs.hash}` : "",
+          data.salesContractIpfs?.hash ? `ipfs://${data.salesContractIpfs.hash}` : ""
+        ].filter(Boolean)
+      });
 
-    if (missingFields.length > 0) {
-      Alert.alert("Missing Information", "Please fill in all required fields.");
-      return;
+      setShowApplicationModal(false);
+      showToast("Application submitted to blockchain successfully!");
+    } catch (error: any) {
+      console.error("Submit application error:", error);
+      Alert.alert("Error", error.message || "Failed to submit application");
     }
-
-    if (!applicationForm.proformaInvoice || !applicationForm.salesContract) {
-      Alert.alert(
-        "Missing Documents",
-        "Please upload both Proforma Invoice and Sales Contract.",
-      );
-      return;
-    }
-
-    // Generate new application
-    const newApplication: Application = {
-      id: `app-${Date.now()}`,
-      requestId: `PG-${Date.now()}-${Math.random()
-        .toString(36)
-        .substr(2, 6)
-        .toUpperCase()}`,
-      companyName: applicationForm.companyName,
-      guaranteeAmount: `${applicationForm.guaranteeAmount} USDC`,
-      tradeValue: `${applicationForm.totalTradeValue} USDC`,
-      status: "Pending Draft",
-      submittedDate: new Date().toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-      contractNumber: applicationForm.contractNumber,
-      tradeDescription: applicationForm.tradeDescription,
-      buyer: {
-        company: applicationForm.companyName,
-        registration: applicationForm.registrationNumber,
-        country: applicationForm.country,
-        contact: applicationForm.contactPerson,
-        email: applicationForm.email,
-        phone: applicationForm.phone,
-        walletAddress: "0x759ed3d2cc67a0de53a0cce270a9e0fef5e5582a", // Current user wallet
-        applicationDate: new Date().toLocaleDateString("en-US"),
-      },
-      seller: {
-        walletAddress: applicationForm.sellerWalletAddress,
-      },
-      applicationDate: new Date().toLocaleDateString("en-US"),
-      paymentDueDate: new Date(
-        Date.now() +
-          (parseInt(applicationForm.financingDuration) || 90) *
-            24 *
-            60 *
-            60 *
-            1000,
-      ).toLocaleDateString("en-US"),
-      financingDuration: parseInt(applicationForm.financingDuration) || 90,
-      issuanceFee: `${(
-        parseFloat(applicationForm.guaranteeAmount) * 0.01
-      ).toFixed(2)} USDC`,
-      collateralDescription: applicationForm.collateralDescription,
-      collateralValue: applicationForm.collateralValue,
-
-      // Initialize new fields for complete flow
-      currentStage: 1,
-      isDraft: true,
-      lastUpdated: new Date().toISOString(),
-    };
-
-    setApplications((prev) => [newApplication, ...prev]);
-
-    // Also create a draft certificate for seller approval
-    const newDraft: DraftCertificate = {
-      id: `draft-${Date.now()}`,
-      requestId: newApplication.requestId,
-      guaranteeNo: newApplication.requestId,
-      applicant: newApplication.buyer,
-      beneficiary: newApplication.seller,
-      tradeDescription: applicationForm.tradeDescription,
-      collateralDescription: applicationForm.collateralDescription,
-      guaranteeAmount: `${applicationForm.guaranteeAmount} USDC`,
-      collateralValue: applicationForm.collateralValue,
-      financingDuration: parseInt(applicationForm.financingDuration) || 90,
-      contractNumber: applicationForm.contractNumber,
-      contractDate:
-        applicationForm.contractDate || new Date().toLocaleDateString("en-US"),
-      paymentDueDate: new Date(
-        Date.now() +
-          (parseInt(applicationForm.financingDuration) || 90) *
-            24 *
-            60 *
-            60 *
-            1000,
-      ).toLocaleDateString("en-US"),
-      status: "SENT TO SELLER",
-      issuanceFee: `${(
-        parseFloat(applicationForm.guaranteeAmount) * 0.01
-      ).toFixed(2)} USDC`,
-      content: `Pool Guarantee Certificate - ${newApplication.requestId}
-Company: ${applicationForm.companyName}
-Amount: ${applicationForm.guaranteeAmount} USDC
-Trade: ${applicationForm.tradeDescription}
-Status: AWAITING SELLER APPROVAL`,
-    };
-
-    setDrafts((prev) => [newDraft, ...prev]);
-
-    Alert.alert(
-      "Application Submitted",
-      "Your pool guarantee application has been submitted. A draft certificate has been sent to the seller for approval.",
-      [
-        {
-          text: "OK",
-          onPress: () => {
-            setShowApplicationModal(false);
-            setApplicationForm({
-              companyName: "",
-              registrationNumber: "",
-              country: "",
-              contactPerson: "",
-              email: "",
-              phone: "",
-              tradeDescription: "",
-              totalTradeValue: "",
-              guaranteeAmount: "",
-              collateralDescription: "",
-              collateralValue: "",
-              sellerWalletAddress: "",
-              financingDuration: "",
-              contractNumber: "",
-              contractDate: "",
-              proformaInvoice: null,
-              salesContract: null,
-            });
-            showToast("Application submitted successfully!");
-          },
-        },
-      ],
-    );
   };
 
-  const handleDraftApproval = (draftId: string, approved: boolean) => {
-    if (approved) {
-      // Update the draft status
-      const approvedDraft = drafts.find((draft) => draft.id === draftId);
-
-      setDrafts((prev) =>
-        prev.map((draft) =>
-          draft.id === draftId
-            ? { ...draft, status: "AWAITING FEE PAYMENT" }
-            : draft,
-        ),
-      );
-
-      // Create a real application for the buyer when seller approves
-      if (approvedDraft) {
-        const newApplication: Application = {
-          id: `app-${Date.now()}`,
-          requestId: approvedDraft.requestId,
-          companyName: approvedDraft.applicant.company,
-          guaranteeAmount: approvedDraft.guaranteeAmount,
-          tradeValue:
-            (
-              parseFloat(approvedDraft.guaranteeAmount.replace(" USDC", "")) *
-              1.75
-            ).toFixed(2) + " USDC", // Calculate from guarantee amount
-          status: "Awaiting Fee Payment",
-          submittedDate: new Date().toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          }),
-          contractNumber: approvedDraft.contractNumber,
-          tradeDescription: approvedDraft.tradeDescription,
-          buyer: approvedDraft.applicant,
-          seller: approvedDraft.beneficiary,
-          applicationDate: approvedDraft.applicant.applicationDate,
-          paymentDueDate: approvedDraft.paymentDueDate,
-          financingDuration: approvedDraft.financingDuration,
-          issuanceFee: approvedDraft.issuanceFee,
-          collateralDescription: approvedDraft.collateralDescription,
-          collateralValue: approvedDraft.collateralValue,
-
-          // Add missing required properties
-          currentStage: 2,
-          isDraft: false,
-          lastUpdated: new Date().toISOString(),
-        };
-
-        setApplications((prev) => [newApplication, ...prev]);
-      }
-
-      showToast(
-        "Draft approved successfully! Buyer will be notified to pay the issuance fee.",
-      );
-    } else {
-      setDrafts((prev) => prev.filter((draft) => draft.id !== draftId));
-      showToast("Draft rejected.");
+  const handleDraftApproval = async (draftId: string, approved: boolean) => {
+    try {
+      await sellerVotePGABlockchain(draftId, approved);
+      showToast(approved ? "Draft approved on blockchain!" : "Draft rejected on blockchain.");
+      setShowSellerDraftView(false);
+      setSelectedSellerDraft(null);
+    } catch (error: any) {
+      console.error("Draft approval error:", error);
+      Alert.alert("Error", error.message || "Failed to vote on draft");
     }
   };
 
   const handlePayFee = (application: Application) => {
+    // 10% issuance fee calculated from guarantee amount
+    const feeAmount = parseFloat(application.guaranteeAmount.split(" ")[0]) * 0.1;
+    const diamondAddress = selectedNetwork?.diamondAddress || "0x0000000000000000000000000000000000000000";
+
     // Navigate to payment screen with fee payment parameters
     navigation.navigate("TradeFinancePayment", {
       paymentType: "fee",
-      feeAmount: 50, // Standard application fee
-      feeRecipient: "0x1234567890123456789012345678901234567890", // Platform fee address
+      feeAmount: feeAmount, 
+      feeRecipient: diamondAddress, // Pay to Treasury (Diamond)
       applicationId: application.id,
-      preferredToken: "USDC",
+      preferredToken: tokenSymbol,
     });
   };
 
@@ -1052,17 +543,17 @@ Status: AWAITING SELLER APPROVAL`,
     // Navigate to payment screen for invoice payment
     navigation.navigate("TradeFinancePayment", {
       paymentType: "invoice",
-      invoiceAmount: parseFloat(selectedApplication.tradeValue),
+      invoiceAmount: parseFloat(selectedApplication.tradeValue.split(" ")[0]),
       supplierAddress: selectedApplication.seller.walletAddress,
       invoiceId: selectedApplication.id,
-      preferredToken: "USDC",
+      preferredToken: tokenSymbol,
     });
   };
 
   const openSettlementModal = (application: Application) => {
     // Calculate remaining amount (total - guarantee amount)
-    const totalValue = parseFloat(application.tradeValue);
-    const guaranteeAmount = parseFloat(application.guaranteeAmount);
+    const totalValue = parseFloat(application.tradeValue.split(" ")[0]);
+    const guaranteeAmount = parseFloat(application.guaranteeAmount.split(" ")[0]);
     const remainingAmount = totalValue - guaranteeAmount;
 
     // Navigate to payment screen for settlement
@@ -1070,7 +561,7 @@ Status: AWAITING SELLER APPROVAL`,
       paymentType: "settlement",
       settlementAmount: remainingAmount,
       settlementAddress: application.seller.walletAddress,
-      preferredToken: "USDC",
+      preferredToken: tokenSymbol,
     });
   };
 
@@ -1092,42 +583,14 @@ Status: AWAITING SELLER APPROVAL`,
   };
 
   // Stage 5: Certificate Issuance Handler
-  const handleCertificateIssuance = (application: Application) => {
-    const certificateContent = `
-POOL GUARANTEE CERTIFICATE - ${application.requestId}
-
-This certificate confirms that the following guarantee has been approved and issued:
-
-APPLICANT INFORMATION:
-Company: ${application.buyer.company}
-Registration: ${application.buyer.registration}
-Country: ${application.buyer.country}
-Contact: ${application.buyer.contact}
-
-GUARANTEE DETAILS:
-Guarantee Amount: ${application.guaranteeAmount}
-Trade Value: ${application.tradeValue}
-Trade Description: ${application.tradeDescription}
-Collateral: ${application.collateralDescription}
-Collateral Value: ${application.collateralValue}
-
-CONTRACT INFORMATION:
-Contract Number: ${application.contractNumber}
-Application Date: ${application.applicationDate}
-Payment Due Date: ${application.paymentDueDate}
-Financing Duration: ${application.financingDuration} days
-
-ISSUANCE DETAILS:
-Issuance Date: ${new Date().toLocaleDateString("en-US")}
-Issuance Fee: ${application.issuanceFee}
-Status: CERTIFICATE ISSUED
-
-This certificate is valid and backed by the BlockFinaX treasury pool.
-    `;
-
-    issueCertificate(application.id, certificateContent);
-    updateApplicationStage(application.id, 5);
-    showToast("Certificate has been successfully issued!");
+  const handleCertificateIssuance = async (application: Application) => {
+    try {
+      await issueCertificateBlockchain(application.id);
+      showToast("Certificate request submitted to blockchain!");
+    } catch (error: any) {
+      console.error("Certificate issuance error:", error);
+      Alert.alert("Error", error.message || "Failed to issue certificate");
+    }
   };
 
   // Stage 6: Shipping Confirmation Handler
@@ -1144,30 +607,36 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
     setShowShippingModal(true);
   };
 
-  const processShippingConfirmation = () => {
+  const processShippingConfirmation = async () => {
     if (!selectedApplication) return;
 
-    const shippingDetails = {
-      trackingNumber: shippingForm.trackingNumber,
-      carrier: shippingForm.carrier,
-      shippingDate:
-        shippingForm.shippingDate || new Date().toLocaleDateString("en-US"),
-      documents: shippingForm.documents,
-    };
+    try {
+      await confirmGoodsShippedBlockchain(selectedApplication.id, shippingForm.carrier);
+      
+      const shippingDetails = {
+        trackingNumber: shippingForm.trackingNumber,
+        carrier: shippingForm.carrier,
+        shippingDate:
+          shippingForm.shippingDate || new Date().toLocaleDateString("en-US"),
+        documents: shippingForm.documents,
+      };
 
-    updateShippingDetails(selectedApplication.id, shippingDetails);
-    updateApplicationStage(selectedApplication.id, 6);
+      updateShippingDetails(selectedApplication.id, shippingDetails);
+      
+      setShowShippingModal(false);
+      setSelectedApplication(null);
+      setShippingForm({
+        trackingNumber: "",
+        carrier: "",
+        shippingDate: "",
+        documents: [],
+      });
 
-    setShowShippingModal(false);
-    setSelectedApplication(null);
-    setShippingForm({
-      trackingNumber: "",
-      carrier: "",
-      shippingDate: "",
-      documents: [],
-    });
-
-    showToast("Shipping confirmation uploaded successfully!");
+      showToast("Shipping confirmed on-chain successfully!");
+    } catch (error: any) {
+      console.error("Shipping confirmation error:", error);
+      Alert.alert("Error", error.message || "Failed to confirm shipping on-chain");
+    }
   };
 
   // Stage 7: Delivery Confirmation Handler
@@ -1178,16 +647,18 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
     setShowDeliveryModal(true);
   };
 
-  const processDeliveryConfirmation = (confirmedBy: "buyer" | "seller") => {
-    if (!selectedApplication) return;
+  const processDeliveryConfirmation = async (confirmedBy: string) => {
+    if (!selectedApplication || !selectedApplication.deliveryAgreementId) return;
 
-    confirmDelivery(selectedApplication.id, confirmedBy);
-    updateApplicationStage(selectedApplication.id, 7);
-
-    setShowDeliveryModal(false);
-    setSelectedApplication(null);
-
-    showToast(`Delivery confirmed by ${confirmedBy}!`);
+    try {
+      await buyerConsentToDeliveryBlockchain(selectedApplication.deliveryAgreementId, true);
+      showToast(`Delivery confirmed by ${confirmedBy}!`);
+      setShowDeliveryModal(false);
+      setSelectedApplication(null);
+    } catch (error: any) {
+      console.error("Delivery confirmation error:", error);
+      Alert.alert("Error", error.message || "Failed to confirm delivery");
+    }
   };
 
   // Stage 8: Transaction Completion Handler
@@ -1198,16 +669,23 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
     setShowCompletionModal(true);
   };
 
-  const processTransactionCompletion = () => {
+  const processTransactionCompletion = async () => {
     if (!selectedApplication) return;
 
-    const finalAmount = selectedApplication.tradeValue;
-    completeTransaction(selectedApplication.id, finalAmount);
+    try {
+      await releasePaymentToSellerBlockchain(selectedApplication.id);
+      
+      const finalAmount = selectedApplication.tradeValue;
+      completeTransaction(selectedApplication.id, finalAmount);
 
-    setShowCompletionModal(false);
-    setSelectedApplication(null);
+      setShowCompletionModal(false);
+      setSelectedApplication(null);
 
-    showToast("Transaction completed successfully!");
+      showToast("Payment released to seller successfully!");
+    } catch (error: any) {
+      console.error("Completion error:", error);
+      Alert.alert("Error", error.message || "Failed to release payment on-chain");
+    }
   };
 
   // Document Upload Handler
@@ -1292,6 +770,38 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
             </Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Role Selection Slider */}
+      <View style={styles.roleSelector}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roleTabsContainer}>
+          <TouchableOpacity 
+            style={[styles.roleTab, userRole === "buyer" && styles.roleTabActive]} 
+            onPress={() => setUserRole("buyer")}
+          >
+            <Text style={[styles.roleTabText, userRole === "buyer" && styles.roleTabTextActive]}>Buyer</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.roleTab, userRole === "seller" && styles.roleTabActive]} 
+            onPress={() => setUserRole("seller")}
+          >
+            <Text style={[styles.roleTabText, userRole === "seller" && styles.roleTabTextActive]}>Seller</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.roleTab, userRole === "logistics" && styles.roleTabActive]} 
+            onPress={() => setUserRole("logistics")}
+          >
+            <Text style={[styles.roleTabText, userRole === "logistics" && styles.roleTabTextActive]}>Logistics</Text>
+          </TouchableOpacity>
+          {isFinancier && (
+            <TouchableOpacity 
+              style={[styles.roleTab, userRole === "financier" && styles.roleTabActive]} 
+              onPress={() => setUserRole("financier")}
+            >
+              <Text style={[styles.roleTabText, userRole === "financier" && styles.roleTabTextActive]}>Financier</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
       </View>
 
       {/* My Pool Guarantee Applications Section for Buyers */}
@@ -1537,6 +1047,96 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
                       </TouchableOpacity>
                     </View>
                   </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Financier Voting Section */}
+      {userRole === "financier" && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Applications for Voting</Text>
+          <Text style={styles.sectionSubtitle}>As a financier, you can vote to approve or reject pool guarantee applications.</Text>
+          
+          {applications.filter(app => app.status === "Draft Sent").length === 0 ? (
+            <View style={styles.emptyApplicationsState}>
+              <MaterialCommunityIcons name="vote" size={48} color={colors.text + "40"} />
+              <Text style={styles.emptyStateText}>No applications awaiting votes</Text>
+            </View>
+          ) : (
+            <View style={styles.applicationsContainer}>
+              {applications.filter(app => app.status === "Draft Sent").map((app) => (
+                <View key={app.id} style={styles.applicationListCard}>
+                  <View style={styles.applicationListHeader}>
+                    <View style={styles.applicationListInfo}>
+                      <Text style={styles.applicationListTitle}>{app.companyName || "Buyer"}</Text>
+                      <Text style={styles.applicationListSubtitle}>{app.tradeDescription}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.applicationListDetails}>
+                    <Text style={styles.applicationListLabel}>Amount: <Text style={styles.applicationListValue}>{app.guaranteeAmount}</Text></Text>
+                    <Text style={styles.applicationListLabel}>Collateral: <Text style={styles.applicationListValue}>{app.collateralValue}</Text></Text>
+                  </View>
+                  <View style={styles.votingButtons}>
+                    <TouchableOpacity 
+                      style={[styles.voteButton, styles.approveButton]} 
+                      onPress={() => votePGABlockchain(app.id, true)}
+                    >
+                      <MaterialCommunityIcons name="thumb-up" size={18} color="white" />
+                      <Text style={styles.voteButtonText}>Approve</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.voteButton, styles.rejectButton]} 
+                      onPress={() => votePGABlockchain(app.id, false)}
+                    >
+                      <MaterialCommunityIcons name="thumb-down" size={18} color="white" />
+                      <Text style={styles.voteButtonText}>Reject</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Logistics Dashboard Section */}
+      {userRole === "logistics" && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Logistics Operations</Text>
+          <Text style={styles.sectionSubtitle}>Authorized logistics partners can sign and confirm shipments here.</Text>
+          
+          {applications.filter(app => app.status === "Certificate Issued" || app.status === "Seller Approved").length === 0 ? (
+            <View style={styles.emptyApplicationsState}>
+              <MaterialCommunityIcons name="truck-delivery" size={48} color={colors.text + "40"} />
+              <Text style={styles.emptyStateText}>No pending shipments for assignment</Text>
+            </View>
+          ) : (
+            <View style={styles.applicationsContainer}>
+              {applications.filter(app => app.status === "Certificate Issued" || app.status === "Seller Approved").map((app) => (
+                <View key={app.id} style={styles.applicationListCard}>
+                  <View style={styles.applicationListHeader}>
+                    <View style={styles.applicationListInfo}>
+                      <Text style={styles.applicationListTitle}>{app.companyName || "Buyer"}</Text>
+                      <Text style={styles.applicationListSubtitle}>Ref: {app.requestId}</Text>
+                    </View>
+                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(app.status) + "20" }]}>
+                      <Text style={[styles.statusBadgeText, { color: getStatusColor(app.status) }]}>{app.status}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.applicationListDetails}>
+                    <Text style={styles.applicationListLabel}>Trade Value: <Text style={styles.applicationListValue}>{app.tradeValue}</Text></Text>
+                    <Text style={styles.applicationListLabel}>Seller: <Text style={styles.applicationListValue}>{app.seller.walletAddress.substring(0, 8)}...</Text></Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.actionButton} 
+                    onPress={() => handleShippingConfirmation(app)}
+                  >
+                    <MaterialCommunityIcons name="signature-freehand" size={18} color="white" />
+                    <Text style={styles.actionButtonText}>Sign Shipment</Text>
+                  </TouchableOpacity>
                 </View>
               ))}
             </View>
@@ -1917,7 +1517,7 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
                   />
                   <Text style={styles.paymentWarningText}>
                     This will initiate a blockchain transaction. Make sure you
-                    have enough USDC and ETH for gas fees.
+                    have enough {tokenSymbol} and native tokens for gas fees.
                   </Text>
                 </View>
               </>
@@ -1942,13 +1542,13 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
               />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>
-              Settle Invoice - Send USDC Payment
+              Settle Invoice - Send {tokenSymbol} Payment
             </Text>
           </View>
 
           <ScrollView style={styles.modalContent}>
             <Text style={styles.modalSubtitle}>
-              Send USDC payment directly to seller's wallet (partial or full
+              Send {tokenSymbol} payment directly to seller's wallet (partial or full
               payment)
             </Text>
 
@@ -1967,22 +1567,22 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
 
                   <Text style={styles.settlementLabel}>Invoice Total:</Text>
                   <Text style={styles.settlementValue}>
-                    {selectedApplication.tradeValue} USDC
+                    {selectedApplication.tradeValue}
                   </Text>
 
                   <Text style={styles.settlementLabel}>Already Paid:</Text>
                   <Text style={styles.settlementValue}>
-                    {selectedApplication.guaranteeAmount} USDC
+                    {selectedApplication.guaranteeAmount}
                   </Text>
 
                   <Text style={styles.settlementLabel}>Remaining Balance:</Text>
                   <Text style={styles.settlementValue}>
-                    {settlementAmount} USDC
+                    {settlementAmount} {tokenSymbol}
                   </Text>
                 </View>
 
                 <View style={styles.paymentAmountCard}>
-                  <Text style={styles.paymentLabel}>Payment amount (USDC)</Text>
+                  <Text style={styles.paymentLabel}>Payment amount ({tokenSymbol})</Text>
                   <View style={styles.amountInputContainer}>
                     <TextInput
                       style={styles.amountInput}
@@ -2007,7 +1607,7 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
                     />
                     <Text style={styles.paymentProcessText}>
                       Payment Process{"\n"}
-                      Full remaining balance of {settlementAmount} USDC will be
+                      Full remaining balance of {settlementAmount} {tokenSymbol} will be
                       sent to the seller.{"\n"}
                       This transaction will be recorded automatically.
                     </Text>
@@ -2208,7 +1808,7 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
                     >
                       <Text style={styles.cancelButtonText}>Cancel</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
+                     <TouchableOpacity
                       style={styles.confirmButton}
                       onPress={() => processDeliveryConfirmation(userRole)}
                     >
@@ -2369,11 +1969,11 @@ This certificate is valid and backed by the BlockFinaX treasury pool.
         presentationStyle="fullScreen"
       >
         {selectedBuyerApplication && (
-          <BuyerApplicationView
+           <BuyerApplicationView
             application={selectedBuyerApplication}
-            onPayFee={handleBuyerPayFee}
-            onPayInvoice={handleBuyerPayInvoice}
-            onConfirmDelivery={handleBuyerConfirmDelivery}
+            onPayFee={() => handlePayFee(selectedBuyerApplication)}
+            onPayInvoice={() => openSettlementModal(selectedBuyerApplication)}
+            onConfirmDelivery={() => handleDeliveryConfirmation(selectedBuyerApplication)}
             onClose={() => {
               setShowBuyerApplicationView(false);
               setSelectedBuyerApplication(null);
@@ -2975,6 +2575,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: 16,
     marginLeft: spacing.sm,
+  },
+  statusBadgeText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "600",
   },
   statusText: {
     color: "white",
@@ -3822,6 +3427,67 @@ const styles = StyleSheet.create({
   },
   applicationListBadgeText: {
     fontSize: 11,
+    fontWeight: "600",
+  },
+  roleSelector: {
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  roleTabsContainer: {
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
+  },
+  roleTab: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 20,
+    backgroundColor: `${colors.primary}10`,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  roleTabActive: {
+    backgroundColor: colors.primary,
+  },
+  roleTabText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+  roleTabTextActive: {
+    color: "#FFFFFF",
+  },
+  votingButtons: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  voteButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  voteButtonText: {
+    color: "white",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  actionButton: {
+    backgroundColor: colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  actionButtonText: {
+    color: "white",
+    fontSize: 14,
     fontWeight: "600",
   },
 });
