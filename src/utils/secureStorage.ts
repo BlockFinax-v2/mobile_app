@@ -4,7 +4,7 @@ import * as Crypto from 'expo-crypto';
 
 class SecureStorageManager {
   private static instance: SecureStorageManager;
-  
+
   public static getInstance(): SecureStorageManager {
     if (!SecureStorageManager.instance) {
       SecureStorageManager.instance = new SecureStorageManager();
@@ -62,20 +62,20 @@ class SecureStorageManager {
     const base64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let result = '';
     let i = 0;
-    
+
     while (i < str.length) {
       const a = str.charCodeAt(i++);
       const b = i < str.length ? str.charCodeAt(i++) : 0;
       const c = i < str.length ? str.charCodeAt(i++) : 0;
-      
+
       const bitmap = (a << 16) | (b << 8) | c;
-      
+
       result += base64chars.charAt((bitmap >> 18) & 63);
       result += base64chars.charAt((bitmap >> 12) & 63);
       result += (i - 2) < str.length ? base64chars.charAt((bitmap >> 6) & 63) : '=';
       result += (i - 1) < str.length ? base64chars.charAt(bitmap & 63) : '=';
     }
-    
+
     return result;
   }
 
@@ -87,20 +87,20 @@ class SecureStorageManager {
     const base64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
     let result = '';
     let i = 0;
-    
+
     // Remove padding and whitespace
     base64 = base64.replace(/[^A-Za-z0-9+/]/g, '');
-    
+
     while (i < base64.length) {
       const enc1 = base64chars.indexOf(base64.charAt(i++));
       const enc2 = base64chars.indexOf(base64.charAt(i++));
       const enc3 = base64chars.indexOf(base64.charAt(i++));
       const enc4 = base64chars.indexOf(base64.charAt(i++));
-      
+
       const bitmap = (enc1 << 18) | (enc2 << 12) | (enc3 << 6) | enc4;
-      
+
       result += String.fromCharCode((bitmap >> 16) & 255);
-      
+
       if (enc3 !== -1) {
         result += String.fromCharCode((bitmap >> 8) & 255);
       }
@@ -108,7 +108,7 @@ class SecureStorageManager {
         result += String.fromCharCode(bitmap & 255);
       }
     }
-    
+
     return result;
   }
 
@@ -246,15 +246,13 @@ class SecureStorageManager {
     }
   }
 
-  /**
-   * Clear all wallet data (both secure and non-secure)
-   */
   public async clearWalletData(): Promise<void> {
     try {
       // Keys for secure storage
       const secureKeys = [
         'blockfinax.mnemonic',
         'blockfinax.privateKey',
+        'blockfinax.privateKey.encrypted', // CRITICAL: encrypted private key
         'blockfinax.password',
       ];
 
@@ -262,17 +260,21 @@ class SecureStorageManager {
       const asyncKeys = [
         'blockfinax.settings',
         'blockfinax.network',
+        'blockfinax.salt', // CRITICAL: encryption salt
+        'blockfinax.transactions',
       ];
 
       // Clear secure storage
       await Promise.all(
-        secureKeys.map(key => this.deleteSecureItem(key).catch(() => {}))
+        secureKeys.map(key => this.deleteSecureItem(key).catch(() => { }))
       );
 
       // Clear async storage
       await Promise.all(
-        asyncKeys.map(key => this.removeItem(key).catch(() => {}))
+        asyncKeys.map(key => this.removeItem(key).catch(() => { }))
       );
+
+      console.log('✅ All wallet data cleared successfully');
     } catch (error) {
       console.error('Error clearing wallet data:', error);
       throw error;

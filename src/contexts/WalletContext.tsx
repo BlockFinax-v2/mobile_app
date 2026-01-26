@@ -868,13 +868,18 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
         "blockfinax.privateKey.encrypted",
       );
 
+      // More robust check: ensure data is not just empty strings
+      const hasValidMnemonic = existingMnemonic && existingMnemonic.trim().length > 0;
+      const hasValidPrivateKey = existingPrivateKey && existingPrivateKey.trim().length > 0;
+      const walletExists = Boolean(hasValidMnemonic || hasValidPrivateKey);
+
       console.log("🔍 Checking wallet existence:", {
-        hasMnemonic: !!existingMnemonic,
-        hasEncryptedKey: !!existingPrivateKey,
-        hasWallet: Boolean(existingMnemonic || existingPrivateKey),
+        hasMnemonic: hasValidMnemonic,
+        hasEncryptedKey: hasValidPrivateKey,
+        hasWallet: walletExists,
       });
 
-      setHasWallet(Boolean(existingMnemonic || existingPrivateKey));
+      setHasWallet(walletExists);
 
       // Initialize biometric capability and settings
       const biometricAvailable = await biometricService.isBiometricAvailable();

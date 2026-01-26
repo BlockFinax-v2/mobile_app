@@ -6,7 +6,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { ProfileStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, CommonActions } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import React, { useState } from "react";
 import {
@@ -149,16 +149,19 @@ export const SettingsScreen: React.FC = () => {
             setPendingUpdate("resetWallet");
             try {
               await resetWalletData();
-              Alert.alert(
-                "Wallet Reset",
-                "Local wallet data cleared. You'll need to import or create a new wallet."
+              
+              // Navigate to Landing page by resetting navigation stack
+              navigation.dispatch(
+                CommonActions.reset({
+                  index: 0,
+                  routes: [{ name: 'Auth' }],
+                })
               );
             } catch (error) {
               Alert.alert(
                 "Reset Failed",
                 "We couldn't clear the wallet data. Try again."
               );
-            } finally {
               setIsResetting(false);
               setPendingUpdate(null);
             }

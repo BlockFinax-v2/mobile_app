@@ -15,7 +15,7 @@ interface ScreenProps {
   backgroundColor?: string;
   padded?: boolean;
   preset?: "fixed" | "scroll";
-  refreshControl?: React.ReactElement<RefreshControlProps>;
+  refreshControl?: any;
 }
 
 export const Screen: React.FC<ScreenProps> = ({

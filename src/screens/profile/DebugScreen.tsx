@@ -5,6 +5,7 @@ import { useWallet } from "@/contexts/WalletContext";
 import { secureStorage } from "@/utils/secureStorage";
 import { palette } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { useNavigation, CommonActions } from "@react-navigation/native";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -157,18 +158,14 @@ export const DebugScreen: React.FC = () => {
     setIsResetting(true);
     try {
       await resetWalletData();
-      Alert.alert(
-        "✅ Wallet Data Cleared",
-        "All wallet data has been removed from this device. You can now test the authentication flow again.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Refresh debug info to show cleared state
-              loadDebugInfo();
-            },
-          },
-        ]
+      
+      // Navigate to Landing page by resetting navigation stack
+      const navigation = useNavigation();
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Auth' }],
+        })
       );
     } catch (error) {
       console.error("Failed to clear wallet data:", error);
@@ -176,7 +173,6 @@ export const DebugScreen: React.FC = () => {
         "❌ Clear Failed",
         "Failed to clear wallet data. Please try again."
       );
-    } finally {
       setIsResetting(false);
     }
   };
