@@ -9,6 +9,7 @@ import {
   Modal,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as WebBrowser from "expo-web-browser";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 
@@ -39,6 +40,9 @@ interface DraftData {
   issuanceFee: string;
   content: string;
   certificateContent?: string;
+  proformaInvoiceIpfs?: { hash: string; url: string };
+  salesContractIpfs?: { hash: string; url: string };
+  documents?: string[];
   proofOfShipment?: {
     trackingNumber?: string;
     carrier?: string;
@@ -219,6 +223,14 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
     </View>
   );
 
+  const viewDocument = async (url: string) => {
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch (error) {
+      Alert.alert("Error", "Failed to open document");
+    }
+  };
+
   const renderPoolReviewStage = () => (
     <View style={styles.stageContent}>
       <View style={styles.statusBanner}>
@@ -233,21 +245,87 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Draft Status</Text>
-        <View style={styles.statusCard}>
-          <MaterialCommunityIcons
-            name="shield-search"
-            size={32}
-            color={colors.warning}
-          />
-          <View style={styles.statusCardContent}>
-            <Text style={styles.statusCardTitle}>Pool Review</Text>
-            <Text style={styles.statusCardDescription}>
-              The pool financiers are currently reviewing the buyer's application
-              and credentials. You will be notified once they approve and it's
-              your turn to review.
-            </Text>
-          </View>
+        <Text style={styles.sectionTitle}>Application Details</Text>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Company Name:</Text>
+          <Text style={styles.reviewValue}>{draft.applicant.company}</Text>
+        </View>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Registration:</Text>
+          <Text style={styles.reviewValue}>{draft.applicant.registration}</Text>
+        </View>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Trade Value:</Text>
+          <Text style={styles.reviewValue}>{draft.invoiceAmount || "N/A"}</Text>
+        </View>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Guarantee Amount:</Text>
+          <Text style={[styles.reviewValue, styles.amountHighlight]}>
+            {draft.guaranteeAmount}
+          </Text>
+        </View>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Collateral Amount:</Text>
+          <Text style={styles.reviewValue}>{draft.collateralValue}</Text>
+        </View>
+        <View style={styles.reviewRow}>
+          <Text style={styles.reviewLabel}>Duration:</Text>
+          <Text style={styles.reviewValue}>{draft.financingDuration} days</Text>
+        </View>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Trade Description</Text>
+        <Text style={styles.tradeDescriptionText}>
+          {draft.tradeDescription}
+        </Text>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Submitted Documents</Text>
+        <View style={styles.documentLinks}>
+          {draft.proformaInvoiceIpfs && (
+            <TouchableOpacity
+              style={styles.docLink}
+              onPress={() => viewDocument(draft.proformaInvoiceIpfs!.url)}
+            >
+              <MaterialCommunityIcons
+                name="file-pdf-box"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.docLinkText}>View Proforma Invoice</Text>
+            </TouchableOpacity>
+          )}
+          {draft.salesContractIpfs && (
+            <TouchableOpacity
+              style={styles.docLink}
+              onPress={() => viewDocument(draft.salesContractIpfs!.url)}
+            >
+              <MaterialCommunityIcons
+                name="file-pdf-box"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.docLinkText}>View Sales Contract</Text>
+            </TouchableOpacity>
+          )}
+          {(!draft.proformaInvoiceIpfs && !draft.salesContractIpfs && draft.documents && draft.documents.length > 0) && (
+            draft.documents.map((url, idx) => (
+              <TouchableOpacity
+                key={idx}
+                style={styles.docLink}
+                onPress={() => viewDocument(url.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/'))}
+              >
+                <MaterialCommunityIcons
+                  name="file-document"
+                  size={20}
+                  color={colors.primary}
+                />
+                <Text style={styles.docLinkText}>View Document {idx + 1}</Text>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </View>
     </View>
@@ -314,6 +392,38 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           <MaterialCommunityIcons name="eye" size={20} color={colors.primary} />
           <Text style={styles.viewDraftButtonText}>View Draft Certificate</Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Submitted Documents</Text>
+        <View style={styles.documentLinks}>
+          {draft.proformaInvoiceIpfs && (
+            <TouchableOpacity
+              style={styles.docLink}
+              onPress={() => viewDocument(draft.proformaInvoiceIpfs!.url)}
+            >
+              <MaterialCommunityIcons
+                name="file-pdf-box"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.docLinkText}>View Proforma Invoice</Text>
+            </TouchableOpacity>
+          )}
+          {draft.salesContractIpfs && (
+            <TouchableOpacity
+              style={styles.docLink}
+              onPress={() => viewDocument(draft.salesContractIpfs!.url)}
+            >
+              <MaterialCommunityIcons
+                name="file-pdf-box"
+                size={20}
+                color={colors.primary}
+              />
+              <Text style={styles.docLinkText}>View Sales Contract</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       <View style={styles.decisionSection}>
@@ -1462,5 +1572,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  tradeDescriptionText: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 20,
+    backgroundColor: "#F8F9FA",
+    padding: spacing.md,
+    borderRadius: 8,
+  },
+  documentLinks: {
+    gap: spacing.sm,
+  },
+  docLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primary + "10",
+    padding: spacing.md,
+    borderRadius: 8,
+    gap: spacing.sm,
+  },
+  docLinkText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: "600",
   },
 });

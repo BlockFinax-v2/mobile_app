@@ -39,6 +39,9 @@ interface Application {
   seller: {
     walletAddress: string;
   };
+  proformaInvoiceIpfs?: { hash: string; url: string };
+  salesContractIpfs?: { hash: string; url: string };
+  documents?: string[];
   applicationDate: string;
   paymentDueDate: string;
   financingDuration: number;
@@ -389,7 +392,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     return {
       id: pga.pgaId,
       requestId: pga.pgaId,
-      companyName: "", // Need metadata
+      companyName: pga.companyName || "",
       guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
       tradeValue: `${pga.tradeValue} ${symbol}`,
       status: mapPGAStatusToAppStatus(pga.status),
@@ -397,15 +400,18 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       contractNumber: "", 
       tradeDescription: pga.tradeDescription || "",
       buyer: {
-        company: "",
-        registration: "",
+        company: pga.companyName || "",
+        registration: pga.registrationNumber || "",
         country: "",
-        contact: "",
+        contact: pga.beneficiaryName || "",
         email: "",
         phone: "",
         walletAddress: pga.buyer,
         applicationDate: new Date(pga.createdAt * 1000).toISOString(),
       },
+      proformaInvoiceIpfs: pga.documents?.[0] ? { hash: pga.documents[0].replace('ipfs://', ''), url: pga.documents[0].replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/') } : undefined,
+      salesContractIpfs: pga.documents?.[1] ? { hash: pga.documents[1].replace('ipfs://', ''), url: pga.documents[1].replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/') } : undefined,
+      documents: pga.documents,
       seller: {
         walletAddress: pga.seller,
       },

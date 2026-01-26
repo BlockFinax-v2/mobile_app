@@ -129,6 +129,11 @@ export interface PGAInfo {
     deliveryAgreementId: string;
     metadataURI: string;
     tradeDescription: string;
+    companyName?: string;
+    registrationNumber?: string;
+    beneficiaryName?: string;
+    beneficiaryWallet?: string;
+    documents?: string[];
 }
 
 const MNEMONIC_KEY = "blockfinax.mnemonic";
@@ -236,7 +241,7 @@ class TradeFinanceService {
         const data = await contract.getPGA(pgaId);
         const decimals = await this.getPrimaryTokenDecimals();
 
-        return {
+        const pgaInfo: PGAInfo = {
             pgaId,
             buyer: data.buyer,
             seller: data.seller,
@@ -257,6 +262,42 @@ class TradeFinanceService {
             deliveryAgreementId: data.deliveryAgreementId,
             metadataURI: data.metadataURI,
             tradeDescription: data.tradeDescription,
+        };
+
+        // Fetch detailed metadata from chain
+        try {
+            const metadata = await this.getPGAMetadata(pgaId);
+            return {
+                ...pgaInfo,
+                companyName: metadata.companyName,
+                registrationNumber: metadata.registrationNumber,
+                beneficiaryName: metadata.beneficiaryName,
+                beneficiaryWallet: metadata.beneficiaryWallet,
+                documents: metadata.documents,
+            };
+        } catch (error) {
+            console.warn(`Failed to fetch metadata for PGA ${pgaId}:`, error);
+            return pgaInfo;
+        }
+    }
+
+    public async getPGAMetadata(pgaId: string): Promise<{
+        companyName: string;
+        registrationNumber: string;
+        tradeDescription: string;
+        beneficiaryName: string;
+        beneficiaryWallet: string;
+        documents: string[];
+    }> {
+        const contract = await this.getContract();
+        const data = await contract.getPGAMetadata(pgaId);
+        return {
+            companyName: data.companyName,
+            registrationNumber: data.registrationNumber,
+            tradeDescription: data.tradeDescription,
+            beneficiaryName: data.beneficiaryName,
+            beneficiaryWallet: data.beneficiaryWallet,
+            documents: data.documents,
         };
     }
 
