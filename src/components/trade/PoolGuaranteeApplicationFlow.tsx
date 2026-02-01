@@ -431,7 +431,8 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       // Create document object for storage
       const newDoc: StoredDocument = {
         id: `doc_${Date.now()}`,
-        title: type === 'proformaInvoice' ? 'Proforma Invoice' : 'Sales Contract',
+        title:
+          type === "proformaInvoice" ? "Proforma Invoice" : "Sales Contract",
         fileName: file.name,
         fileUri: uploadUri,
         ipfsHash,
@@ -444,7 +445,10 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       // Save to local stored documents
       const updatedStoredDocs = [newDoc, ...storedDocuments];
       setStoredDocuments(updatedStoredDocs);
-      await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(updatedStoredDocs));
+      await AsyncStorage.setItem(
+        DOCUMENTS_STORAGE_KEY,
+        JSON.stringify(updatedStoredDocs),
+      );
 
       // Update form data with document info and IPFS data
       setFormData((prev) => ({
@@ -469,7 +473,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       console.error("IPFS upload error:", error);
       Alert.alert(
         "Upload Failed",
-        `Failed to upload document to IPFS: ${error.message || 'Please try again.'}`,
+        `Failed to upload document to IPFS: ${error.message || "Please try again."}`,
       );
     } finally {
       setIsUploading(false);

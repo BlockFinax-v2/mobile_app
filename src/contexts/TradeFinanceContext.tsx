@@ -200,6 +200,7 @@ interface TradeFinanceContextType {
   fetchBlockchainData: () => Promise<void>;
   refreshAll: () => Promise<void>; // Pull-to-refresh handler
   isRefreshing: boolean; // Pull-to-refresh loading state
+  preload: () => Promise<void>; // App startup preload
   createPGABlockchain: (params: any) => Promise<void>;
   votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
   sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
@@ -788,6 +789,29 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [address, isUnlocked, lastSyncedBlock, isLoadingHistory, persistData]);
 
+  const preload = useCallback(async () => {
+    if (!address || !isUnlocked || !selectedNetwork) return;
+
+    const initKey = `${address}_${selectedNetwork.chainId}`;
+    if (hasInitialized.current && lastInitializedKey.current === initKey) {
+      return;
+    }
+
+    await loadCachedData();
+    await loadHistoricalEvents();
+    tradeFinanceEventService.startListening(address, handleRealtimeEvent);
+
+    hasInitialized.current = true;
+    lastInitializedKey.current = initKey;
+  }, [
+    address,
+    isUnlocked,
+    selectedNetwork,
+    loadCachedData,
+    loadHistoricalEvents,
+    handleRealtimeEvent,
+  ]);
+
   /**
    * Pull-to-refresh handler - fetches latest blockchain data
    * Optimized for quick user feedback with recent events only
@@ -986,6 +1010,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         fetchBlockchainData,
         refreshAll,
         isRefreshing,
+        preload,
         createPGABlockchain,
         votePGABlockchain,
         sellerVotePGABlockchain,
