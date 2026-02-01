@@ -8,10 +8,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import * as DocumentPicker from "expo-document-picker";
-import * as WebBrowser from "expo-web-browser";
 import * as Clipboard from "expo-clipboard";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Linking } from "react-native";
 import React, { useState, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -22,6 +20,7 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
+import { DocumentViewerModal } from "@/components/documents/DocumentViewerModal";
 
 interface DocumentForm {
   title: string;
@@ -51,6 +50,9 @@ export const DocumentCenterScreen: React.FC = () => {
     type: string;
     size: number;
   } | null>(null);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerTitle, setViewerTitle] = useState<string | null>(null);
 
   const { control, handleSubmit, reset, watch } = useForm<DocumentForm>({
     defaultValues: {
@@ -83,7 +85,10 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const saveDocuments = async () => {
     try {
-      await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
+      await AsyncStorage.setItem(
+        DOCUMENTS_STORAGE_KEY,
+        JSON.stringify(documents),
+      );
     } catch (error) {
       console.error("Failed to save documents:", error);
     }
@@ -112,8 +117,9 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const viewDocument = async (doc: StoredDocument) => {
     try {
-      // Always use IPFS URL for viewing
-      await WebBrowser.openBrowserAsync(doc.ipfsUrl);
+      setViewerTitle(doc.title);
+      setViewerUrl(doc.ipfsUrl);
+      setViewerVisible(true);
     } catch (error) {
       Alert.alert("Error", "Failed to open document from IPFS");
     }
@@ -124,7 +130,7 @@ export const DocumentCenterScreen: React.FC = () => {
       await Clipboard.setStringAsync(doc.ipfsUrl);
       Alert.alert(
         "Link Copied!",
-        `The shareable IPFS link for "${doc.title}" has been copied to your clipboard. Anyone with this link can view the document.`
+        `The shareable IPFS link for "${doc.title}" has been copied to your clipboard. Anyone with this link can view the document.`,
       );
     } catch (error) {
       Alert.alert("Error", "Failed to copy link to clipboard");
@@ -146,14 +152,17 @@ export const DocumentCenterScreen: React.FC = () => {
           onPress: async () => {
             const updatedDocs = documents.filter((d) => d.id !== doc.id);
             setDocuments(updatedDocs);
-            await AsyncStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(updatedDocs));
+            await AsyncStorage.setItem(
+              DOCUMENTS_STORAGE_KEY,
+              JSON.stringify(updatedDocs),
+            );
             Alert.alert(
               "Deleted",
-              `"${doc.title}" has been removed from your documents.`
+              `"${doc.title}" has been removed from your documents.`,
             );
           },
         },
-      ]
+      ],
     );
   };
 
@@ -169,7 +178,7 @@ export const DocumentCenterScreen: React.FC = () => {
       const { ipfsHash, ipfsUrl } = await uploadToIPFS(
         selectedFile.uri,
         selectedFile.name,
-        selectedFile.type
+        selectedFile.type,
       );
 
       const now = new Date();
@@ -194,12 +203,12 @@ export const DocumentCenterScreen: React.FC = () => {
       setSelectedFile(null);
       Alert.alert(
         "Document Uploaded",
-        `Your document has been uploaded to IPFS and is ready to use.\n\nIPFS: ${ipfsHash}`
+        `Your document has been uploaded to IPFS and is ready to use.\n\nIPFS: ${ipfsHash}`,
       );
     } catch (error) {
       Alert.alert(
         "Upload Failed",
-        "Failed to upload document to IPFS. Please try again."
+        "Failed to upload document to IPFS. Please try again.",
       );
     } finally {
       setUploading(false);
@@ -324,8 +333,8 @@ export const DocumentCenterScreen: React.FC = () => {
                       doc.fileType.startsWith("image/")
                         ? "file-image"
                         : doc.fileType === "application/pdf"
-                        ? "file-pdf-box"
-                        : "file-document"
+                          ? "file-pdf-box"
+                          : "file-document"
                     }
                     size={24}
                     color={colors.primary}
@@ -400,6 +409,12 @@ export const DocumentCenterScreen: React.FC = () => {
           )}
         </View>
       </ScrollView>
+      <DocumentViewerModal
+        visible={viewerVisible}
+        url={viewerUrl}
+        title={viewerTitle ?? "Document"}
+        onClose={() => setViewerVisible(false)}
+      />
     </Screen>
   );
 };

@@ -16,10 +16,10 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import * as WebBrowser from "expo-web-browser";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { uploadToIPFS } from "@/config/ipfs";
+import { DocumentViewerModal } from "@/components/documents/DocumentViewerModal";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -176,6 +176,8 @@ export const PoolGuaranteeApplicationFlow: React.FC<
     "proformaInvoice" | "salesContract" | null
   >(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   const stepTitles = [
     "Company Info",
@@ -330,7 +332,6 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       ],
     );
   };
-
   const updateField = (field: keyof PoolGuaranteeForm, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -508,12 +509,9 @@ export const PoolGuaranteeApplicationFlow: React.FC<
     );
   };
 
-  const viewDocument = async (ipfsUrl: string) => {
-    try {
-      await WebBrowser.openBrowserAsync(ipfsUrl);
-    } catch (error) {
-      Alert.alert("Error", "Failed to open document");
-    }
+  const viewDocument = (ipfsUrl: string) => {
+    setViewerUrl(ipfsUrl);
+    setViewerVisible(true);
   };
 
   const renderStepContent = () => {
@@ -1306,6 +1304,13 @@ export const PoolGuaranteeApplicationFlow: React.FC<
           </ScrollView>
         </View>
       </Modal>
+
+      <DocumentViewerModal
+        visible={viewerVisible}
+        url={viewerUrl}
+        title="Document Viewer"
+        onClose={() => setViewerVisible(false)}
+      />
     </View>
   );
 };

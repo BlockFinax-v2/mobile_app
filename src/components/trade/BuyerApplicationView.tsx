@@ -12,6 +12,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { DocumentViewerModal } from "@/components/documents/DocumentViewerModal";
 
 interface ApplicationData {
   id: string;
@@ -96,6 +97,14 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 }) => {
   const [showFullCertificate, setShowFullCertificate] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+
+  const viewDocument = (url?: string) => {
+    if (!url) return;
+    setViewerUrl(url);
+    setViewerVisible(true);
+  };
 
   const renderStageIndicator = () => {
     return (
@@ -307,7 +316,8 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         <View style={styles.nextStepsContent}>
           <Text style={styles.nextStepsTitle}>Whose next?</Text>
           <Text style={styles.nextStepsText}>
-            Once financiers approve, the draft will be automatically sent to the seller for their consideration.
+            Once financiers approve, the draft will be automatically sent to the
+            seller for their consideration.
           </Text>
         </View>
       </View>
@@ -360,7 +370,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
                 IPFS: {application.proformaInvoiceIpfs.hash}
               </Text>
             </View>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => viewDocument(application.proformaInvoiceIpfs?.url)}
+            >
               <MaterialCommunityIcons
                 name="eye"
                 size={20}
@@ -382,7 +394,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
                 IPFS: {application.salesContractIpfs.hash}
               </Text>
             </View>
-            <TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => viewDocument(application.salesContractIpfs?.url)}
+            >
               <MaterialCommunityIcons
                 name="eye"
                 size={20}
@@ -1079,31 +1093,43 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
               <Text style={styles.certificateFullSectionTitle}>
                 Draft Review: Full Application Details
               </Text>
-              
+
               {/* Company Info */}
               <Text style={styles.reviewSubTitle}>Company Information</Text>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Company Name:</Text>
-                <Text style={styles.reviewValue}>{application.applicant?.company || application.companyName || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.applicant?.company ||
+                    application.companyName ||
+                    "N/A"}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Registration:</Text>
-                <Text style={styles.reviewValue}>{application.applicant?.registration || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.applicant?.registration || "N/A"}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Country:</Text>
-                <Text style={styles.reviewValue}>{application.applicant?.country || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.applicant?.country || "N/A"}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Contact Person:</Text>
-                <Text style={styles.reviewValue}>{application.applicant?.contact || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.applicant?.contact || "N/A"}
+                </Text>
               </View>
 
               {/* Trade Details */}
               <Text style={styles.reviewSubTitle}>Trade Details</Text>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Description:</Text>
-                <Text style={styles.reviewValue}>{application.tradeDescription}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.tradeDescription}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Total Trade Value:</Text>
@@ -1111,36 +1137,62 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Guarantee Amount:</Text>
-                <Text style={styles.reviewValue}>{application.guaranteeAmount}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.guaranteeAmount}
+                </Text>
               </View>
 
               {/* Financial & Documents */}
               <Text style={styles.reviewSubTitle}>Financial & Documents</Text>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Collateral Info:</Text>
-                <Text style={styles.reviewValue}>{application.collateralDescription || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.collateralDescription || "N/A"}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Seller Wallet:</Text>
-                <Text style={styles.reviewValue}>{application.beneficiary?.walletAddress || "N/A"}</Text>
+                <Text style={styles.reviewValue}>
+                  {application.beneficiary?.walletAddress || "N/A"}
+                </Text>
               </View>
-              
+
               <View style={styles.documentLinks}>
                 {application.proformaInvoiceIpfs && (
-                  <TouchableOpacity 
-                    style={styles.docLink} 
-                    onPress={() => Alert.alert("Document Link", application.proformaInvoiceIpfs?.url)}
+                  <TouchableOpacity
+                    style={styles.docLink}
+                    onPress={() =>
+                      Alert.alert(
+                        "Document Link",
+                        application.proformaInvoiceIpfs?.url,
+                      )
+                    }
                   >
-                    <MaterialCommunityIcons name="file-pdf-box" size={20} color={colors.primary} />
-                    <Text style={styles.docLinkText}>View Proforma Invoice</Text>
+                    <MaterialCommunityIcons
+                      name="file-pdf-box"
+                      size={20}
+                      color={colors.primary}
+                    />
+                    <Text style={styles.docLinkText}>
+                      View Proforma Invoice
+                    </Text>
                   </TouchableOpacity>
                 )}
                 {application.salesContractIpfs && (
-                  <TouchableOpacity 
-                    style={styles.docLink} 
-                    onPress={() => Alert.alert("Document Link", application.salesContractIpfs?.url)}
+                  <TouchableOpacity
+                    style={styles.docLink}
+                    onPress={() =>
+                      Alert.alert(
+                        "Document Link",
+                        application.salesContractIpfs?.url,
+                      )
+                    }
                   >
-                    <MaterialCommunityIcons name="file-pdf-box" size={20} color={colors.primary} />
+                    <MaterialCommunityIcons
+                      name="file-pdf-box"
+                      size={20}
+                      color={colors.primary}
+                    />
                     <Text style={styles.docLinkText}>View Sales Contract</Text>
                   </TouchableOpacity>
                 )}
@@ -1181,6 +1233,13 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           </ScrollView>
         </View>
       </Modal>
+
+      <DocumentViewerModal
+        visible={viewerVisible}
+        url={viewerUrl}
+        title="Document Viewer"
+        onClose={() => setViewerVisible(false)}
+      />
     </View>
   );
 };

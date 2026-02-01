@@ -9,9 +9,9 @@ import {
   Modal,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as WebBrowser from "expo-web-browser";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
+import { DocumentViewerModal } from "@/components/documents/DocumentViewerModal";
 
 interface DraftData {
   id: string;
@@ -90,6 +90,8 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
   onClose,
 }) => {
   const [showFullCertificate, setShowFullCertificate] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   const renderStageIndicator = () => {
     return (
@@ -223,12 +225,9 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
     </View>
   );
 
-  const viewDocument = async (url: string) => {
-    try {
-      await WebBrowser.openBrowserAsync(url);
-    } catch (error) {
-      Alert.alert("Error", "Failed to open document");
-    }
+  const viewDocument = (url: string) => {
+    setViewerUrl(url);
+    setViewerVisible(true);
   };
 
   const renderPoolReviewStage = () => (
@@ -310,12 +309,22 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
               <Text style={styles.docLinkText}>View Sales Contract</Text>
             </TouchableOpacity>
           )}
-          {(!draft.proformaInvoiceIpfs && !draft.salesContractIpfs && draft.documents && draft.documents.length > 0) && (
+          {!draft.proformaInvoiceIpfs &&
+            !draft.salesContractIpfs &&
+            draft.documents &&
+            draft.documents.length > 0 &&
             draft.documents.map((url, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={styles.docLink}
-                onPress={() => viewDocument(url.replace('ipfs://', 'https://gateway.pinata.cloud/ipfs/'))}
+                onPress={() =>
+                  viewDocument(
+                    url.replace(
+                      "ipfs://",
+                      "https://gateway.pinata.cloud/ipfs/",
+                    ),
+                  )
+                }
               >
                 <MaterialCommunityIcons
                   name="file-document"
@@ -324,8 +333,7 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
                 />
                 <Text style={styles.docLinkText}>View Document {idx + 1}</Text>
               </TouchableOpacity>
-            ))
-          )}
+            ))}
         </View>
       </View>
     </View>
@@ -922,24 +930,32 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
               <Text style={styles.certificateFullSectionTitle}>
                 Registration Review: Full Profile
               </Text>
-              
+
               {/* Company Info */}
               <Text style={styles.reviewSubTitle}>Applicant Information</Text>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Company Name:</Text>
-                <Text style={styles.reviewValue}>{draft.applicant.company}</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.applicant.company}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Registration:</Text>
-                <Text style={styles.reviewValue}>{draft.applicant.registration}</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.applicant.registration}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Country:</Text>
-                <Text style={styles.reviewValue}>{draft.applicant.country}</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.applicant.country}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Contact Person:</Text>
-                <Text style={styles.reviewValue}>{draft.applicant.contact}</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.applicant.contact}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Email:</Text>
@@ -958,14 +974,18 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Financing Duration:</Text>
-                <Text style={styles.reviewValue}>{draft.financingDuration} days</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.financingDuration} days
+                </Text>
               </View>
 
               {/* Financials */}
               <Text style={styles.reviewSubTitle}>Financials</Text>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Collateral Info:</Text>
-                <Text style={styles.reviewValue}>{draft.collateralDescription}</Text>
+                <Text style={styles.reviewValue}>
+                  {draft.collateralDescription}
+                </Text>
               </View>
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Collateral Value:</Text>
@@ -1007,6 +1027,13 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           </ScrollView>
         </View>
       </Modal>
+
+      <DocumentViewerModal
+        visible={viewerVisible}
+        url={viewerUrl}
+        title="Document Viewer"
+        onClose={() => setViewerVisible(false)}
+      />
     </View>
   );
 };
