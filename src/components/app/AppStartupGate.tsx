@@ -67,7 +67,7 @@ export const AppStartupGate: React.FC<AppStartupGateProps> = ({ children }) => {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color={palette.primaryBlue} />
-      <Text style={styles.text}>Preparing your dashboard...</Text>
+      <Text style={styles.text}>Restarting the app...</Text>
     </View>
   );
 };

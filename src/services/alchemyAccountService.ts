@@ -9,7 +9,7 @@
 import { createModularAccountAlchemyClient } from '@account-kit/smart-contracts';
 import { type AlchemySmartAccountClient, alchemy } from '@account-kit/infra';
 import { LocalAccountSigner } from '@aa-sdk/core';
-import { type Hex, encodeFunctionData } from 'viem';
+import { type Hex, encodeFunctionData, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   getAlchemyChain,
@@ -400,9 +400,13 @@ export class AlchemyAccountService {
       gasSponsored?: boolean;
     }
   ): Promise<UserOperationResult> {
+    const normalizedAbi =
+      Array.isArray(abi) && typeof abi[0] === "string"
+        ? parseAbi(abi as string[])
+        : abi;
     // Encode function call
     const data = encodeFunctionData({
-      abi,
+      abi: normalizedAbi,
       functionName,
       args,
     });

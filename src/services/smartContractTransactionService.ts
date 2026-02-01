@@ -20,7 +20,7 @@ import { AlchemyAccountService, TransactionCall } from "./alchemyAccountService"
 import { isAlchemyNetworkSupported, isConfiguredInAlchemyDashboard, getAlchemyGasPolicyId } from "@/config/alchemyAccount";
 import { gaslessLimitService } from "./gaslessLimitService";
 import { WalletNetwork } from "@/contexts/WalletContext";
-import { Hex, encodeFunctionData } from "viem";
+import { Hex, encodeFunctionData, parseAbi } from "viem";
 
 export interface TransactionOptions {
   // Contract interaction
@@ -490,7 +490,10 @@ class SmartContractTransactionService {
       const calls: TransactionCall[] = transactions.map((tx) => ({
         target: tx.contractAddress as Hex,
         data: encodeFunctionData({
-          abi: tx.abi,
+          abi:
+            Array.isArray(tx.abi) && typeof tx.abi[0] === "string"
+              ? parseAbi(tx.abi as string[])
+              : tx.abi,
           functionName: tx.functionName,
           args: tx.args,
         }),

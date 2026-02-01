@@ -42,6 +42,7 @@ import * as ImagePicker from "expo-image-picker";
 import { PoolGuaranteeApplicationFlow } from "@/components/trade/PoolGuaranteeApplicationFlow";
 import { SellerDraftView } from "@/components/trade/SellerDraftView";
 import { BuyerApplicationView } from "@/components/trade/BuyerApplicationView";
+import { tradeFinanceService, PGAInfo } from "@/services/tradeFinanceService";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -69,7 +70,6 @@ interface PoolGuaranteeForm {
 
 type NavigationProp = StackNavigationProp<TradeStackParamList, "TradeFinance">;
 type RouteProps = RouteProp<TradeStackParamList, "TradeFinance">;
-
 
 export const TradeFinanceScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -117,7 +117,9 @@ export const TradeFinanceScreen = () => {
   );
   const tokenSymbol = selectedToken?.symbol || "USDC";
 
-  const [userRole, setUserRole] = useState<"buyer" | "seller" | "logistics">("buyer");
+  const [userRole, setUserRole] = useState<"buyer" | "seller" | "logistics">(
+    "buyer",
+  );
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [showCertificateModal, setShowCertificateModal] = useState(false);
   const [showNetworkSelector, setShowNetworkSelector] = useState(false);
@@ -136,16 +138,117 @@ export const TradeFinanceScreen = () => {
   const [selectedBuyerApplication, setSelectedBuyerApplication] =
     useState<any>(null);
 
+  const mapApplicationToBuyerView = (app: Application) => ({
+    id: app.id,
+    requestId: app.requestId,
+    guaranteeNo: app.requestId,
+    applicant: {
+      company: app.buyer?.company || app.companyName || "Buyer",
+      registration: app.buyer?.registration || "",
+      country: app.buyer?.country || "",
+      contact: app.buyer?.contact || "",
+      email: app.buyer?.email || "",
+      walletAddress: app.buyer?.walletAddress || "",
+    },
+    beneficiary: {
+      walletAddress: app.beneficiaryWallet || app.seller?.walletAddress || "",
+      name: app.beneficiaryName || undefined,
+    },
+    tradeDescription: app.tradeDescription || "",
+    collateralDescription: app.collateralDescription || "",
+    guaranteeAmount: app.guaranteeAmount,
+    collateralValue: app.collateralValue,
+    financingDuration: app.financingDuration,
+    contractNumber: app.contractNumber || "",
+    paymentDueDate: app.paymentDueDate || "",
+    status: app.status,
+    currentStage: app.currentStage,
+    issuanceFee: app.issuanceFee,
+    content: "",
+    submittedDate:
+      app.submittedDate ||
+      (app.applicationDate
+        ? new Date(app.applicationDate).toLocaleDateString()
+        : ""),
+    companyName: app.companyName,
+    tradeValue: app.tradeValue,
+    proformaInvoiceIpfs: (app as any).proformaInvoiceIpfs,
+    salesContractIpfs: (app as any).salesContractIpfs,
+  });
+
+  const mapPgaToBuyerView = (pga: PGAInfo, fallback?: Application) => {
+    const symbol = selectedToken?.symbol || "USDC";
+    return {
+      id: pga.pgaId,
+      requestId: pga.pgaId,
+      guaranteeNo: pga.pgaId,
+      applicant: {
+        company: pga.companyName || fallback?.companyName || "Buyer",
+        registration: pga.registrationNumber || "",
+        country: "",
+        contact: "",
+        email: "",
+        walletAddress: pga.buyer || fallback?.buyer?.walletAddress || "",
+      },
+      beneficiary: {
+        walletAddress: pga.seller || fallback?.seller?.walletAddress || "",
+        name: pga.beneficiaryName || fallback?.beneficiaryName || undefined,
+      },
+      tradeDescription:
+        pga.tradeDescription || fallback?.tradeDescription || "",
+      collateralDescription: fallback?.collateralDescription || "",
+      guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
+      collateralValue: `${pga.collateralAmount} ${symbol}`,
+      financingDuration: pga.duration,
+      contractNumber: fallback?.contractNumber || "",
+      paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
+      status: fallback?.status || "Draft Sent to Pool",
+      currentStage: fallback?.currentStage || 2,
+      issuanceFee:
+        fallback?.issuanceFee ||
+        `${(parseFloat(pga.guaranteeAmount) * 0.1).toFixed(2)} ${symbol}`,
+      content: "",
+      submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
+      companyName: pga.companyName,
+      tradeValue: `${pga.tradeValue} ${symbol}`,
+    };
+  };
+
+  const openBuyerApplication = async (app: Application) => {
+    try {
+      const pgaInfo = await tradeFinanceService.getPGA(app.id);
+      setSelectedBuyerApplication(mapPgaToBuyerView(pgaInfo, app));
+    } catch (error) {
+      console.warn("Failed to refresh PGA details, using cached data", error);
+      setSelectedBuyerApplication(mapApplicationToBuyerView(app));
+    }
+    setShowBuyerApplicationView(true);
+  };
+
   const [poolBalance] = useState({
     balance: `223.76 ${tokenSymbol}`,
     liveBalance: "Live blockchain balance",
     stakedInDB: `Staked in DB: 100.00 ${tokenSymbol}`,
   });
 
+  const normalizedAddress = address?.toLowerCase();
+  const buyerApplications = applications.filter(
+    (app) => app.buyer?.walletAddress?.toLowerCase() === normalizedAddress,
+  );
+
   const sellerAwaitingDrafts = [
-    ...drafts,
+    ...drafts.filter(
+      (draft) =>
+        draft.beneficiary?.walletAddress?.toLowerCase() ===
+        address?.toLowerCase(),
+    ),
     ...applications
       .filter((app) => app.status === "Draft Sent to Seller")
+      .filter(
+        (app) =>
+          app.seller?.walletAddress?.toLowerCase() === address?.toLowerCase() ||
+          app.beneficiaryWallet?.toLowerCase() === address?.toLowerCase(),
+      )
       .map((app) => ({
         ...app,
         applicant: app.buyer,
@@ -227,7 +330,6 @@ export const TradeFinanceScreen = () => {
     );
   };
 
-
   const showToast = (message: string) => {
     if (Platform.OS === "android") {
       ToastAndroid.show(message, ToastAndroid.SHORT);
@@ -243,17 +345,26 @@ export const TradeFinanceScreen = () => {
         route.params.paymentResult;
 
       if (success && applicationId) {
-        const app = applications.find(a => a.id === applicationId);
-        const amount = app ? (paymentType === "fee" ? app.collateralValue : app.tradeValue).split(" ")[0] : "0";
+        const app = applications.find((a) => a.id === applicationId);
+        const amount = app
+          ? (paymentType === "fee"
+              ? app.collateralValue
+              : app.tradeValue
+            ).split(" ")[0]
+          : "0";
 
         switch (paymentType) {
           case "fee":
-            showToast("Issuance fee paid to Treasury! Treasury delegators will now issue the certificate.");
+            showToast(
+              "Issuance fee paid to Treasury! Treasury delegators will now issue the certificate.",
+            );
             break;
 
           case "invoice":
           case "settlement":
-            payBalancePaymentBlockchain(applicationId, amount).catch(console.error);
+            payBalancePaymentBlockchain(applicationId, amount).catch(
+              console.error,
+            );
             showToast("Processing balance payment on-chain...");
             break;
         }
@@ -483,25 +594,68 @@ export const TradeFinanceScreen = () => {
 
   const handleSubmitApplication = async (data: PoolGuaranteeForm) => {
     try {
+      const tradeValue = parseFloat(data.totalTradeValue || "0");
+      const guaranteeAmount = parseFloat(data.guaranteeAmount || "0");
+      const collateralAmount = data.collateralValue
+        ? parseFloat(data.collateralValue)
+        : guaranteeAmount * 0.1;
+
+      if (!Number.isFinite(tradeValue) || tradeValue <= 0) {
+        Alert.alert("Invalid Trade Value", "Enter a valid total trade value.");
+        return;
+      }
+      if (!Number.isFinite(guaranteeAmount) || guaranteeAmount <= 0) {
+        Alert.alert(
+          "Invalid Guarantee Amount",
+          "Enter a valid guarantee amount.",
+        );
+        return;
+      }
+      if (guaranteeAmount > tradeValue) {
+        Alert.alert(
+          "Invalid Guarantee Amount",
+          "Guarantee amount cannot exceed total trade value.",
+        );
+        return;
+      }
+      if (!Number.isFinite(collateralAmount) || collateralAmount <= 0) {
+        Alert.alert(
+          "Invalid Collateral Amount",
+          "Enter a valid collateral value.",
+        );
+        return;
+      }
+      if (collateralAmount >= tradeValue) {
+        Alert.alert(
+          "Invalid Collateral Amount",
+          "Collateral must be less than total trade value.",
+        );
+        return;
+      }
+
       const pgaId = `PG-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
-      
+
       await createPGABlockchain({
         pgaId,
         seller: data.sellerWalletAddress,
         companyName: data.companyName,
         registrationNumber: data.registrationNumber,
         tradeDescription: data.tradeDescription,
-        tradeValue: data.totalTradeValue,
-        guaranteeAmount: data.guaranteeAmount,
-        collateralAmount: data.collateralValue || (parseFloat(data.guaranteeAmount) * 0.1).toString(),
+        tradeValue: tradeValue.toString(),
+        guaranteeAmount: guaranteeAmount.toString(),
+        collateralAmount: collateralAmount.toString(),
         duration: parseInt(data.financingDuration) || 90,
         beneficiaryName: data.contactPerson, // Using contact person as name for now
         beneficiaryWallet: data.sellerWalletAddress,
         metadataURI: "ipfs://dummy",
         documentURIs: [
-          data.proformaInvoiceIpfs?.hash ? `ipfs://${data.proformaInvoiceIpfs.hash}` : "",
-          data.salesContractIpfs?.hash ? `ipfs://${data.salesContractIpfs.hash}` : ""
-        ].filter(Boolean)
+          data.proformaInvoiceIpfs?.hash
+            ? `ipfs://${data.proformaInvoiceIpfs.hash}`
+            : "",
+          data.salesContractIpfs?.hash
+            ? `ipfs://${data.salesContractIpfs.hash}`
+            : "",
+        ].filter(Boolean),
       });
 
       setShowApplicationModal(false);
@@ -515,7 +669,11 @@ export const TradeFinanceScreen = () => {
   const handleDraftApproval = async (draftId: string, approved: boolean) => {
     try {
       await sellerVotePGABlockchain(draftId, approved);
-      showToast(approved ? "Draft approved on blockchain!" : "Draft rejected on blockchain.");
+      showToast(
+        approved
+          ? "Draft approved on blockchain!"
+          : "Draft rejected on blockchain.",
+      );
       setShowSellerDraftView(false);
       setSelectedSellerDraft(null);
     } catch (error: any) {
@@ -526,13 +684,16 @@ export const TradeFinanceScreen = () => {
 
   const handlePayFee = (application: Application) => {
     // 10% issuance fee calculated from guarantee amount
-    const feeAmount = parseFloat(application.guaranteeAmount.split(" ")[0]) * 0.1;
-    const diamondAddress = selectedNetwork?.diamondAddress || "0x0000000000000000000000000000000000000000";
+    const feeAmount =
+      parseFloat(application.guaranteeAmount.split(" ")[0]) * 0.1;
+    const diamondAddress =
+      selectedNetwork?.diamondAddress ||
+      "0x0000000000000000000000000000000000000000";
 
     // Navigate to payment screen with fee payment parameters
     navigation.navigate("TradeFinancePayment", {
       paymentType: "fee",
-      feeAmount: feeAmount, 
+      feeAmount: feeAmount,
       feeRecipient: diamondAddress, // Pay to Treasury (Diamond)
       applicationId: application.id,
       preferredToken: tokenSymbol,
@@ -555,7 +716,9 @@ export const TradeFinanceScreen = () => {
   const openSettlementModal = (application: Application) => {
     // Calculate remaining amount (total - guarantee amount)
     const totalValue = parseFloat(application.tradeValue.split(" ")[0]);
-    const guaranteeAmount = parseFloat(application.guaranteeAmount.split(" ")[0]);
+    const guaranteeAmount = parseFloat(
+      application.guaranteeAmount.split(" ")[0],
+    );
     const remainingAmount = totalValue - guaranteeAmount;
 
     // Navigate to payment screen for settlement
@@ -613,8 +776,11 @@ export const TradeFinanceScreen = () => {
     if (!selectedApplication) return;
 
     try {
-      await confirmGoodsShippedBlockchain(selectedApplication.id, shippingForm.carrier);
-      
+      await confirmGoodsShippedBlockchain(
+        selectedApplication.id,
+        shippingForm.carrier,
+      );
+
       const shippingDetails = {
         trackingNumber: shippingForm.trackingNumber,
         carrier: shippingForm.carrier,
@@ -624,7 +790,7 @@ export const TradeFinanceScreen = () => {
       };
 
       updateShippingDetails(selectedApplication.id, shippingDetails);
-      
+
       setShowShippingModal(false);
       setSelectedApplication(null);
       setShippingForm({
@@ -637,7 +803,10 @@ export const TradeFinanceScreen = () => {
       showToast("Shipping confirmed on-chain successfully!");
     } catch (error: any) {
       console.error("Shipping confirmation error:", error);
-      Alert.alert("Error", error.message || "Failed to confirm shipping on-chain");
+      Alert.alert(
+        "Error",
+        error.message || "Failed to confirm shipping on-chain",
+      );
     }
   };
 
@@ -650,10 +819,14 @@ export const TradeFinanceScreen = () => {
   };
 
   const processDeliveryConfirmation = async (confirmedBy: string) => {
-    if (!selectedApplication || !selectedApplication.deliveryAgreementId) return;
+    if (!selectedApplication || !selectedApplication.deliveryAgreementId)
+      return;
 
     try {
-      await buyerConsentToDeliveryBlockchain(selectedApplication.deliveryAgreementId, true);
+      await buyerConsentToDeliveryBlockchain(
+        selectedApplication.deliveryAgreementId,
+        true,
+      );
       showToast(`Delivery confirmed by ${confirmedBy}!`);
       setShowDeliveryModal(false);
       setSelectedApplication(null);
@@ -676,7 +849,7 @@ export const TradeFinanceScreen = () => {
 
     try {
       await releasePaymentToSellerBlockchain(selectedApplication.id);
-      
+
       const finalAmount = selectedApplication.tradeValue;
       completeTransaction(selectedApplication.id, finalAmount);
 
@@ -686,7 +859,10 @@ export const TradeFinanceScreen = () => {
       showToast("Payment released to seller successfully!");
     } catch (error: any) {
       console.error("Completion error:", error);
-      Alert.alert("Error", error.message || "Failed to release payment on-chain");
+      Alert.alert(
+        "Error",
+        error.message || "Failed to release payment on-chain",
+      );
     }
   };
 
@@ -795,7 +971,6 @@ export const TradeFinanceScreen = () => {
         </View>
       </View>
 
-
       {/* My Pool Guarantee Applications Section for Buyers */}
       {userRole === "buyer" && (
         <View style={styles.section}>
@@ -827,15 +1002,19 @@ export const TradeFinanceScreen = () => {
           </View>
 
           {/* Application History */}
-          {applications.length > 0 ? (
+          {buyerApplications.length > 0 ? (
             <View style={styles.applicationsContainer}>
-              {applications.map((app) => (
+              {buyerApplications.map((app, index) => (
                 <TouchableOpacity
-                  key={app.id}
+                  key={
+                    app.id ??
+                    app.requestId ??
+                    (app as any).pgaId ??
+                    `app-${index}`
+                  }
                   style={styles.applicationListCard}
                   onPress={() => {
-                    setSelectedBuyerApplication(app);
-                    setShowBuyerApplicationView(true);
+                    openBuyerApplication(app);
                   }}
                   activeOpacity={0.7}
                 >
@@ -872,7 +1051,9 @@ export const TradeFinanceScreen = () => {
                         style={styles.applicationListValue}
                         numberOfLines={1}
                       >
-                        {(app as any).beneficiary?.name || "Seller"}
+                        {app.beneficiaryName ||
+                          app.seller?.walletAddress ||
+                          "Seller"}
                       </Text>
                     </View>
                     <View style={styles.applicationListRow}>
@@ -1046,44 +1227,93 @@ export const TradeFinanceScreen = () => {
         </View>
       )}
 
-
       {/* Logistics Dashboard Section */}
       {userRole === "logistics" && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Logistics Operations</Text>
-          <Text style={styles.sectionSubtitle}>Authorized logistics partners can sign and confirm shipments here.</Text>
-          
-          {applications.filter(app => app.status === "Certificate Issued" || app.status === "Seller Approved").length === 0 ? (
+          <Text style={styles.sectionSubtitle}>
+            Authorized logistics partners can sign and confirm shipments here.
+          </Text>
+
+          {applications.filter(
+            (app) =>
+              app.status === "Certificate Issued" ||
+              app.status === "Seller Approved",
+          ).length === 0 ? (
             <View style={styles.emptyApplicationsState}>
-              <MaterialCommunityIcons name="truck-delivery" size={48} color={colors.text + "40"} />
-              <Text style={styles.emptyStateText}>No pending shipments for assignment</Text>
+              <MaterialCommunityIcons
+                name="truck-delivery"
+                size={48}
+                color={colors.text + "40"}
+              />
+              <Text style={styles.emptyStateText}>
+                No pending shipments for assignment
+              </Text>
             </View>
           ) : (
             <View style={styles.applicationsContainer}>
-              {applications.filter(app => app.status === "Certificate Issued" || app.status === "Seller Approved").map((app) => (
-                <View key={app.id} style={styles.applicationListCard}>
-                  <View style={styles.applicationListHeader}>
-                    <View style={styles.applicationListInfo}>
-                      <Text style={styles.applicationListTitle}>{app.companyName || "Buyer"}</Text>
-                      <Text style={styles.applicationListSubtitle}>Ref: {app.requestId}</Text>
+              {applications
+                .filter(
+                  (app) =>
+                    app.status === "Certificate Issued" ||
+                    app.status === "Seller Approved",
+                )
+                .map((app) => (
+                  <View key={app.id} style={styles.applicationListCard}>
+                    <View style={styles.applicationListHeader}>
+                      <View style={styles.applicationListInfo}>
+                        <Text style={styles.applicationListTitle}>
+                          {app.companyName || "Buyer"}
+                        </Text>
+                        <Text style={styles.applicationListSubtitle}>
+                          Ref: {app.requestId}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor: getStatusColor(app.status) + "20",
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusBadgeText,
+                            { color: getStatusColor(app.status) },
+                          ]}
+                        >
+                          {app.status}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: getStatusColor(app.status) + "20" }]}>
-                      <Text style={[styles.statusBadgeText, { color: getStatusColor(app.status) }]}>{app.status}</Text>
+                    <View style={styles.applicationListDetails}>
+                      <Text style={styles.applicationListLabel}>
+                        Trade Value:{" "}
+                        <Text style={styles.applicationListValue}>
+                          {app.tradeValue}
+                        </Text>
+                      </Text>
+                      <Text style={styles.applicationListLabel}>
+                        Seller:{" "}
+                        <Text style={styles.applicationListValue}>
+                          {app.seller.walletAddress.substring(0, 8)}...
+                        </Text>
+                      </Text>
                     </View>
+                    <TouchableOpacity
+                      style={styles.actionButton}
+                      onPress={() => handleShippingConfirmation(app)}
+                    >
+                      <MaterialCommunityIcons
+                        name="signature-freehand"
+                        size={18}
+                        color="white"
+                      />
+                      <Text style={styles.actionButtonText}>Sign Shipment</Text>
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.applicationListDetails}>
-                    <Text style={styles.applicationListLabel}>Trade Value: <Text style={styles.applicationListValue}>{app.tradeValue}</Text></Text>
-                    <Text style={styles.applicationListLabel}>Seller: <Text style={styles.applicationListValue}>{app.seller.walletAddress.substring(0, 8)}...</Text></Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.actionButton} 
-                    onPress={() => handleShippingConfirmation(app)}
-                  >
-                    <MaterialCommunityIcons name="signature-freehand" size={18} color="white" />
-                    <Text style={styles.actionButtonText}>Sign Shipment</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+                ))}
             </View>
           )}
         </View>
@@ -1493,8 +1723,8 @@ export const TradeFinanceScreen = () => {
 
           <ScrollView style={styles.modalContent}>
             <Text style={styles.modalSubtitle}>
-              Send {tokenSymbol} payment directly to seller's wallet (partial or full
-              payment)
+              Send {tokenSymbol} payment directly to seller's wallet (partial or
+              full payment)
             </Text>
 
             {selectedApplication && (
@@ -1527,7 +1757,9 @@ export const TradeFinanceScreen = () => {
                 </View>
 
                 <View style={styles.paymentAmountCard}>
-                  <Text style={styles.paymentLabel}>Payment amount ({tokenSymbol})</Text>
+                  <Text style={styles.paymentLabel}>
+                    Payment amount ({tokenSymbol})
+                  </Text>
                   <View style={styles.amountInputContainer}>
                     <TextInput
                       style={styles.amountInput}
@@ -1552,8 +1784,8 @@ export const TradeFinanceScreen = () => {
                     />
                     <Text style={styles.paymentProcessText}>
                       Payment Process{"\n"}
-                      Full remaining balance of {settlementAmount} {tokenSymbol} will be
-                      sent to the seller.{"\n"}
+                      Full remaining balance of {settlementAmount} {tokenSymbol}{" "}
+                      will be sent to the seller.{"\n"}
                       This transaction will be recorded automatically.
                     </Text>
                   </View>
@@ -1753,7 +1985,7 @@ export const TradeFinanceScreen = () => {
                     >
                       <Text style={styles.cancelButtonText}>Cancel</Text>
                     </TouchableOpacity>
-                     <TouchableOpacity
+                    <TouchableOpacity
                       style={styles.confirmButton}
                       onPress={() => processDeliveryConfirmation(userRole)}
                     >
@@ -1914,11 +2146,13 @@ export const TradeFinanceScreen = () => {
         presentationStyle="fullScreen"
       >
         {selectedBuyerApplication && (
-           <BuyerApplicationView
+          <BuyerApplicationView
             application={selectedBuyerApplication}
             onPayFee={() => handlePayFee(selectedBuyerApplication)}
             onPayInvoice={() => openSettlementModal(selectedBuyerApplication)}
-            onConfirmDelivery={() => handleDeliveryConfirmation(selectedBuyerApplication)}
+            onConfirmDelivery={() =>
+              handleDeliveryConfirmation(selectedBuyerApplication)
+            }
             onClose={() => {
               setShowBuyerApplicationView(false);
               setSelectedBuyerApplication(null);

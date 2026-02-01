@@ -146,6 +146,7 @@ class TradeFinanceService {
     private currentNetworkConfig: WalletNetwork | null = null;
     private currentSigner: ethers.Wallet | null = null;
     private tokenDecimalsCache: Map<string, number> = new Map();
+    private metadataUnsupportedChains: Set<number> = new Set();
 
     public static getInstance(): TradeFinanceService {
         if (!TradeFinanceService.instance) {
@@ -268,6 +269,7 @@ class TradeFinanceService {
         // Fetch detailed metadata from chain
         try {
             const metadata = await this.getPGAMetadata(pgaId);
+            if (!metadata) return pgaInfo;
             return {
                 ...pgaInfo,
                 companyName: metadata.companyName,
@@ -289,17 +291,29 @@ class TradeFinanceService {
         beneficiaryName: string;
         beneficiaryWallet: string;
         documents: string[];
-    }> {
+    } | null> {
+        if (this.metadataUnsupportedChains.has(this.currentChainId)) {
+            return null;
+        }
         const contract = await this.getContract();
-        const data = await contract.getPGAMetadata(pgaId);
-        return {
-            companyName: data.companyName,
-            registrationNumber: data.registrationNumber,
-            tradeDescription: data.tradeDescription,
-            beneficiaryName: data.beneficiaryName,
-            beneficiaryWallet: data.beneficiaryWallet,
-            documents: data.documents,
-        };
+        try {
+            const data = await contract.getPGAMetadata(pgaId);
+            return {
+                companyName: data.companyName,
+                registrationNumber: data.registrationNumber,
+                tradeDescription: data.tradeDescription,
+                beneficiaryName: data.beneficiaryName,
+                beneficiaryWallet: data.beneficiaryWallet,
+                documents: data.documents,
+            };
+        } catch (error: any) {
+            const reason = error?.reason || error?.error?.reason || error?.message;
+            if (typeof reason === "string" && reason.includes("Function does not exist")) {
+                this.metadataUnsupportedChains.add(this.currentChainId);
+                return null;
+            }
+            throw error;
+        }
     }
 
     public async getAllPGAsByBuyer(buyer: string): Promise<PGAInfo[]> {

@@ -109,11 +109,11 @@ export const CompactNetworkTokenSelector: React.FC<
       case "ETH":
         return "ethereum";
       case "USDC":
-        return "currency-usd-circle";
+        return "currency-usd";
       case "USDT":
         return "currency-usd";
       default:
-        return "currency-usd-circle-outline";
+        return "currency-usd";
     }
   };
 

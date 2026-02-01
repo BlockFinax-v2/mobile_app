@@ -74,6 +74,8 @@ interface Application {
   seller: {
     walletAddress: string;
   };
+  beneficiaryName?: string;
+  beneficiaryWallet?: string;
   proformaInvoiceIpfs?: { hash: string; url: string };
   salesContractIpfs?: { hash: string; url: string };
   documents?: string[];
@@ -608,28 +610,30 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
   const mapPGAInfoToApplication = (pga: PGAInfo): Application => {
     const symbol = selectedNetwork?.stablecoins?.[0]?.symbol || "USDC";
     return {
-      id: pga.id,
-      requestId: pga.id,
-      companyName: pga.companyName,
+      id: pga.pgaId,
+      requestId: pga.pgaId,
+      companyName: pga.companyName || "Buyer",
       guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
       tradeValue: `${pga.tradeValue} ${symbol}`,
       status: mapPGAStatusToAppStatus(pga.status),
       submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
-      contractNumber: pga.contractNumber || "",
-      tradeDescription: pga.tradeDescription,
+      contractNumber: "",
+      tradeDescription: pga.tradeDescription || "",
       buyer: {
-        company: pga.companyName,
+        company: pga.companyName || "Buyer",
         registration: pga.registrationNumber || "",
         country: "",
-        contact: pga.beneficiaryName || "",
+        contact: "",
         email: "",
         phone: "",
-        walletAddress: pga.beneficiaryWallet || "",
+        walletAddress: pga.buyer || "",
         applicationDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
       },
       seller: {
         walletAddress: pga.seller || "",
       },
+      beneficiaryName: pga.beneficiaryName || "",
+      beneficiaryWallet: pga.beneficiaryWallet || "",
       applicationDate: new Date(pga.createdAt * 1000).toISOString(),
       paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
       financingDuration: pga.duration,
@@ -653,7 +657,10 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       const allApps = [...buyerPGAs, ...sellerPGAs].map(
         mapPGAInfoToApplication,
       );
-      setApplications(allApps);
+      const uniqueMap = new Map<string, Application>();
+      allApps.forEach((app) => uniqueMap.set(app.id, app));
+
+      setApplications(Array.from(uniqueMap.values()));
     } catch (error) {
       console.error("Error fetching blockchain data:", error);
     }
@@ -767,6 +774,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
       setApplications(apps);
 
+      // Full refresh to reconcile adds/removes from chain
+      await fetchBlockchainData();
+
       // Persist updated data to cache (fire-and-forget)
       persistData();
 
@@ -787,7 +797,14 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     } finally {
       setIsLoadingHistory(false);
     }
-  }, [address, isUnlocked, lastSyncedBlock, isLoadingHistory, persistData]);
+  }, [
+    address,
+    isUnlocked,
+    lastSyncedBlock,
+    isLoadingHistory,
+    persistData,
+    fetchBlockchainData,
+  ]);
 
   const preload = useCallback(async () => {
     if (!address || !isUnlocked || !selectedNetwork) return;
@@ -799,6 +816,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
     await loadCachedData();
     await loadHistoricalEvents();
+    await fetchBlockchainData();
     tradeFinanceEventService.startListening(address, handleRealtimeEvent);
 
     hasInitialized.current = true;
@@ -809,8 +827,23 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     selectedNetwork,
     loadCachedData,
     loadHistoricalEvents,
+    fetchBlockchainData,
     handleRealtimeEvent,
   ]);
+
+  // Background refresh to keep list accurate (adds/removes)
+  useEffect(() => {
+    if (!address || !isUnlocked || !selectedNetwork) return;
+
+    const intervalId = setInterval(
+      () => {
+        fetchBlockchainData();
+      },
+      2 * 60 * 1000,
+    );
+
+    return () => clearInterval(intervalId);
+  }, [address, isUnlocked, selectedNetwork, fetchBlockchainData]);
 
   /**
    * Pull-to-refresh handler - fetches latest blockchain data
