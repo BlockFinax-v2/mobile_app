@@ -97,7 +97,7 @@ export const UniversalPayment: React.FC<UniversalPaymentProps> = ({
     const iconMap: Record<string, string> = {
       ETH: "ethereum",
       BTC: "bitcoin",
-      USDC: "currency-usd-circle",
+      USDC: "cash-multiple",
       USDT: "currency-usd",
       MATIC: "triangle",
     };

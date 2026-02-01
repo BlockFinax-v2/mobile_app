@@ -41,6 +41,7 @@ export const DebugScreen: React.FC = () => {
     lastUnlockTime,
     settings,
     balances,
+    displayBalances,
     isBiometricAvailable,
     resetWalletData,
     lockWallet,
@@ -96,10 +97,10 @@ export const DebugScreen: React.FC = () => {
 
       // Get additional settings
       const biometricEnabled = await secureStorage.getItem(
-        "blockfinax.biometric_enabled"
+        "blockfinax.biometric_enabled",
       );
       const walletPersistent = await secureStorage.getItem(
-        "blockfinax.wallet_persistent"
+        "blockfinax.wallet_persistent",
       );
 
       const info: WalletDebugInfo = {
@@ -112,7 +113,7 @@ export const DebugScreen: React.FC = () => {
         isBiometricAvailable: isBiometricAvailable,
         walletPersistent: walletPersistent === "true",
         settings,
-        balances,
+        balances: displayBalances,
         secureDataKeys,
         asyncDataKeys,
       };
@@ -150,7 +151,7 @@ export const DebugScreen: React.FC = () => {
           style: "destructive",
           onPress: confirmClearWalletData,
         },
-      ]
+      ],
     );
   };
 
@@ -158,20 +159,20 @@ export const DebugScreen: React.FC = () => {
     setIsResetting(true);
     try {
       await resetWalletData();
-      
+
       // Navigate to Landing page by resetting navigation stack
       const navigation = useNavigation();
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
-          routes: [{ name: 'Auth' }],
-        })
+          routes: [{ name: "Auth" }],
+        }),
       );
     } catch (error) {
       console.error("Failed to clear wallet data:", error);
       Alert.alert(
         "❌ Clear Failed",
-        "Failed to clear wallet data. Please try again."
+        "Failed to clear wallet data. Please try again.",
       );
       setIsResetting(false);
     }
@@ -343,7 +344,7 @@ Tokens: ${debugInfo.balances.tokens.length}
             <Text style={styles.infoValue}>
               {debugInfo.address
                 ? `${debugInfo.address.slice(0, 8)}...${debugInfo.address.slice(
-                    -6
+                    -6,
                   )}`
                 : "None"}
             </Text>
@@ -444,9 +445,7 @@ Tokens: ${debugInfo.balances.tokens.length}
             <Text style={styles.infoLabel}>Primary Balance:</Text>
             <Text style={styles.infoValue}>
               {debugInfo.balances.primary.toFixed(6)}{" "}
-              {debugInfo.selectedNetwork.includes("BSC")
-                ? "BNB"
-                : "ETH"}
+              {debugInfo.selectedNetwork.includes("BSC") ? "BNB" : "ETH"}
             </Text>
           </View>
           <View style={styles.infoRow}>
@@ -475,12 +474,12 @@ Tokens: ${debugInfo.balances.tokens.length}
               {selectedNetwork.rpcUrl.includes("llamarpc")
                 ? "🟢 LlamaRPC (Free)"
                 : selectedNetwork.rpcUrl.includes("publicnode")
-                ? "🟢 PublicNode (Free)"
-                : selectedNetwork.rpcUrl.includes("binance")
-                ? "🟢 Binance (Official)"
-                : selectedNetwork.rpcUrl.includes("base.org")
-                ? "🟢 Base (Official)"
-                : "🟢 Official RPC"}
+                  ? "🟢 PublicNode (Free)"
+                  : selectedNetwork.rpcUrl.includes("binance")
+                    ? "🟢 Binance (Official)"
+                    : selectedNetwork.rpcUrl.includes("base.org")
+                      ? "🟢 Base (Official)"
+                      : "🟢 Official RPC"}
             </Text>
             <Text style={styles.networkInfo}>
               Chain ID: {selectedNetwork.chainId} (Real blockchain)

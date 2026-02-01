@@ -11,8 +11,13 @@ import {
 import { useWallet } from "../../contexts/WalletContext";
 
 export default function NetworkTestScreen() {
-  const { selectedNetwork, switchNetwork, balances, refreshBalance } =
-    useWallet();
+  const {
+    selectedNetwork,
+    switchNetwork,
+    balances,
+    displayBalances,
+    refreshBalance,
+  } = useWallet();
 
   const [testResults, setTestResults] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
@@ -212,16 +217,16 @@ export default function NetworkTestScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Current Balances</Text>
         <Text style={styles.balanceInfo}>
-          Native: {balances.primary.toFixed(4)}{" "}
+          Native: {displayBalances.primary.toFixed(4)}{" "}
           {selectedNetwork.primaryCurrency}
         </Text>
         <Text style={styles.balanceInfo}>
-          USD Value: ${balances.usd.toFixed(2)}
+          USD Value: ${displayBalances.usd.toFixed(2)}
         </Text>
         <Text style={styles.balanceInfo}>
-          Tokens: {balances.tokens.length} loaded
+          Tokens: {displayBalances.tokens.length} loaded
         </Text>
-        {balances.tokens.map((token, index) => (
+        {displayBalances.tokens.map((token, index) => (
           <Text key={index} style={styles.tokenInfo}>
             {token.symbol}: {token.balance}
           </Text>

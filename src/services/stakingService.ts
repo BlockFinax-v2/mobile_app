@@ -589,15 +589,26 @@ class StakingService {
         isFinancier: stakeData.isFinancier
       });
       
+      // Safe conversion helper
+      const safeToNumber = (bn: any, defaultValue: number = 0): number => {
+        try {
+          const str = bn.toString();
+          const num = Number(str);
+          return Number.isFinite(num) && num <= Number.MAX_SAFE_INTEGER ? num : defaultValue;
+        } catch {
+          return defaultValue;
+        }
+      };
+
       // Use the more accurate getPendingRewards function result
       const stakeInfo = {
         amount: ethers.utils.formatUnits(stakeData.amount, 6), // USDC has 6 decimals
-        timestamp: stakeData.timestamp.toNumber(),
+        timestamp: safeToNumber(stakeData.timestamp),
         votingPower: ethers.utils.formatUnits(stakeData.votingPower, 6),
         active: stakeData.active,
         pendingRewards: ethers.utils.formatUnits(pendingRewards, 6), // Use separate call for accuracy
-        timeUntilUnlock: stakeData.timeUntilUnlock.toNumber(),
-        deadline: stakeData.deadline.toNumber(),
+        timeUntilUnlock: safeToNumber(stakeData.timeUntilUnlock),
+        deadline: safeToNumber(stakeData.deadline),
         isFinancier: stakeData.isFinancier,
       };
       
@@ -642,21 +653,32 @@ class StakingService {
       const initialAprRaw = Number(config.initialApr.toString());
       const currentRewardRateRaw = Number(config.currentRewardRate.toString());
 
+      // Safe conversion for potentially large numbers
+      const safeToNumber = (bn: any, defaultValue: number = 0): number => {
+        try {
+          const str = bn.toString();
+          const num = Number(str);
+          return Number.isFinite(num) && num <= Number.MAX_SAFE_INTEGER ? num : defaultValue;
+        } catch {
+          return defaultValue;
+        }
+      };
+
       const result = {
         initialApr: Number.isFinite(initialAprRaw) ? initialAprRaw : 0,
         currentRewardRate: Number.isFinite(currentRewardRateRaw) ? currentRewardRateRaw : 0,
-        // Duration values are plain seconds
-        minLockDuration: config.minLockDuration.toNumber(),
-        // Reduction/penalty are stored as integer basis points
-        aprReductionPerThousand: config.aprReductionPerThousand.toNumber(),
-        emergencyWithdrawPenalty: config.emergencyWithdrawPenalty.toNumber() / 100,
+        // Duration values are plain seconds - use safe conversion
+        minLockDuration: safeToNumber(config.minLockDuration),
+        // Reduction/penalty are stored as integer basis points - use safe conversion
+        aprReductionPerThousand: safeToNumber(config.aprReductionPerThousand),
+        emergencyWithdrawPenalty: safeToNumber(config.emergencyWithdrawPenalty) / 100,
         // minimumStake is stored as USD equivalent with 18 decimals (ethers.parseEther)
         // Contract stores USD values using 6 decimals (USDC-style)
         minimumStake: ethers.utils.formatUnits(config.minimumStake, 6),
         minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
-        // Lock durations are plain seconds
-        minFinancierLockDuration: config.minFinancierLockDuration.toNumber(),
-        minNormalStakerLockDuration: config.minNormalStakerLockDuration.toNumber(),
+        // Lock durations are plain seconds - use safe conversion
+        minFinancierLockDuration: safeToNumber(config.minFinancierLockDuration),
+        minNormalStakerLockDuration: safeToNumber(config.minNormalStakerLockDuration),
       };
       
       console.log("🔧 Formatted result:", JSON.stringify(result, null, 2));
@@ -1169,7 +1191,7 @@ class StakingService {
         amount: stakeData.amount.toString(),
         timeUntilUnlock: stakeData.timeUntilUnlock.toString(),
         unlockTime: stakeData.timeUntilUnlock.gt(0) ? 
-          `${Math.ceil(stakeData.timeUntilUnlock.toNumber() / 86400)} days remaining` : 'Unlocked'
+          `${Math.ceil(this.safeToNumber(stakeData.timeUntilUnlock) / 86400)} days remaining` : 'Unlocked'
       });
 
       // Get USDC token address for multi-token rewards
@@ -2303,6 +2325,19 @@ class StakingService {
   }
 
   /**
+   * Safe conversion helper for BigNumber to number
+   */
+  private safeToNumber(bn: any, defaultValue: number = 0): number {
+    try {
+      const str = bn.toString();
+      const num = Number(str);
+      return Number.isFinite(num) && num <= Number.MAX_SAFE_INTEGER ? num : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  }
+
+  /**
    * Get all proposals
    */
   public async getAllProposals(): Promise<Proposal[]> {
@@ -2323,16 +2358,24 @@ class StakingService {
           description: proposalData.description,
           votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
           votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
-          createdAt: proposalData.createdAt.toNumber(),
-          votingDeadline: proposalData.votingDeadline.toNumber(),
+          createdAt: this.safeToNumber(proposalData.createdAt),
+          votingDeadline: this.safeToNumber(proposalData.votingDeadline),
           status: statusMap[proposalData.status] as any,
           executed: proposalData.executed,
         });
       }
       
       return proposals;
-    } catch (error) {
-      console.error("Error getting proposals:", error);
+    } catch (error: any) {
+      // Governance not available - suppress error for networks without governance facet
+      const isGovernanceUnavailable = 
+        error.code === 'CALL_EXCEPTION' || 
+        error.message?.includes('revert') || 
+        error.message?.includes('Panic');
+      
+      if (!isGovernanceUnavailable) {
+        console.error("Error getting proposals:", error);
+      }
       return [];
     }
   }
@@ -2358,16 +2401,23 @@ class StakingService {
           description: proposalData.description,
           votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
           votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
-          createdAt: proposalData.createdAt.toNumber(),
-          votingDeadline: proposalData.votingDeadline.toNumber(),
+          createdAt: this.safeToNumber(proposalData.createdAt),
+          votingDeadline: this.safeToNumber(proposalData.votingDeadline),
           status: statusMap[proposalData.status] as any,
           executed: proposalData.executed,
         });
       }
       
       return proposals;
-    } catch (error) {
-      console.error("Error getting active proposals:", error);
+    } catch (error: any) {
+      // Governance not available - suppress error for networks without governance facet
+      const isGovernanceUnavailable = 
+        error.code === 'CALL_EXCEPTION' || 
+        error.message?.includes('revert');
+      
+      if (!isGovernanceUnavailable) {
+        console.error("Error getting active proposals:", error);
+      }
       return [];
     }
   }
@@ -2389,13 +2439,20 @@ class StakingService {
         description: proposalData.description,
         votesFor: ethers.utils.formatUnits(proposalData.votesFor, 6),
         votesAgainst: ethers.utils.formatUnits(proposalData.votesAgainst, 6),
-        createdAt: proposalData.createdAt.toNumber(),
-        votingDeadline: proposalData.votingDeadline.toNumber(),
+        createdAt: this.safeToNumber(proposalData.createdAt),
+        votingDeadline: this.safeToNumber(proposalData.votingDeadline),
         status: statusMap[proposalData.status] as any,
         executed: proposalData.executed,
       };
-    } catch (error) {
-      console.error("Error getting proposal:", error);
+    } catch (error: any) {
+      // Governance not available - suppress error for networks without governance facet
+      const isGovernanceUnavailable = 
+        error.code === 'CALL_EXCEPTION' || 
+        error.message?.includes('revert');
+      
+      if (!isGovernanceUnavailable) {
+        console.error("Error getting proposal:", error);
+      }
       return null;
     }
   }
@@ -2436,13 +2493,20 @@ class StakingService {
       
       return {
         minimumFinancierStake: ethers.utils.formatUnits(config.minimumFinancierStake, 6),
-        votingDuration: config.votingDuration.toNumber(),
-        approvalThreshold: config.approvalThreshold.toNumber(),
-        revocationPeriod: config.revocationPeriod.toNumber(),
+        votingDuration: this.safeToNumber(config.votingDuration),
+        approvalThreshold: this.safeToNumber(config.approvalThreshold),
+        revocationPeriod: this.safeToNumber(config.revocationPeriod),
       };
-    } catch (error) {
-      console.error("Error getting DAO config:", error);
-      throw new Error("Failed to fetch DAO configuration");
+    } catch (error: any) {
+      // Governance not available - suppress error for networks without governance facet
+      const isGovernanceUnavailable = 
+        error.code === 'CALL_EXCEPTION' || 
+        error.message?.includes('revert');
+      
+      if (!isGovernanceUnavailable) {
+        console.error("Error getting DAO config:", error);
+      }
+      throw error; // Still throw so Promise.allSettled can handle it
     }
   }
 
@@ -2455,13 +2519,21 @@ class StakingService {
       const stats = await contract.getDAOStats();
       
       return {
-        totalProposals: stats.totalProposals.toNumber(),
-        activeProposals: stats.activeProposals.toNumber(),
-        passedProposals: stats.passedProposals.toNumber(),
-        executedProposals: stats.executedProposals.toNumber(),
+        totalProposals: this.safeToNumber(stats.totalProposals),
+        activeProposals: this.safeToNumber(stats.activeProposals),
+        passedProposals: this.safeToNumber(stats.passedProposals),
+        executedProposals: this.safeToNumber(stats.executedProposals),
       };
-    } catch (error) {
-      console.error("Error getting DAO stats:", error);
+    } catch (error: any) {
+      // Governance not available - suppress error for networks without governance facet
+      const isGovernanceUnavailable = 
+        error.code === 'CALL_EXCEPTION' || 
+        error.message?.includes('revert') || 
+        error.message?.includes('execution reverted');
+      
+      if (!isGovernanceUnavailable) {
+        console.error("Error getting DAO stats:", error);
+      }
       return {
         totalProposals: 0,
         activeProposals: 0,
@@ -2691,10 +2763,10 @@ class StakingService {
       return {
         tokenAddress,
         amount: ethers.utils.formatUnits(stakeData.amount, decimals),
-        timestamp: stakeData.timestamp.toNumber(),
+        timestamp: this.safeToNumber(stakeData.timestamp),
         active: stakeData.active,
         usdEquivalent: ethers.utils.formatUnits(stakeData.usdEquivalent, 6), // USD is 6 decimals (matching USDC/USDT)
-        deadline: stakeData.deadline.toNumber(),
+        deadline: this.safeToNumber(stakeData.deadline),
         isFinancier: stakeData.financierStatus,
         pendingRewards: ethers.utils.formatUnits(stakeData.pendingRewards, decimals),
         votingPower: ethers.utils.formatUnits(stakeData.votingPower, 6), // Voting power uses 6 decimals
@@ -2746,7 +2818,7 @@ class StakingService {
           const decimals = await this.getTokenDecimals(tokens[i]);
           amounts.push(ethers.utils.formatUnits(allStakes.amounts[i], decimals));
           usdEquivalents.push(ethers.utils.formatUnits(allStakes.usdEquivalents[i], 6)); // USD uses 6 decimals
-          deadlines.push(allStakes.deadlines[i].toNumber());
+          deadlines.push(this.safeToNumber(allStakes.deadlines[i]));
           pendingRewards.push(ethers.utils.formatUnits(allStakes.pendingRewards[i], decimals));
         } catch (err) {
           console.warn(`[StakingService] Failed formatting stake for token ${tokens[i]} - using defaults`, err);
@@ -3031,8 +3103,8 @@ class StakingService {
       
       return {
         revocationRequested: status.revocationRequested,
-        revocationRequestTime: status.revocationRequestTime.toNumber(),
-        revocationDeadline: status.revocationDeadline.toNumber(),
+        revocationRequestTime: this.safeToNumber(status.revocationRequestTime),
+        revocationDeadline: this.safeToNumber(status.revocationDeadline),
         canCompleteRevocation: status.canCompleteRevocation,
       };
     } catch (error) {

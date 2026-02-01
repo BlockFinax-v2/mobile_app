@@ -21,6 +21,7 @@ import {
   RefreshControl,
   Modal,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { WalletStackParamList } from "@/navigation/types";
@@ -54,6 +55,23 @@ import {
 } from "@/config/stablecoinPrices";
 import { useTradeFinance } from "@/contexts/TradeFinanceContext";
 import { SellerDraftView } from "@/components/trade/SellerDraftView";
+
+type TreasuryPortalCache = {
+  userTotalStakedUSD: number;
+  userVotingPowerPercentage: number;
+  globalPoolTotalUSD: number;
+  currentAPR: number;
+  isFinancier: boolean;
+  availableBalances: Record<string, number>;
+  allStakesInfo: AllStakesInfo | null;
+  stakingConfig: StakingConfig | null;
+  proposals: Proposal[];
+  daoStats: DAOStats | null;
+  daoConfig: DAOConfig | null;
+  lastUpdated: number;
+};
+
+const treasuryPortalMemoryCache = new Map<string, TreasuryPortalCache>();
 
 const { width } = Dimensions.get("window");
 
@@ -143,6 +161,7 @@ export function TreasuryPortalScreenRedesigned() {
     address,
     switchNetwork,
     balances,
+    displayBalances,
     getNetworkById,
   } = useWallet();
 
@@ -205,6 +224,191 @@ export function TreasuryPortalScreenRedesigned() {
     {},
   );
 
+  // Prevent re-initialization on screen navigation
+  const hasInitialized = useRef(false);
+  const lastInitializedKey = useRef<string | null>(null);
+  const hasLoadedData = useRef(false); // Track if data has been loaded successfully
+  const hasLoadedCache = useRef(false); // Prevent overwriting cache with zeros
+
+  // Storage keys for cache
+  const getCacheKey = (suffix: string) =>
+    `treasury_portal_${address}_${selectedNetwork.chainId}_${suffix}`;
+
+  const safeParse = <T,>(value: string | null, fallback: T): T => {
+    if (!value) return fallback;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  };
+
+  // Load cached data instantly on mount
+  const loadCachedData = useCallback(async (): Promise<boolean> => {
+    if (!address) return false;
+
+    const startTime = performance.now();
+    console.log("[TreasuryPortal] ⚡ Loading cached data...");
+
+    try {
+      const memoryKey = `${address}_${selectedNetwork.chainId}`;
+      const memoryCache = treasuryPortalMemoryCache.get(memoryKey);
+
+      if (memoryCache) {
+        setUserTotalStakedUSD(memoryCache.userTotalStakedUSD);
+        setUserVotingPowerPercentage(memoryCache.userVotingPowerPercentage);
+        setGlobalPoolTotalUSD(memoryCache.globalPoolTotalUSD);
+        setCurrentAPR(memoryCache.currentAPR);
+        setIsFinancier(memoryCache.isFinancier);
+        if (Object.keys(memoryCache.availableBalances || {}).length > 0) {
+          setAvailableBalances(memoryCache.availableBalances);
+        }
+        setAllStakesInfo(memoryCache.allStakesInfo);
+        setStakingConfig(memoryCache.stakingConfig);
+        setProposals(memoryCache.proposals);
+        setDAOStats(memoryCache.daoStats);
+        setDAOConfig(memoryCache.daoConfig);
+        hasLoadedCache.current = true;
+        console.log("[TreasuryPortal] ⚡ Memory cache hit - instant render");
+        return true;
+      }
+
+      const summaryKeys = [
+        "userTotalStakedUSD",
+        "userVotingPowerPercentage",
+        "globalPoolTotalUSD",
+        "currentAPR",
+        "isFinancier",
+        "availableBalances",
+      ];
+
+      const summaryResults = await Promise.all(
+        summaryKeys.map((key) => AsyncStorage.getItem(getCacheKey(key))),
+      );
+
+      const hasCache = summaryResults.some((value) => value !== null);
+
+      if (summaryResults[0])
+        setUserTotalStakedUSD(parseFloat(summaryResults[0]));
+      if (summaryResults[1])
+        setUserVotingPowerPercentage(parseFloat(summaryResults[1]));
+      if (summaryResults[2])
+        setGlobalPoolTotalUSD(parseFloat(summaryResults[2]));
+      if (summaryResults[3]) setCurrentAPR(parseFloat(summaryResults[3]));
+      if (summaryResults[4]) setIsFinancier(summaryResults[4] === "true");
+      if (summaryResults[5]) {
+        const cachedAvailable = safeParse<Record<string, number>>(
+          summaryResults[5],
+          {},
+        );
+        if (Object.keys(cachedAvailable).length > 0) {
+          setAvailableBalances(cachedAvailable);
+        }
+      }
+
+      hasLoadedCache.current = hasCache;
+      const loadTime = performance.now() - startTime;
+      console.log(
+        `[TreasuryPortal] ⚡ Summary cache loaded in ${loadTime.toFixed(2)}ms`,
+      );
+
+      // Load heavy data in background
+      setTimeout(async () => {
+        try {
+          const heavyKeys = [
+            "allStakesInfo",
+            "stakingConfig",
+            "proposals",
+            "daoStats",
+            "daoConfig",
+          ];
+
+          const heavyResults = await Promise.all(
+            heavyKeys.map((key) => AsyncStorage.getItem(getCacheKey(key))),
+          );
+
+          setAllStakesInfo(safeParse(heavyResults[0], null));
+          setStakingConfig(safeParse(heavyResults[1], null));
+          setProposals(safeParse(heavyResults[2], []));
+          setDAOStats(safeParse(heavyResults[3], null));
+          setDAOConfig(safeParse(heavyResults[4], null));
+        } catch (error) {
+          console.error("[TreasuryPortal] Heavy cache load error:", error);
+        }
+      }, 0);
+
+      return hasCache;
+    } catch (error) {
+      console.error("[TreasuryPortal] Cache load error:", error);
+      return false;
+    }
+  }, [address, selectedNetwork.chainId]);
+
+  // Persist data to cache (fire-and-forget)
+  const persistData = useCallback(() => {
+    if (!address) return;
+
+    const memoryKey = `${address}_${selectedNetwork.chainId}`;
+    treasuryPortalMemoryCache.set(memoryKey, {
+      userTotalStakedUSD,
+      userVotingPowerPercentage,
+      globalPoolTotalUSD,
+      currentAPR,
+      isFinancier,
+      availableBalances,
+      allStakesInfo,
+      stakingConfig,
+      proposals,
+      daoStats,
+      daoConfig,
+      lastUpdated: Date.now(),
+    });
+
+    const cacheData = {
+      userTotalStakedUSD: userTotalStakedUSD.toString(),
+      userVotingPowerPercentage: userVotingPowerPercentage.toString(),
+      globalPoolTotalUSD: globalPoolTotalUSD.toString(),
+      currentAPR: currentAPR.toString(),
+      isFinancier: isFinancier.toString(),
+      availableBalances: JSON.stringify(availableBalances),
+      allStakesInfo: JSON.stringify(allStakesInfo),
+      stakingConfig: JSON.stringify(stakingConfig),
+      proposals: JSON.stringify(proposals),
+      daoStats: JSON.stringify(daoStats),
+      daoConfig: JSON.stringify(daoConfig),
+    };
+
+    // Fire-and-forget - don't await
+    Promise.all(
+      Object.entries(cacheData).map(([key, value]) =>
+        AsyncStorage.setItem(getCacheKey(key), value),
+      ),
+    ).catch((err) =>
+      console.error("[TreasuryPortal] Cache persist error:", err),
+    );
+  }, [
+    address,
+    selectedNetwork.chainId,
+    userTotalStakedUSD,
+    userVotingPowerPercentage,
+    globalPoolTotalUSD,
+    currentAPR,
+    isFinancier,
+    availableBalances,
+    allStakesInfo,
+    stakingConfig,
+    proposals,
+    daoStats,
+    daoConfig,
+  ]);
+
+  // Persist cache whenever key data changes
+  useEffect(() => {
+    if (!address || !isUnlocked) return;
+    if (!hasLoadedData.current) return;
+    persistData();
+  }, [address, isUnlocked, persistData]);
+
   const stakedForSelectedToken = useMemo(() => {
     if (!allStakesInfo || !selectedToken) return 0;
     const tokenIdx = allStakesInfo.tokens.findIndex(
@@ -239,10 +443,45 @@ export function TreasuryPortalScreenRedesigned() {
     },
   ];
 
-  // Initialize
+  // Initialize - load cache immediately, then sync if needed
   useEffect(() => {
-    loadInitialData();
-  }, [isUnlocked, selectedNetwork, address]);
+    if (!isUnlocked || !address) {
+      hasInitialized.current = false;
+      lastInitializedKey.current = null;
+      hasLoadedData.current = false;
+      return;
+    }
+
+    const initialize = async () => {
+      const initKey = `${address}_${selectedNetwork.chainId}`;
+
+      // ALWAYS load cache first for instant display
+      const hasCache = await loadCachedData();
+
+      // If cache exists, show instantly, then refresh in background
+      if (hasCache) {
+        console.log("[TreasuryPortal] 🚀 Cache hit - refreshing in background");
+        hasInitialized.current = true;
+        lastInitializedKey.current = initKey;
+        loadInitialData({ force: true, silent: true });
+        return;
+      }
+
+      if (hasInitialized.current && lastInitializedKey.current === initKey) {
+        console.log(
+          "[TreasuryPortal] 🚀 Already initialized - using cached data only",
+        );
+        return;
+      }
+
+      console.log("[TreasuryPortal] Initializing for first time...");
+      await loadInitialData();
+      hasInitialized.current = true;
+      lastInitializedKey.current = initKey;
+    };
+
+    initialize();
+  }, [isUnlocked, selectedNetwork, address, loadCachedData]);
 
   useEffect(() => {
     const tokens = getSupportedStablecoins(selectedNetwork.chainId);
@@ -266,11 +505,32 @@ export function TreasuryPortalScreenRedesigned() {
     }
   }, [isFinancier, stakeAsFinancier]);
 
-  const loadInitialData = async () => {
+  const loadInitialData = async (options?: {
+    force?: boolean;
+    silent?: boolean;
+  }) => {
     if (!isUnlocked || !address) return;
 
+    // Skip loading if we already have data for this wallet/network
+    const currentKey = `${address}_${selectedNetwork.chainId}`;
+    if (
+      !options?.force &&
+      hasLoadedData.current &&
+      lastInitializedKey.current === currentKey
+    ) {
+      console.log(
+        "[TreasuryPortal] ⚡ Using cached data - skipping blockchain calls",
+      );
+      return;
+    }
+
     try {
-      if (userTotalStakedUSD === 0 && globalPoolTotalUSD === 0) {
+      console.log("[TreasuryPortal] 🔄 Loading fresh data from blockchain...");
+      if (
+        !options?.silent &&
+        userTotalStakedUSD === 0 &&
+        globalPoolTotalUSD === 0
+      ) {
         setIsLoading(true);
       }
 
@@ -279,10 +539,18 @@ export function TreasuryPortalScreenRedesigned() {
         loadFinancierStatus(),
         loadGovernanceData(),
       ]);
+
+      // Persist to cache (fire-and-forget)
+      persistData();
+
+      hasLoadedData.current = true; // Mark as successfully loaded
+      console.log("[TreasuryPortal] ✅ Data loaded and cached");
     } catch (error) {
       console.error("Error loading data:", error);
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -452,9 +720,12 @@ export function TreasuryPortalScreenRedesigned() {
       setCurrentAPR(apr);
 
       // Wallet balances (available funds) override the staked map when present
-      if (balances?.tokens?.length) {
+      const walletTokens = displayBalances?.tokens?.length
+        ? displayBalances.tokens
+        : balances?.tokens;
+      if (walletTokens?.length) {
         const walletBalanceMap: Record<string, number> = {};
-        balances.tokens.forEach((t) => {
+        walletTokens.forEach((t) => {
           const amt = parseFloat(t.balance || "0");
           if (!Number.isNaN(amt)) {
             walletBalanceMap[t.symbol] = amt;
@@ -483,6 +754,7 @@ export function TreasuryPortalScreenRedesigned() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
+    hasLoadedData.current = false; // Clear cache to force fresh data load
     await loadInitialData();
     setIsRefreshing(false);
   };
@@ -608,33 +880,66 @@ export function TreasuryPortalScreenRedesigned() {
     try {
       setIsLoadingProposals(true);
       stakingService.setNetwork(selectedNetwork.chainId, selectedNetwork);
-      const [allProposals, stats, config] = await Promise.all([
+
+      // Try to load governance data, gracefully handle if not available
+      const [allProposals, stats, config] = await Promise.allSettled([
         stakingService.getAllProposals(),
         stakingService.getDAOStats(),
         stakingService.getDAOConfig(),
       ]);
 
-      setProposals(allProposals);
-      setDAOStats(stats);
-      setDAOConfig(config);
+      // Extract results with fallbacks
+      const proposalList =
+        allProposals.status === "fulfilled" ? allProposals.value : [];
+      const daoStats =
+        stats.status === "fulfilled"
+          ? stats.value
+          : {
+              totalProposals: 0,
+              activeProposals: 0,
+              passedProposals: 0,
+              executedProposals: 0,
+            };
+      const daoConfig = config.status === "fulfilled" ? config.value : null;
 
-      // Fetch vote status for each proposal
-      const voteStatusMap: Record<string, VoteStatus> = {};
-      await Promise.all(
-        allProposals.map(async (proposal) => {
-          try {
-            const status = await stakingService.getVoteStatus(proposal.id);
-            voteStatusMap[proposal.id] = status;
-          } catch (error) {
-            console.error(
-              `Error fetching vote status for ${proposal.id}:`,
-              error,
-            );
-            voteStatusMap[proposal.id] = { hasVoted: false, support: false };
-          }
-        }),
-      );
-      setVoteStatuses(voteStatusMap);
+      setProposals(proposalList);
+      setDAOStats(daoStats);
+      if (daoConfig) {
+        setDAOConfig(daoConfig);
+      }
+
+      // Check if governance is available
+      const governanceAvailable =
+        allProposals.status === "fulfilled" ||
+        stats.status === "fulfilled" ||
+        config.status === "fulfilled";
+
+      if (!governanceAvailable) {
+        console.log(
+          "[TreasuryPortal] ℹ️ Governance features not available on this network",
+        );
+        return; // Skip vote status fetching
+      }
+
+      // Fetch vote status for each proposal (only if we have proposals)
+      if (proposalList.length > 0) {
+        const voteStatusMap: Record<string, VoteStatus> = {};
+        await Promise.all(
+          proposalList.map(async (proposal) => {
+            try {
+              const status = await stakingService.getVoteStatus(proposal.id);
+              voteStatusMap[proposal.id] = status;
+            } catch (error) {
+              console.error(
+                `Error fetching vote status for ${proposal.id}:`,
+                error,
+              );
+              voteStatusMap[proposal.id] = { hasVoted: false, support: false };
+            }
+          }),
+        );
+        setVoteStatuses(voteStatusMap);
+      }
     } catch (error) {
       console.error("Error loading governance data:", error);
     } finally {
@@ -1475,7 +1780,9 @@ export function TreasuryPortalScreenRedesigned() {
   };
 
   const renderPoolTab = () => {
-    const votingApps = applications.filter((app) => app.status === "Draft Sent to Pool");
+    const votingApps = applications.filter(
+      (app) => app.status === "Draft Sent to Pool",
+    );
 
     if (!isFinancier) {
       return (
@@ -1505,7 +1812,9 @@ export function TreasuryPortalScreenRedesigned() {
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Pool Guarantee Voting</Text>
           <View style={styles.badgeSmall}>
-            <Text style={styles.badgeTextSmall}>{votingApps.length} Pending</Text>
+            <Text style={styles.badgeTextSmall}>
+              {votingApps.length} Pending
+            </Text>
           </View>
         </View>
 
@@ -1557,7 +1866,9 @@ export function TreasuryPortalScreenRedesigned() {
                 </View>
                 <View style={styles.pgaDetailItem}>
                   <Text style={styles.pgaDetailLabel}>Duration</Text>
-                  <Text style={styles.pgaDetailValue}>{app.financingDuration}d</Text>
+                  <Text style={styles.pgaDetailValue}>
+                    {app.financingDuration}d
+                  </Text>
                 </View>
               </View>
 
@@ -1578,7 +1889,9 @@ export function TreasuryPortalScreenRedesigned() {
                   size={16}
                   color={palette.primaryBlue}
                 />
-                <Text style={styles.pgaReviewButtonText}>Review Application</Text>
+                <Text style={styles.pgaReviewButtonText}>
+                  Review Application
+                </Text>
               </TouchableOpacity>
 
               <View style={styles.pgaActionButtons}>
@@ -1591,7 +1904,9 @@ export function TreasuryPortalScreenRedesigned() {
                     size={18}
                     color="#EF4444"
                   />
-                  <Text style={[styles.pgaVoteButtonText, { color: "#EF4444" }]}>
+                  <Text
+                    style={[styles.pgaVoteButtonText, { color: "#EF4444" }]}
+                  >
                     Reject
                   </Text>
                 </TouchableOpacity>
@@ -1605,7 +1920,9 @@ export function TreasuryPortalScreenRedesigned() {
                     size={18}
                     color="#10B981"
                   />
-                  <Text style={[styles.pgaVoteButtonText, { color: "#10B981" }]}>
+                  <Text
+                    style={[styles.pgaVoteButtonText, { color: "#10B981" }]}
+                  >
                     Approve
                   </Text>
                 </TouchableOpacity>

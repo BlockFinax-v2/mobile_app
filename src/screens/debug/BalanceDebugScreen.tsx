@@ -13,8 +13,14 @@ import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 
 export const BalanceDebugScreen: React.FC = () => {
-  const { address, balances, selectedNetwork, refreshBalance, isLoading } =
-    useWallet();
+  const {
+    address,
+    balances,
+    displayBalances,
+    selectedNetwork,
+    refreshBalance,
+    isLoading,
+  } = useWallet();
   const [refreshing, setRefreshing] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
 
@@ -24,10 +30,10 @@ export const BalanceDebugScreen: React.FC = () => {
       timestamp: new Date().toLocaleString(),
       address,
       network: selectedNetwork,
-      balances,
+      balances: displayBalances,
       isLoading,
     });
-  }, [address, balances, selectedNetwork, isLoading]);
+  }, [address, displayBalances, selectedNetwork, isLoading]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -65,19 +71,19 @@ export const BalanceDebugScreen: React.FC = () => {
             Symbol: {selectedNetwork.primaryCurrency}
           </Text>
           <Text style={styles.item}>
-            Balance: {balances.primary} {selectedNetwork.primaryCurrency}
+            Balance: {displayBalances.primary} {selectedNetwork.primaryCurrency}
           </Text>
-          <Text style={styles.item}>USD Value: ${balances.usd}</Text>
+          <Text style={styles.item}>USD Value: ${displayBalances.usd}</Text>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
-            Token Balances ({balances.tokens.length})
+            Token Balances ({displayBalances.tokens.length})
           </Text>
-          {balances.tokens.length === 0 ? (
+          {displayBalances.tokens.length === 0 ? (
             <Text style={styles.item}>No tokens found or still loading...</Text>
           ) : (
-            balances.tokens.map((token, index) => (
+            displayBalances.tokens.map((token, index) => (
               <View key={index} style={styles.tokenItem}>
                 <Text style={styles.tokenSymbol}>{token.symbol}</Text>
                 <Text style={styles.tokenBalance}>{token.balance}</Text>

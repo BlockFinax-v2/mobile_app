@@ -31,8 +31,16 @@ const PRIVATE_KEY = "blockfinax.privateKey";
 const PASSWORD_KEY = "blockfinax.password";
 const SETTINGS_KEY = "blockfinax.settings";
 const TRANSACTIONS_KEY = "blockfinax.transactions";
+const BALANCES_KEY = "blockfinax.balances";
 
 const AUTO_LOCK_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+type WalletBalanceCache = {
+  balances: WalletBalances;
+  lastBalanceUpdate?: string;
+};
+
+const walletBalanceMemoryCache = new Map<string, WalletBalanceCache>();
 
 export type SupportedNetworkId =
   // Mainnets
@@ -145,7 +153,13 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
     id: "ethereum-sepolia",
     name: "Ethereum Sepolia",
     chainId: 11155111,
-    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    // Use Alchemy RPC (higher rate limits) with fallbacks
+    rpcUrl: `https://eth-sepolia.g.alchemy.com/v2/${process.env.EXPO_PUBLIC_ALCHEMY_API_KEY}`,
+    rpcFallbacks: [
+      "https://rpc.ankr.com/eth_sepolia",
+      "https://ethereum-sepolia-rpc.publicnode.com",
+      "https://sepolia.gateway.tenderly.co",
+    ],
     explorerUrl: "https://sepolia.etherscan.io",
     primaryCurrency: "ETH",
     isTestnet: true,
@@ -235,6 +249,7 @@ interface WalletContextValue {
   hasWallet: boolean;
   address?: string;
   balances: WalletBalances;
+  displayBalances: WalletBalances;
   lastBalanceUpdate?: Date;
   transactions: RealTransaction[];
   isLoadingTransactions: boolean;
@@ -339,16 +354,83 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
   );
 
   const balanceRefreshRef = useRef<boolean>(false);
+  const hasLoadedBalanceCache = useRef<boolean>(false);
+  const lastKnownBalancesRef = useRef<WalletBalances | null>(null);
 
   const lockWallet = useCallback(async () => {
     setIsUnlocked(false);
     setAddress(undefined);
     setBalances({ primary: 0, primaryUsd: 0, usd: 0, tokens: [] });
+    hasLoadedBalanceCache.current = false;
     // Clear smart account info on lock
     setSmartAccountAddress(undefined);
     setIsSmartAccountDeployed(false);
     setIsInitializingSmartAccount(false);
   }, []);
+
+  const getBalanceCacheKey = useCallback(
+    () => `${BALANCES_KEY}_${selectedNetwork.id}_${address}`,
+    [selectedNetwork.id, address],
+  );
+
+  const loadCachedBalances = useCallback(async () => {
+    if (!address) return;
+
+    const memoryKey = `${selectedNetwork.id}_${address}`;
+    const memoryCache = walletBalanceMemoryCache.get(memoryKey);
+    if (memoryCache) {
+      setBalances(memoryCache.balances);
+      lastKnownBalancesRef.current = memoryCache.balances;
+      setLastBalanceUpdate(
+        memoryCache.lastBalanceUpdate
+          ? new Date(memoryCache.lastBalanceUpdate)
+          : undefined,
+      );
+      hasLoadedBalanceCache.current = true;
+      console.log("[WalletContext] ⚡ Memory balance cache hit");
+      return;
+    }
+
+    try {
+      const stored = await secureStorage.getItem(getBalanceCacheKey());
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as WalletBalanceCache;
+      if (parsed?.balances) {
+        setBalances(parsed.balances);
+        lastKnownBalancesRef.current = parsed.balances;
+        setLastBalanceUpdate(
+          parsed.lastBalanceUpdate
+            ? new Date(parsed.lastBalanceUpdate)
+            : undefined,
+        );
+        hasLoadedBalanceCache.current = true;
+        console.log("[WalletContext] ⚡ Stored balance cache loaded");
+      }
+    } catch (error) {
+      console.warn("[WalletContext] Failed to load balance cache", error);
+    }
+  }, [address, selectedNetwork.id, getBalanceCacheKey]);
+
+  const persistBalances = useCallback(
+    async (nextBalances: WalletBalances, updateTime?: Date) => {
+      if (!address) return;
+      const memoryKey = `${selectedNetwork.id}_${address}`;
+      const payload: WalletBalanceCache = {
+        balances: nextBalances,
+        lastBalanceUpdate: updateTime?.toISOString(),
+      };
+      walletBalanceMemoryCache.set(memoryKey, payload);
+      try {
+        await secureStorage.setItem(
+          getBalanceCacheKey(),
+          JSON.stringify(payload),
+        );
+      } catch (error) {
+        console.warn("[WalletContext] Failed to persist balance cache", error);
+      }
+    },
+    [address, selectedNetwork.id, getBalanceCacheKey],
+  );
 
   const persistSettings = useCallback(
     async (nextSettings: WalletSettings) => {
@@ -514,7 +596,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const newBalances = await fetchBalanceWithFallbacks(false);
       if (newBalances) {
         setBalances(newBalances);
+        lastKnownBalancesRef.current = newBalances;
         setLastBalanceUpdate(now);
+        persistBalances(newBalances, now);
       }
 
       performanceMonitor.endOperation(opId, true);
@@ -531,7 +615,13 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       setIsRefreshingBalance(false);
       balanceRefreshRef.current = false;
     }
-  }, [address, selectedNetwork, lastBalanceUpdate, fetchBalanceWithFallbacks]);
+  }, [
+    address,
+    selectedNetwork,
+    lastBalanceUpdate,
+    fetchBalanceWithFallbacks,
+    persistBalances,
+  ]);
 
   // Non-blocking refresh that provides instant UI feedback
   const refreshBalanceInstant = useCallback(async () => {
@@ -573,7 +663,9 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       const newBalances = await fetchBalanceWithFallbacks(true);
       if (newBalances) {
         setBalances(newBalances);
+        lastKnownBalancesRef.current = newBalances;
         setLastBalanceUpdate(new Date());
+        persistBalances(newBalances, new Date());
       }
     } catch (error) {
       console.warn("Failed to force refresh balance", error);
@@ -582,7 +674,12 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       setIsRefreshingBalance(false);
       balanceRefreshRef.current = false;
     }
-  }, [address, selectedNetwork, fetchBalanceWithFallbacks]);
+  }, [address, selectedNetwork, fetchBalanceWithFallbacks, persistBalances]);
+
+  useEffect(() => {
+    if (!address) return;
+    loadCachedBalances();
+  }, [address, selectedNetwork.id, loadCachedBalances]);
 
   const refreshTransactions = useCallback(async () => {
     if (!address) {
@@ -869,8 +966,10 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       );
 
       // More robust check: ensure data is not just empty strings
-      const hasValidMnemonic = existingMnemonic && existingMnemonic.trim().length > 0;
-      const hasValidPrivateKey = existingPrivateKey && existingPrivateKey.trim().length > 0;
+      const hasValidMnemonic =
+        existingMnemonic && existingMnemonic.trim().length > 0;
+      const hasValidPrivateKey =
+        existingPrivateKey && existingPrivateKey.trim().length > 0;
       const walletExists = Boolean(hasValidMnemonic || hasValidPrivateKey);
 
       console.log("🔍 Checking wallet existence:", {
@@ -1367,6 +1466,13 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
     ],
   );
 
+  const displayBalances = useMemo<WalletBalances>(() => {
+    if (balances.usd === 0 && lastKnownBalancesRef.current) {
+      return lastKnownBalancesRef.current;
+    }
+    return balances;
+  }, [balances]);
+
   const value = useMemo<WalletContextValue>(
     () => ({
       isLoading,
@@ -1376,6 +1482,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       hasWallet,
       address,
       balances,
+      displayBalances,
       lastBalanceUpdate,
       transactions,
       isLoadingTransactions,
@@ -1402,6 +1509,7 @@ export const WalletProvider: React.FC<React.PropsWithChildren> = ({
       hasWallet,
       address,
       balances,
+      displayBalances,
       lastBalanceUpdate,
       transactions,
       isLoadingTransactions,

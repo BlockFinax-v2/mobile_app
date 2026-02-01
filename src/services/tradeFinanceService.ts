@@ -71,6 +71,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "function cancelPGA(string pgaId) external",
 
     "function getPGA(string pgaId) external view returns (address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI)",
+    "function getPGAMetadata(string pgaId) external view returns (string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] documents)",
     "function getPGADocuments(string pgaId) external view returns (string[] memory)",
     "function getAllPGAs() external view returns (string[] memory)",
     "function getActivePGAs() external view returns (string[] memory)",

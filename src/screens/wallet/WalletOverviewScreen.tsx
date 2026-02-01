@@ -22,7 +22,8 @@ import QRCode from "react-native-qrcode-svg";
 const tabs = ["Main Wallet", "Escrow Wallets", "History"] as const;
 
 export const WalletOverviewScreen: React.FC = () => {
-  const { address, balances, selectedNetwork, switchNetwork } = useWallet();
+  const { address, balances, displayBalances, selectedNetwork, switchNetwork } =
+    useWallet();
   const [activeTab, setActiveTab] =
     useState<(typeof tabs)[number]>("Main Wallet");
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -90,9 +91,12 @@ export const WalletOverviewScreen: React.FC = () => {
           <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Total Balance</Text>
             <Text style={styles.balanceAmount}>
-              {balances.primary.toFixed(2)} {selectedNetwork.primaryCurrency}
+              {displayBalances.primary.toFixed(2)}{" "}
+              {selectedNetwork.primaryCurrency}
             </Text>
-            <Text style={styles.balanceUsd}>{balances.usd.toFixed(2)} USD</Text>
+            <Text style={styles.balanceUsd}>
+              {displayBalances.usd.toFixed(2)} USD
+            </Text>
             <View style={styles.networkPill}>
               <MaterialCommunityIcons
                 name="lan"

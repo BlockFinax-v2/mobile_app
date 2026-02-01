@@ -26,6 +26,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -110,6 +111,7 @@ const getTimeAgo = (date: Date) => {
 export default function DashboardHomeScreen() {
   const {
     balances,
+    displayBalances,
     address,
     selectedNetwork,
     switchNetwork,
@@ -140,7 +142,7 @@ export default function DashboardHomeScreen() {
   const navigation = useNavigation<DashboardNavigation>();
 
   // Debug logging for balances
-  console.log("Current balances:", balances);
+  console.log("Current balances:", displayBalances);
   console.log("Selected network:", selectedNetwork);
   console.log("═══════════════════════════════════════════════");
   console.log("📊 DASHBOARD TRANSACTIONS DEBUG");
@@ -312,11 +314,11 @@ export default function DashboardHomeScreen() {
 
               if (token.isNative) {
                 // Native token - use proper formatting for small amounts
-                tokenBalance = formatBalanceForUI(balances.primary);
-                tokenUsdValue = balances.primaryUsd.toFixed(2);
+                tokenBalance = formatBalanceForUI(displayBalances.primary);
+                tokenUsdValue = displayBalances.primaryUsd.toFixed(2);
               } else {
                 // Find stablecoin balance
-                const stablecoin = balances.tokens.find(
+                const stablecoin = displayBalances.tokens.find(
                   (t) => t.symbol === token.symbol,
                 );
                 if (stablecoin) {
@@ -378,13 +380,25 @@ export default function DashboardHomeScreen() {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshingBalance || isRefreshingTransactions}
+            onRefresh={() => {
+              refreshBalanceInstant();
+              refreshTransactionsInstant();
+            }}
+            tintColor={palette.primaryBlue}
+          />
+        }
       >
         {/* Combined Header - Welcome + Icons */}
         <View style={styles.header}>
           <View style={styles.userInfo}>
             <Text style={styles.welcomeText}>Welcome back</Text>
             <Text style={styles.userAddress}>
-              {typeof accountDisplay === "string" ? accountDisplay : "BlockFinaX User"}
+              {typeof accountDisplay === "string"
+                ? accountDisplay
+                : "BlockFinaX User"}
             </Text>
           </View>
           <View style={styles.headerIcons}>
@@ -409,57 +423,11 @@ export default function DashboardHomeScreen() {
         {/* Balance Card - Total Portfolio Value */}
         <View style={styles.balanceCard}>
           <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Total Portfolio Value</Text>
-            <View style={styles.headerActions}>
-              <Pressable
-                onPress={() => {
-                  // Instant refresh - immediate UI feedback
-                  refreshBalanceInstant();
-                  refreshTransactionsInstant();
-                }}
-                style={[
-                  styles.refreshButton,
-                  (isRefreshingBalance || isRefreshingTransactions) &&
-                  styles.refreshButtonActive,
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={
-                    isRefreshingBalance || isRefreshingTransactions
-                      ? "loading"
-                      : "refresh"
-                  }
-                  size={20}
-                  color={palette.white}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() =>
-                  navigation.navigate("WalletTab", {
-                    screen: "TransactionDetails",
-                    params: { id: "portfolio" },
-                  })
-                }
-              >
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={palette.white}
-                />
-              </Pressable>
-            </View>
+            <Text style={styles.balanceLabel}>USD Balance</Text>
           </View>
-          <Text style={styles.balanceAmount}>${balances.usd.toFixed(2)}</Text>
-          <Text style={styles.balanceUsd}>Total USD Value</Text>
-
-          {/* Last Update Indicator */}
-          {lastBalanceUpdate && (
-            <Text style={styles.lastUpdated}>
-              {isRefreshingBalance
-                ? "Updating..."
-                : `Updated ${getTimeAgo(lastBalanceUpdate)}`}
-            </Text>
-          )}
+          <Text style={styles.balanceAmount}>
+            ${displayBalances.usd.toFixed(2)}
+          </Text>
 
           {/* Network Configuration Button */}
           <View style={styles.networkSelectorContainer}>
@@ -489,25 +457,6 @@ export default function DashboardHomeScreen() {
                   color={palette.white}
                 />
               </View>
-            </Pressable>
-          </View>
-
-          <View style={styles.balanceActions}>
-            <Pressable
-              style={styles.balanceActionButton}
-              onPress={() =>
-                navigation.navigate("WalletTab", { screen: "SendPayment" })
-              }
-            >
-              <Text style={styles.balanceActionText}>Send Funds</Text>
-            </Pressable>
-            <Pressable
-              style={styles.balanceActionButton}
-              onPress={() =>
-                navigation.navigate("WalletTab", { screen: "ReceivePayment" })
-              }
-            >
-              <Text style={styles.balanceActionText}>Receive Funds</Text>
             </Pressable>
           </View>
         </View>
@@ -619,7 +568,9 @@ export default function DashboardHomeScreen() {
                 })
               }
             >
-              <Text style={styles.viewAllText}>{transactions.length === 0 ? " " : "View All"}</Text>
+              <Text style={styles.viewAllText}>
+                {transactions.length === 0 ? " " : "View All"}
+              </Text>
             </Pressable>
           </View>
 
@@ -838,13 +789,13 @@ const styles = StyleSheet.create({
   userInfo: {
     flex: 1,
     gap: 2,
-    paddingLeft: 5
+    paddingLeft: 5,
   },
   welcomeText: {
     fontSize: 14,
     color: palette.neutralMid,
     fontWeight: "500",
-    paddingLeft: 4
+    paddingLeft: 4,
   },
   userAddress: {
     fontSize: 20,
@@ -858,7 +809,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingTop: 8,
-    paddingRight:10
+    paddingRight: 10,
   },
   iconButton: {
     position: "relative",
@@ -1029,14 +980,13 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
 
-
     overflow: "visible",
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
     color: palette.neutralDark,
-    paddingLeft: 12
+    paddingLeft: 12,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -1089,7 +1039,6 @@ const styles = StyleSheet.create({
     color: palette.neutralDark,
   },
   quickActionsGrid: {
-
     gap: spacing.lg,
     borderWidth: 0.5,
     borderRadius: 20,
