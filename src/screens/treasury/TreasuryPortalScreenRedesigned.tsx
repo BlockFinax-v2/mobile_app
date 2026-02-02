@@ -780,7 +780,7 @@ export function TreasuryPortalScreenRedesigned() {
 
       Alert.alert("Success", "Stake successful!");
       setStakeAmount("");
-      await loadInitialData();
+      await loadInitialData({ force: true });
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to stake");
     } finally {
@@ -802,7 +802,7 @@ export function TreasuryPortalScreenRedesigned() {
 
       Alert.alert("Success", "Unstake successful!");
       setStakeAmount("");
-      await loadInitialData();
+      await loadInitialData({ force: true });
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to unstake");
     } finally {

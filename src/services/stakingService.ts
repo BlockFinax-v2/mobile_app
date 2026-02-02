@@ -24,8 +24,8 @@ import { Hex, encodeFunctionData } from "viem";
 // Contract Configuration - Diamond addresses by chain ID
 export const DIAMOND_ADDRESSES: { [chainId: number]: string } = {
   11155111: "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284", // Ethereum Sepolia
-  4202: "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34", // Lisk Sepolia
-  84532: "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711", // Base Sepolia
+  4202: "0xe133cd2ee4d835ac202942baff2b1d6d47862d34", // Lisk Sepolia
+  84532: "0xb899a968e785dd721dbc40e71e2faed7b2d84711", // Base Sepolia
 };
 
 // Default to Lisk Sepolia for backward compatibility
@@ -921,7 +921,7 @@ class StakingService {
             type: 'stake',
             amount,
             timestamp: Date.now(),
-            status: 'pending',
+            status: 'confirmed',
             explorerUrl: stakeResult.explorerUrl,
             usedAA: stakeResult.usedSmartAccount
           };
@@ -970,13 +970,19 @@ class StakingService {
       const tx = await contract.stakeToken(usdcAddress, amountInWei, 0, amountInWei, { gasLimit });
       
       console.log("Stake transaction submitted:", tx.hash);
+
+      onProgress?.('staking', 'Waiting for confirmation...');
+      const receipt = await tx.wait();
+      if (!receipt.status) {
+        throw new Error("Stake transaction failed");
+      }
       
       return {
         hash: tx.hash,
         type: 'stake',
         amount,
         timestamp: Date.now(),
-        status: 'pending',
+        status: 'confirmed',
         explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };
@@ -1689,7 +1695,7 @@ class StakingService {
             type: 'stake',
             amount,
             timestamp: Date.now(),
-            status: 'pending',
+            status: 'confirmed',
             explorerUrl: stakeResult.explorerUrl,
             usedAA: stakeResult.usedSmartAccount
           };
@@ -1731,6 +1737,22 @@ class StakingService {
         customDeadline: 0 // 0 means auto-calculate based on lock duration
       });
 
+      try {
+        await contract.callStatic.stakeTokenAsFinancier(
+          usdcAddress,
+          amountInWei,
+          0,
+          amountInWei,
+        );
+      } catch (error: any) {
+        const reason =
+          error?.reason ||
+          error?.error?.message ||
+          error?.message ||
+          "Stake as financier precheck failed";
+        throw new Error(reason);
+      }
+
       // Add manual gas limit to avoid estimation errors
       const gasLimit = ethers.utils.hexlify(400000); // 400k gas limit
       // Multi-token signature: stakeTokenAsFinancier(address tokenAddress, uint256 amount, uint256 customDeadline, uint256 usdEquivalent)
@@ -1738,13 +1760,19 @@ class StakingService {
       const tx = await contract.stakeTokenAsFinancier(usdcAddress, amountInWei, 0, amountInWei, { gasLimit });
       
       console.log("Stake as financier transaction submitted:", tx.hash);
+
+      onProgress?.('staking', 'Waiting for confirmation...');
+      const receipt = await tx.wait();
+      if (!receipt.status) {
+        throw new Error("Stake as financier transaction failed");
+      }
       
       return {
         hash: tx.hash,
         type: 'stake',
         amount,
         timestamp: Date.now(),
-        status: 'pending',
+        status: 'confirmed',
         explorerUrl: `${this.currentNetworkConfig.explorerUrl}/tx/${tx.hash}`,
         usedAA: false
       };

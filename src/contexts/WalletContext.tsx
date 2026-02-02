@@ -194,7 +194,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         decimals: 6,
       },
     ],
-    diamondAddress: "0x78564F56Ab195da6043236376510FD53D8002df3",
+    diamondAddress: "0xb899a968e785dd721dbc40e71e2faed7b2d84711",
   },
   "lisk-sepolia": {
     id: "lisk-sepolia",
@@ -218,7 +218,7 @@ const NETWORKS: Record<SupportedNetworkId, WalletNetwork> = {
         decimals: 6,
       },
     ],
-    diamondAddress: "0x98154D597A8161749896084803513361E63673F8",
+    diamondAddress: "0xe133cd2ee4d835ac202942baff2b1d6d47862d34",
   },
 };
 

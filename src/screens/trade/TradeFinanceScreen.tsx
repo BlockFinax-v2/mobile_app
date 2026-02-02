@@ -42,7 +42,11 @@ import * as ImagePicker from "expo-image-picker";
 import { PoolGuaranteeApplicationFlow } from "@/components/trade/PoolGuaranteeApplicationFlow";
 import { SellerDraftView } from "@/components/trade/SellerDraftView";
 import { BuyerApplicationView } from "@/components/trade/BuyerApplicationView";
-import { tradeFinanceService, PGAInfo } from "@/services/tradeFinanceService";
+import {
+  tradeFinanceService,
+  PGAInfo,
+  PGAStatus,
+} from "@/services/tradeFinanceService";
 
 interface PoolGuaranteeForm {
   companyName: string;
@@ -668,6 +672,22 @@ export const TradeFinanceScreen = () => {
 
   const handleDraftApproval = async (draftId: string, approved: boolean) => {
     try {
+      const pga = await tradeFinanceService.getPGA(draftId);
+      if (pga.status !== PGAStatus.GuaranteeApproved) {
+        Alert.alert(
+          "Cannot Approve Yet",
+          "This PGA is not ready for seller approval yet.",
+        );
+        return;
+      }
+      if (pga.seller?.toLowerCase() !== address?.toLowerCase()) {
+        Alert.alert(
+          "Not Authorized",
+          "Only the designated seller can approve this PGA.",
+        );
+        return;
+      }
+
       await sellerVotePGABlockchain(draftId, approved);
       showToast(
         approved
@@ -1197,7 +1217,12 @@ export const TradeFinanceScreen = () => {
                     <View style={styles.approvalButtons}>
                       <TouchableOpacity
                         style={styles.approveButton}
-                        onPress={() => handleDraftApproval(draft.id, true)}
+                        onPress={() =>
+                          handleDraftApproval(
+                            (draft as any).requestId ?? draft.id,
+                            true,
+                          )
+                        }
                       >
                         <MaterialCommunityIcons
                           name="check"
@@ -1209,7 +1234,12 @@ export const TradeFinanceScreen = () => {
 
                       <TouchableOpacity
                         style={styles.rejectButton}
-                        onPress={() => handleDraftApproval(draft.id, false)}
+                        onPress={() =>
+                          handleDraftApproval(
+                            (draft as any).requestId ?? draft.id,
+                            false,
+                          )
+                        }
                       >
                         <MaterialCommunityIcons
                           name="close"

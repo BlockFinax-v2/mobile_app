@@ -164,8 +164,8 @@ class SmartContractTransactionService {
     // Import DIAMOND_ADDRESSES from stakingService
     const DIAMOND_ADDRESSES: { [chainId: number]: string } = {
       11155111: "0xA4d19a7b133d2A9fAce5b1ad407cA7b9D4Ee9284", // Ethereum Sepolia
-      4202: "0xE133CD2eE4d835AC202942Baff2B1D6d47862d34", // Lisk Sepolia
-      84532: "0xb899A968e785dD721dbc40e71e2FAEd7B2d84711", // Base Sepolia
+      4202: "0xe133cd2ee4d835ac202942baff2b1d6d47862d34", // Lisk Sepolia
+      84532: "0xb899a968e785dd721dbc40e71e2faed7b2d84711", // Base Sepolia
     };
 
     const diamondAddress = DIAMOND_ADDRESSES[chainId];
@@ -206,12 +206,12 @@ class SmartContractTransactionService {
         needsLinking: !isLinked && linkedSmartAccount === ethers.constants.AddressZero,
       };
     } catch (error) {
-      console.error("[SmartContractTxService] Error checking smart account linking:", error);
+      console.warn("[SmartContractTxService] Linking check failed (skipping link):", error);
       return {
         isLinked: false,
         eoaAddress,
         smartAccountAddress,
-        needsLinking: true,
+        needsLinking: false,
       };
     }
   }
@@ -344,8 +344,7 @@ class SmartContractTransactionService {
           );
 
           if (!linkResult.success) {
-            console.warn("[SmartContractTxService] Linking failed, falling back to EOA");
-            return this.executeWithEOA(options);
+            console.warn("[SmartContractTxService] Linking failed, proceeding with AA attempt");
           }
         }
       }
