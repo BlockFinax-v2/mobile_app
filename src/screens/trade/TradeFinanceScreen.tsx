@@ -778,13 +778,14 @@ export const TradeFinanceScreen = () => {
     }
   };
 
-  // Stage 6: Shipping Confirmation Handler
+  // Stage 6: Shipping Confirmation Handler (Logistics Partner)
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [shippingForm, setShippingForm] = useState({
     trackingNumber: "",
     carrier: "",
     shippingDate: "",
     documents: [] as Array<{ name: string; uri: string; type: string }>,
+    logisticsPartnerName: "",
   });
 
   const handleShippingConfirmation = (application: Application) => {
@@ -796,9 +797,12 @@ export const TradeFinanceScreen = () => {
     if (!selectedApplication) return;
 
     try {
+      // First logistics partner to sign gets assigned
+      const logisticsName = shippingForm.logisticsPartnerName || "Logistics Partner";
+      
       await confirmGoodsShippedBlockchain(
         selectedApplication.id,
-        shippingForm.carrier,
+        logisticsName,
       );
 
       const shippingDetails = {
@@ -818,9 +822,10 @@ export const TradeFinanceScreen = () => {
         carrier: "",
         shippingDate: "",
         documents: [],
+        logisticsPartnerName: "",
       });
 
-      showToast("Shipping confirmed on-chain successfully!");
+      showToast("✅ Goods shipped! Status updated for buyer and seller.");
     } catch (error: any) {
       console.error("Shipping confirmation error:", error);
       Alert.alert(
@@ -1267,8 +1272,8 @@ export const TradeFinanceScreen = () => {
 
           {applications.filter(
             (app) =>
-              app.status === "Certificate Issued" ||
-              app.status === "Seller Approved",
+              (app.status === "Certificate Issued" || app.status === "Fee Paid") &&
+              app.currentStage >= 5,
           ).length === 0 ? (
             <View style={styles.emptyApplicationsState}>
               <MaterialCommunityIcons
@@ -1285,8 +1290,8 @@ export const TradeFinanceScreen = () => {
               {applications
                 .filter(
                   (app) =>
-                    app.status === "Certificate Issued" ||
-                    app.status === "Seller Approved",
+                    (app.status === "Certificate Issued" || app.status === "Fee Paid") &&
+                    app.currentStage >= 5,
                 )
                 .map((app) => (
                   <View key={app.id} style={styles.applicationListCard}>
@@ -1849,7 +1854,7 @@ export const TradeFinanceScreen = () => {
         </View>
       </Modal>
 
-      {/* Stage 6: Shipping Confirmation Modal */}
+      {/* Stage 6: Shipping Confirmation Modal (Logistics Partner) */}
       <Modal
         visible={showShippingModal}
         animationType="slide"
@@ -1869,10 +1874,20 @@ export const TradeFinanceScreen = () => {
 
           <ScrollView style={styles.modalContent}>
             <Text style={styles.modalSubtitle}>
-              Upload proof of shipment with tracking information
+              As a logistics partner, sign to confirm goods shipment. First to sign becomes the assigned logistics partner.
             </Text>
 
             <View style={styles.formContainer}>
+              <Text style={styles.formLabel}>Logistics Partner Name *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Enter your company name"
+                value={shippingForm.logisticsPartnerName}
+                onChangeText={(text) =>
+                  setShippingForm((prev) => ({ ...prev, logisticsPartnerName: text }))
+                }
+              />
+
               <Text style={styles.formLabel}>Tracking Number *</Text>
               <TextInput
                 style={styles.formInput}
@@ -1943,15 +1958,15 @@ export const TradeFinanceScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.confirmButton,
-                    (!shippingForm.trackingNumber || !shippingForm.carrier) &&
+                    (!shippingForm.trackingNumber || !shippingForm.carrier || !shippingForm.logisticsPartnerName) &&
                       styles.disabledButton,
                   ]}
                   onPress={processShippingConfirmation}
                   disabled={
-                    !shippingForm.trackingNumber || !shippingForm.carrier
+                    !shippingForm.trackingNumber || !shippingForm.carrier || !shippingForm.logisticsPartnerName
                   }
                 >
-                  <Text style={styles.confirmButtonText}>Confirm Shipping</Text>
+                  <Text style={styles.confirmButtonText}>Sign & Confirm Shipment</Text>
                 </TouchableOpacity>
               </View>
             </View>

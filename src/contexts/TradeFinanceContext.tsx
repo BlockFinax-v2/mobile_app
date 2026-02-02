@@ -583,19 +583,19 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       case PGAStatus.GuaranteeApproved:
         return 3; // Seller Review
       case PGAStatus.SellerApproved:
-        return 4; // Seller Approved
+        return 4; // Awaiting Fee Payment
       case PGAStatus.CollateralPaid:
-        return 4; // Fee Paid
+        return 5; // Fee Paid → Certificate Generated + Logistics Enabled
       case PGAStatus.CertificateIssued:
-        return 5;
+        return 5; // Certificate Issued (same as fee paid)
       case PGAStatus.GoodsShipped:
-        return 6;
-      case PGAStatus.DeliveryAwaitingConsent:
-        return 7;
+        return 6; // Goods Shipped by Logistics
       case PGAStatus.BalancePaymentPaid:
-        return 8;
+        return 7; // Balance Paid
+      case PGAStatus.DeliveryAwaitingConsent:
+        return 8; // Delivery Confirmation
       case PGAStatus.Completed:
-        return 9;
+        return 9; // Complete
       case PGAStatus.Rejected:
         return 1;
       case PGAStatus.Expired:
@@ -692,6 +692,13 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         // Fetch updated PGA data
         const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
         const updatedApp = mapPGAInfoToApplication(pgaInfo);
+
+        // Special handling: When fee is paid (CollateralPaid), trigger certificate generation
+        if (event.eventType === "CollateralPaid") {
+          console.log(`[TradeFinanceContext] 💳 Fee paid for PGA ${event.pgaId} → Triggering certificate generation`);
+          // Certificate generation would happen here (on-chain or off-chain)
+          // For now, the CertificateIssued event will update the state
+        }
 
         // INSTANT UI update (optimistic)
         setApplications((prev) => {
