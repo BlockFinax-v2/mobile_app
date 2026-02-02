@@ -34,6 +34,8 @@ interface ApplicationData {
   collateralDescription: string;
   guaranteeAmount: string;
   collateralValue: string;
+  collateralPaid?: boolean; // Tracks if collateral has been paid
+  issuanceFeePaid?: boolean; // Tracks if issuance fee has been paid
   financingDuration: number;
   contractNumber: string;
   paymentDueDate: string;
@@ -59,6 +61,7 @@ interface ApplicationData {
 interface BuyerApplicationViewProps {
   application: ApplicationData;
   onClose: () => void;
+  onPayCollateral?: () => void;
   onPayFee?: () => void;
   onPayInvoice?: () => void;
   onConfirmDelivery?: () => void;
@@ -91,6 +94,7 @@ const STAGE_ICONS = [
 export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
   application,
   onClose,
+  onPayCollateral,
   onPayFee,
   onPayInvoice,
   onConfirmDelivery,
@@ -418,20 +422,21 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           color={colors.success}
         />
         <Text style={styles.statusBannerText}>
-          Seller approved! - Action required: Pay issuance fee
+          Seller approved! - Action required: {application.issuanceFeePaid ? 'Awaiting certificate' : application.collateralPaid ? 'Pay issuance fee' : 'Pay collateral'}
         </Text>
       </View>
 
-      <View style={styles.feePaymentCard}>
+      {/* Step 1: Collateral Payment */}
+      <View style={[styles.feePaymentCard, application.collateralPaid && styles.completedCard]}>
         <View style={styles.feeHeader}>
           <MaterialCommunityIcons
-            name="cash-multiple"
+            name={application.collateralPaid ? "check-circle" : "shield-lock"}
             size={40}
-            color={colors.primary}
+            color={application.collateralPaid ? colors.success : colors.primary}
           />
           <View style={styles.feeHeaderText}>
-            <Text style={styles.feeTitle}>Issuance Fee Payment Required</Text>
-            <Text style={styles.feeAmount}>{application.issuanceFee}</Text>
+            <Text style={styles.feeTitle}>Step 1: Collateral Payment {application.collateralPaid ? '✓' : ''}</Text>
+            <Text style={styles.feeAmount}>{application.collateralValue}</Text>
           </View>
         </View>
 
@@ -439,60 +444,123 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         <View style={styles.feeDetails}>
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Guarantee Amount:</Text>
-            <Text style={styles.feeValue}>{application.guaranteeAmount}</Text>
+            <Text style={styles.feeLabel}>Collateral Amount:</Text>
+            <Text style={styles.feeValue}>{application.collateralValue}</Text>
           </View>
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Issuance Fee (1%):</Text>
-            <Text style={[styles.feeValue, styles.feeHighlight]}>
+            <Text style={styles.feeLabel}>Paid to:</Text>
+            <Text style={styles.feeValue}>BlockFinax Diamond (Staking)</Text>
+          </View>
+        </View>
+
+        {!application.collateralPaid && (
+          <TouchableOpacity
+            style={styles.payFeeButton}
+            onPress={onPayCollateral}
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="shield-check" size={20} color="white" />
+                <Text style={styles.payFeeButtonText}>Pay Collateral</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {application.collateralPaid && (
+          <View style={styles.paidBadge}>
+            <MaterialCommunityIcons name="check" size={16} color={colors.success} />
+            <Text style={styles.paidText}>Collateral Paid</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Step 2: Issuance Fee Payment */}
+      <View style={[styles.feePaymentCard, !application.collateralPaid && styles.disabledCard, application.issuanceFeePaid && styles.completedCard]}>
+        <View style={styles.feeHeader}>
+          <MaterialCommunityIcons
+            name={application.issuanceFeePaid ? "check-circle" : "cash-multiple"}
+            size={40}
+            color={application.issuanceFeePaid ? colors.success : application.collateralPaid ? colors.primary : colors.textSecondary}
+          />
+          <View style={styles.feeHeaderText}>
+            <Text style={[styles.feeTitle, !application.collateralPaid && styles.disabledText]}>
+              Step 2: Issuance Fee Payment {application.issuanceFeePaid ? '✓' : ''}
+            </Text>
+            <Text style={[styles.feeAmount, !application.collateralPaid && styles.disabledText]}>
+              {application.issuanceFee}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.feeDivider} />
+
+        <View style={styles.feeDetails}>
+          <View style={styles.feeRow}>
+            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Guarantee Amount:</Text>
+            <Text style={[styles.feeValue, !application.collateralPaid && styles.disabledText]}>{application.guaranteeAmount}</Text>
+          </View>
+          <View style={styles.feeRow}>
+            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Issuance Fee (1%):</Text>
+            <Text style={[styles.feeValue, styles.feeHighlight, !application.collateralPaid && styles.disabledText]}>
               {application.issuanceFee}
             </Text>
           </View>
           <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Payment Due:</Text>
-            <Text style={styles.feeValue}>{application.paymentDueDate}</Text>
+            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Paid to:</Text>
+            <Text style={[styles.feeValue, !application.collateralPaid && styles.disabledText]}>BlockFinax Treasury</Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.payFeeButton}
-          onPress={onPayFee}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="cash" size={20} color="white" />
-              <Text style={styles.payFeeButtonText}>Pay Issuance Fee</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {!application.issuanceFeePaid && application.collateralPaid && (
+          <TouchableOpacity
+            style={[styles.payFeeButton, !application.collateralPaid && styles.disabledButton]}
+            onPress={onPayFee}
+            disabled={isProcessing || !application.collateralPaid}
+          >
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="cash" size={20} color="white" />
+                <Text style={styles.payFeeButtonText}>Pay Issuance Fee</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
+        {application.issuanceFeePaid && (
+          <View style={styles.paidBadge}>
+            <MaterialCommunityIcons name="check" size={16} color={colors.success} />
+            <Text style={styles.paidText}>Issuance Fee Paid</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>What Happens Next?</Text>
+        <Text style={styles.sectionTitle}>Payment Steps</Text>
         <View style={styles.stepsList}>
           <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>1</Text>
+            <View style={[styles.stepNumber, application.collateralPaid && styles.stepNumberComplete]}>
+              <Text style={styles.stepNumberText}>{application.collateralPaid ? '✓' : '1'}</Text>
             </View>
-            <Text style={styles.stepText}>Pay the issuance fee above</Text>
+            <Text style={styles.stepText}>Pay collateral to Diamond (staking model)</Text>
           </View>
           <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>2</Text>
+            <View style={[styles.stepNumber, application.issuanceFeePaid && styles.stepNumberComplete, !application.collateralPaid && styles.stepNumberDisabled]}>
+              <Text style={styles.stepNumberText}>{application.issuanceFeePaid ? '✓' : '2'}</Text>
             </View>
-            <Text style={styles.stepText}>
-              Treasury will generate your certificate
-            </Text>
+            <Text style={styles.stepText}>Pay issuance fee to BlockFinax Treasury</Text>
           </View>
           <View style={styles.stepItem}>
-            <View style={styles.stepNumber}>
+            <View style={[styles.stepNumber, !application.issuanceFeePaid && styles.stepNumberDisabled]}>
               <Text style={styles.stepNumberText}>3</Text>
             </View>
             <Text style={styles.stepText}>
-              Seller ships goods once certificate is issued
+              Certificate generated and goods shipped
             </Text>
           </View>
         </View>
@@ -1554,6 +1622,36 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "white",
   },
+  completedCard: {
+    opacity: 0.7,
+    borderColor: colors.success,
+  },
+  disabledCard: {
+    opacity: 0.5,
+    backgroundColor: colors.surface,
+  },
+  disabledText: {
+    color: colors.textSecondary,
+  },
+  disabledButton: {
+    backgroundColor: colors.textSecondary,
+    opacity: 0.5,
+  },
+  paidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.md,
+    backgroundColor: colors.success + "20",
+    borderRadius: 8,
+    marginTop: spacing.sm,
+  },
+  paidText: {
+    color: colors.success,
+    fontSize: 14,
+    fontWeight: "600",
+    marginLeft: spacing.xs,
+  },
   stepsList: {
     gap: spacing.md,
   },
@@ -1569,6 +1667,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  stepNumberComplete: {
+    backgroundColor: colors.success,
+  },
+  stepNumberDisabled: {
+    backgroundColor: colors.textSecondary,
+    opacity: 0.5,
   },
   stepNumberText: {
     fontSize: 12,

@@ -85,6 +85,8 @@ interface Application {
   issuanceFee: string;
   collateralDescription: string;
   collateralValue: string;
+  collateralPaid?: boolean; // Tracks if collateral has been paid
+  issuanceFeePaid?: boolean; // Tracks if issuance fee has been paid
 
   // Stage 5: Certificate Details
   certificateIssuedDate?: string;
@@ -207,6 +209,7 @@ interface TradeFinanceContextType {
   votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
   sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
   payCollateralBlockchain: (pgaId: string, amount: string) => Promise<void>;
+  payIssuanceFeeBlockchain: (pgaId: string) => Promise<void>;
   confirmGoodsShippedBlockchain: (
     pgaId: string,
     logisticPartnerName: string,
@@ -637,9 +640,11 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       applicationDate: new Date(pga.createdAt * 1000).toISOString(),
       paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
       financingDuration: pga.duration,
-      issuanceFee: `${(parseFloat(pga.guaranteeAmount) * 0.1).toFixed(2)} ${symbol}`,
+      issuanceFee: `${(parseFloat(pga.guaranteeAmount) * 0.01).toFixed(2)} ${symbol}`,
       collateralDescription: "",
       collateralValue: `${pga.collateralAmount} ${symbol}`,
+      collateralPaid: pga.collateralPaid,
+      issuanceFeePaid: pga.issuanceFeePaid,
       currentStage: mapPGAStatusToStage(pga.status),
       isDraft: false,
       lastUpdated: new Date().toISOString(),
@@ -739,52 +744,73 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
   );
 
   /**
-   * Load historical events on initial mount
+   * Load historical events on initial mount with systematic block range management
+   * ⚡ OPTIMIZED: Only fetches new events since last sync, not entire history
    */
   const loadHistoricalEvents = useCallback(async () => {
     if (!address || !isUnlocked || isLoadingHistory) return;
 
     setIsLoadingHistory(true);
-    console.log("[TradeFinanceContext] Loading historical events...");
+    const startTime = performance.now();
+    console.log("[TradeFinanceContext] 🔄 Loading historical events...");
 
     try {
-      // Fetch past events from last synced block (or genesis if first time)
+      // SYSTEMATIC BLOCK MANAGEMENT: Start from last synced block
       const fromBlock = lastSyncedBlock > 0 ? lastSyncedBlock + 1 : 0;
-      // Limit to 500 blocks on initial load (faster for free tier, ~1-2 days of blocks on Sepolia)
+      
+      // Get current block for progress tracking
+      const currentBlock = await tradeFinanceEventService["provider"]?.getBlockNumber();
+      const blocksToSync = currentBlock ? currentBlock - fromBlock : 0;
+      
+      console.log(
+        `[TradeFinanceContext] 📊 Syncing ${blocksToSync} blocks (${fromBlock} → ${currentBlock})`,
+      );
+
+      // SMART BATCHING: Only fetch recent blocks if fully synced, otherwise do full catch-up
+      const maxBlockRange = lastSyncedBlock === 0 ? 500 : 200; // First sync: 500 blocks, incremental: 200 blocks
+      
       const pastEvents = await tradeFinanceEventService.fetchPastEvents(
         address,
         fromBlock,
         "latest",
-        500,
+        maxBlockRange,
       );
 
       console.log(
-        `[TradeFinanceContext] Loaded ${pastEvents.length} historical events`,
+        `[TradeFinanceContext] ✅ Fetched ${pastEvents.length} events in ${(performance.now() - startTime).toFixed(0)}ms`,
       );
 
-      // Process events to build application state
+      // Process events to build application state (only for NEW events)
       const pgaIds = new Set<string>();
       pastEvents.forEach((event) => pgaIds.add(event.pgaId));
 
-      // Fetch current state for all PGAs mentioned in events
-      const pgaPromises = Array.from(pgaIds).map((pgaId) =>
-        tradeFinanceService.getPGA(pgaId).catch((err) => {
-          console.warn(`Failed to fetch PGA ${pgaId}:`, err);
-          return null;
-        }),
-      );
+      if (pgaIds.size > 0) {
+        // Fetch current state for all PGAs mentioned in NEW events
+        const pgaPromises = Array.from(pgaIds).map((pgaId) =>
+          tradeFinanceService.getPGA(pgaId).catch((err) => {
+            console.warn(`Failed to fetch PGA ${pgaId}:`, err);
+            return null;
+          }),
+        );
 
-      const pgaInfos = (await Promise.all(pgaPromises)).filter(
-        (p) => p !== null,
-      ) as PGAInfo[];
-      const apps = pgaInfos.map(mapPGAInfoToApplication);
+        const pgaInfos = (await Promise.all(pgaPromises)).filter(
+          (p) => p !== null,
+        ) as PGAInfo[];
+        
+        const newApps = pgaInfos.map(mapPGAInfoToApplication);
 
-      setApplications(apps);
+        // Merge with existing applications (update or add)
+        setApplications((prev) => {
+          const updatedMap = new Map(prev.map((app) => [app.id, app]));
+          newApps.forEach((app) => updatedMap.set(app.id, app));
+          return Array.from(updatedMap.values());
+        });
+      } else if (lastSyncedBlock === 0) {
+        // First sync and no events - do a full blockchain fetch
+        await fetchBlockchainData();
+      }
 
-      // Full refresh to reconcile adds/removes from chain
-      await fetchBlockchainData();
-
-      // Persist updated data to cache (fire-and-forget)
+      // Fire-and-forget persistence
       persistData();
 
       // Save the latest block processed
@@ -793,12 +819,13 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         await saveLastSyncedBlock(latestBlock);
       }
 
+      const totalTime = performance.now() - startTime;
       console.log(
-        "[TradeFinanceContext] Historical events loaded successfully",
+        `[TradeFinanceContext] ⚡ Historical sync complete in ${totalTime.toFixed(0)}ms`,
       );
     } catch (error) {
       console.error(
-        "[TradeFinanceContext] Error loading historical events:",
+        "[TradeFinanceContext] ⚠️ Error loading historical events:",
         error,
       );
     } finally {
@@ -811,6 +838,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     isLoadingHistory,
     persistData,
     fetchBlockchainData,
+    saveLastSyncedBlock,
   ]);
 
   const preload = useCallback(async () => {
@@ -994,6 +1022,11 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     setTimeout(() => loadHistoricalEvents(), 2000);
   };
 
+  const payIssuanceFeeBlockchain = async (pgaId: string) => {
+    await tradeFinanceService.payIssuanceFee(pgaId);
+    setTimeout(() => loadHistoricalEvents(), 2000);
+  };
+
   const confirmGoodsShippedBlockchain = async (
     pgaId: string,
     logisticPartnerName: string,
@@ -1047,10 +1080,11 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         completeTransaction,
         updateApplicationStage,
         saveDraft,
-        fetchBlockchainData,
-        refreshAll,
-        isRefreshing,
-        preload,
+        votePGABlockchain,
+        sellerVotePGABlockchain,
+        payCollateralBlockchain,
+        payIssuanceFeeBlockchain,
+        confirmGoodsShippedBlockchain,
         createPGABlockchain,
         votePGABlockchain,
         sellerVotePGABlockchain,

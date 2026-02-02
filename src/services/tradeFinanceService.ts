@@ -43,6 +43,9 @@ const TRADE_FINANCE_FACET_ABI = [
     "error ZeroAddress()",
     "error InvalidVotingPower()",
     "error ExcessiveAmount()",
+    "error IssuanceFeeAlreadyPaid()",
+    "error IssuanceFeeNotPaid()",
+    "error BlockFinaxAddressNotSet()",
 
     "event PGACreated(string indexed pgaId, address indexed buyer, address indexed seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, string metadataURI, uint256 votingDeadline, uint256 createdAt)",
     "event PGAVoteCast(string indexed pgaId, address indexed voter, bool support, uint256 votingPower, uint256 timestamp)",
@@ -53,6 +56,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "event GoodsShipped(string indexed pgaId, address indexed logisticPartner, string logisticPartnerName, uint256 timestamp)",
     "event BalancePaymentReceived(string indexed pgaId, address indexed buyer, uint256 balanceAmount, uint256 timestamp)",
     "event CertificateIssued(string indexed pgaId, string certificateNumber, uint256 issueDate, address indexed buyer, address indexed seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 validityDays, string blockchainNetwork, address smartContract)",
+    "event IssuanceFeePaid(string indexed pgaId, address indexed buyer, address indexed blockfinaxAddress, uint256 feeAmount, uint256 timestamp)",
     "event DeliveryAgreementCreated(string indexed agreementId, string indexed pgaId, address indexed deliveryPerson, address buyer, uint256 createdAt, uint256 deadline, string deliveryNotes)",
     "event BuyerConsentGiven(string indexed agreementId, string indexed pgaId, address indexed buyer, uint256 timestamp)",
     "event PGACompleted(string indexed pgaId, address indexed buyer, address indexed seller, uint256 completedAt)",
@@ -61,6 +65,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "function voteOnPGA(string pgaId, bool support) external",
     "function sellerVoteOnPGA(string pgaId, bool approve) external",
     "function payCollateral(string pgaId) external",
+    "function payIssuanceFee(string pgaId) external",
     "function confirmGoodsShipped(string pgaId, string logisticPartnerName) external",
     "function payBalancePayment(string pgaId) external",
     "function issueCertificate(string pgaId) external",
@@ -69,8 +74,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "function releasePaymentToSeller(string pgaId) external",
     "function refundCollateral(string pgaId) external",
     "function cancelPGA(string pgaId) external",
-
-    "function getPGA(string pgaId) external view returns (address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI)",
+    "function getPGA(string pgaId) external view returns (address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool issuanceFeePaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI)",
     "function getPGAMetadata(string pgaId) external view returns (string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] documents)",
     "function getPGADocuments(string pgaId) external view returns (string[] memory)",
     "function getAllPGAs() external view returns (string[] memory)",
@@ -123,6 +127,7 @@ export interface PGAInfo {
     votingDeadline: number;
     status: PGAStatus;
     collateralPaid: boolean;
+    issuanceFeePaid: boolean;
     balancePaymentPaid: boolean;
     goodsShipped: boolean;
     logisticPartner: string;
@@ -257,6 +262,7 @@ class TradeFinanceService {
             votingDeadline: data.votingDeadline.toNumber(),
             status: data.status as PGAStatus,
             collateralPaid: data.collateralPaid,
+            issuanceFeePaid: data.issuanceFeePaid,
             balancePaymentPaid: data.balancePaymentPaid,
             goodsShipped: data.goodsShipped,
             logisticPartner: data.logisticPartner,
@@ -418,6 +424,35 @@ class TradeFinanceService {
         }
 
         const tx = await contract.payCollateral(pgaId);
+        return tx.wait();
+    }
+
+    public async payIssuanceFee(pgaId: string) {
+        // Pay issuance fee (1% of guarantee amount) to BlockFinax address
+        // The smart contract will calculate the fee and transfer to blockfinaxAddress
+        const contract = await this.getContract();
+        const usdc = await this.getUSDCContract();
+        const diamond = this.getDiamondAddress();
+        
+        // Get PGA to calculate issuance fee
+        const pga = await this.getPGA(pgaId);
+        const feeAmount = parseFloat(pga.guaranteeAmount) * 0.01; // 1% of guarantee amount
+        const decimals = await this.getPrimaryTokenDecimals();
+        const feeAmountRaw = ethers.utils.parseUnits(feeAmount.toString(), decimals);
+
+        // Check and approve USDC allowance for the fee
+        const signer = await this.getSigner();
+        const address = await signer.getAddress();
+        const allowance = await usdc.allowance(address, diamond);
+
+        if (allowance.lt(feeAmountRaw)) {
+            const approveTx = await usdc.approve(diamond, feeAmountRaw);
+            await approveTx.wait();
+        }
+
+        // Call payIssuanceFee on Diamond contract
+        // The contract will transfer to BlockFinax address from governance facet
+        const tx = await contract.payIssuanceFee(pgaId);
         return tx.wait();
     }
 

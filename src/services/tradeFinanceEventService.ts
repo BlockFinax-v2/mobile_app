@@ -89,11 +89,14 @@ class TradeFinanceEventService {
     }
 
     /**
-     * Fetch historical events from the blockchain
+     * Fetch historical events from the blockchain with optimized block range management
+     * ⚡ SMART BATCHING: Automatically manages block ranges to avoid RPC limits
+     * 📊 PROGRESS TRACKING: Reports sync progress for better UX
+     * 
      * @param userAddress - The wallet address to filter events for
      * @param fromBlock - Starting block number (0 for genesis, or specific block)
      * @param toBlock - Ending block number ("latest" for current)
-     * @param maxBlockRange - Maximum blocks to fetch (default 1000 for free tier)
+     * @param maxBlockRange - Maximum blocks to fetch in total (default 1000 for free tier)
      */
     public async fetchPastEvents(
         userAddress: string,
@@ -102,10 +105,12 @@ class TradeFinanceEventService {
         maxBlockRange: number = 1000
     ): Promise<PGAEvent[]> {
         if (!this.contract || !this.provider) {
+            console.log("[TradeFinanceEventService] ⚠️ No contract/provider - skipping event fetch");
             return [];
         }
 
-        console.log(`[TradeFinanceEventService] Fetching past events from block ${fromBlock} to ${toBlock}`);
+        const startTime = performance.now();
+        console.log(`[TradeFinanceEventService] 🔄 Fetching events: blocks ${fromBlock} → ${toBlock}`);
 
         try {
             const events: PGAEvent[] = [];
@@ -114,12 +119,24 @@ class TradeFinanceEventService {
             // Determine the starting block
             let startBlock = fromBlock === "earliest" ? 0 : fromBlock;
             
-            // Limit block range to avoid excessive API calls on free tier
-            if (currentBlock - startBlock > maxBlockRange) {
-                console.log(`[TradeFinanceEventService] ⚠️ Block range too large (${currentBlock - startBlock} blocks). Limiting to last ${maxBlockRange} blocks.`);
+            // SMART LIMIT: Cap total block range to avoid excessive API calls
+            const totalBlocksRequested = currentBlock - startBlock;
+            if (totalBlocksRequested > maxBlockRange) {
+                console.log(
+                    `[TradeFinanceEventService] 📊 Limiting scan: ${totalBlocksRequested} blocks → ${maxBlockRange} blocks (most recent)`,
+                );
                 startBlock = currentBlock - maxBlockRange;
             }
 
+            // OPTIMAL BATCH SIZE: Free tier RPC limits (Alchemy/Infura: ~10 blocks safe)
+            const BATCH_SIZE = 10;
+            const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
+            
+            console.log(
+                `[TradeFinanceEventService] 📊 Batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
+            );
+
+            
             // Define all event filters - Only use indexed parameters
             // For simplicity and to avoid filter errors, we fetch all events and filter in code
             const eventFilters = [
@@ -173,22 +190,22 @@ class TradeFinanceEventService {
                 },
             ];
 
-            // Fetch events in batches to avoid RPC limits
-            // Alchemy free tier: 10 block range max for eth_getLogs
-            const BATCH_SIZE = 10;
-            const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
+            // SYSTEMATIC BATCHING: Process blocks in small chunks to avoid RPC limits
             let batchCount = 0;
+            let eventCount = 0;
             
             for (let currentStart = startBlock; currentStart <= currentBlock; currentStart += BATCH_SIZE) {
                 const currentEnd = Math.min(currentStart + BATCH_SIZE - 1, currentBlock);
                 batchCount++;
                 
-                // Log progress every 10 batches to avoid spam
-                if (batchCount % 10 === 0 || batchCount === totalBatches) {
-                    console.log(`[TradeFinanceEventService] Progress: ${batchCount}/${totalBatches} batches (${Math.round(batchCount/totalBatches*100)}%)`);
+                // PROGRESS REPORTING: Log every 10 batches or at completion
+                const shouldLog = batchCount % 10 === 0 || batchCount === totalBatches;
+                if (shouldLog) {
+                    const progress = Math.round((batchCount / totalBatches) * 100);
+                    console.log(
+                        `[TradeFinanceEventService] ⏳ Progress: ${batchCount}/${totalBatches} (${progress}%) - ${eventCount} events found`,
+                    );
                 }
-                
-                console.log(`[TradeFinanceEventService] Fetching events from block ${currentStart} to ${currentEnd}`);
 
                 for (const eventFilter of eventFilters) {
                     try {
@@ -210,11 +227,12 @@ class TradeFinanceEventService {
                                 );
                                 if (!isDuplicate) {
                                     events.push(parsedEvent);
+                                    eventCount++; // Track progress
                                 }
                             }
                         }
                     } catch (error) {
-                        console.error(`[TradeFinanceEventService] Error fetching ${eventFilter.name}:`, error);
+                        console.error(`[TradeFinanceEventService] ⚠️ Error fetching ${eventFilter.name}:`, error);
                     }
                 }
             }
@@ -225,7 +243,10 @@ class TradeFinanceEventService {
             // Update last processed block
             this.lastProcessedBlock = currentBlock;
 
-            console.log(`[TradeFinanceEventService] Fetched ${events.length} past events`);
+            const fetchTime = performance.now() - startTime;
+            console.log(
+                `[TradeFinanceEventService] ✅ Fetched ${events.length} events in ${fetchTime.toFixed(0)}ms (${totalBatches} batches)`,
+            );
             return events;
         } catch (error) {
             console.error("[TradeFinanceEventService] Error fetching past events:", error);

@@ -99,6 +99,7 @@ export const TradeFinanceScreen = () => {
     votePGABlockchain,
     sellerVotePGABlockchain,
     payCollateralBlockchain,
+    payIssuanceFeeBlockchain,
     confirmGoodsShippedBlockchain,
     payBalancePaymentBlockchain,
     issueCertificateBlockchain,
@@ -702,22 +703,42 @@ export const TradeFinanceScreen = () => {
     }
   };
 
-  const handlePayFee = (application: Application) => {
-    // 10% issuance fee calculated from guarantee amount
-    const feeAmount =
-      parseFloat(application.guaranteeAmount.split(" ")[0]) * 0.1;
-    const diamondAddress =
-      selectedNetwork?.diamondAddress ||
-      "0x0000000000000000000000000000000000000000";
+  const handlePayCollateral = async (application: Application) => {
+    try {
+      const collateralAmount = parseFloat(
+        application.collateralValue.split(" ")[0],
+      );
 
-    // Navigate to payment screen with fee payment parameters
-    navigation.navigate("TradeFinancePayment", {
-      paymentType: "fee",
-      feeAmount: feeAmount,
-      feeRecipient: diamondAddress, // Pay to Treasury (Diamond)
-      applicationId: application.id,
-      preferredToken: tokenSymbol,
-    });
+      await payCollateralBlockchain(application.id, collateralAmount.toString());
+
+      Alert.alert(
+        "Success",
+        "Collateral paid successfully! You can now pay the issuance fee.",
+      );
+
+      // Refresh applications to update collateralPaid status
+      await fetchBlockchainData();
+    } catch (error: any) {
+      console.error("Collateral payment error:", error);
+      Alert.alert("Error", error.message || "Failed to pay collateral");
+    }
+  };
+
+  const handlePayFee = async (application: Application) => {
+    try {
+      await payIssuanceFeeBlockchain(application.id);
+
+      Alert.alert(
+        "Success",
+        "Issuance fee paid successfully! Certificate will be generated.",
+      );
+
+      // Refresh applications to update status
+      await fetchBlockchainData();
+    } catch (error: any) {
+      console.error("Issuance fee payment error:", error);
+      Alert.alert("Error", error.message || "Failed to pay issuance fee");
+    }
   };
 
   const processPayment = () => {
@@ -798,8 +819,9 @@ export const TradeFinanceScreen = () => {
 
     try {
       // First logistics partner to sign gets assigned
-      const logisticsName = shippingForm.logisticsPartnerName || "Logistics Partner";
-      
+      const logisticsName =
+        shippingForm.logisticsPartnerName || "Logistics Partner";
+
       await confirmGoodsShippedBlockchain(
         selectedApplication.id,
         logisticsName,
@@ -1272,7 +1294,8 @@ export const TradeFinanceScreen = () => {
 
           {applications.filter(
             (app) =>
-              (app.status === "Certificate Issued" || app.status === "Fee Paid") &&
+              (app.status === "Certificate Issued" ||
+                app.status === "Fee Paid") &&
               app.currentStage >= 5,
           ).length === 0 ? (
             <View style={styles.emptyApplicationsState}>
@@ -1290,7 +1313,8 @@ export const TradeFinanceScreen = () => {
               {applications
                 .filter(
                   (app) =>
-                    (app.status === "Certificate Issued" || app.status === "Fee Paid") &&
+                    (app.status === "Certificate Issued" ||
+                      app.status === "Fee Paid") &&
                     app.currentStage >= 5,
                 )
                 .map((app) => (
@@ -1874,7 +1898,8 @@ export const TradeFinanceScreen = () => {
 
           <ScrollView style={styles.modalContent}>
             <Text style={styles.modalSubtitle}>
-              As a logistics partner, sign to confirm goods shipment. First to sign becomes the assigned logistics partner.
+              As a logistics partner, sign to confirm goods shipment. First to
+              sign becomes the assigned logistics partner.
             </Text>
 
             <View style={styles.formContainer}>
@@ -1884,7 +1909,10 @@ export const TradeFinanceScreen = () => {
                 placeholder="Enter your company name"
                 value={shippingForm.logisticsPartnerName}
                 onChangeText={(text) =>
-                  setShippingForm((prev) => ({ ...prev, logisticsPartnerName: text }))
+                  setShippingForm((prev) => ({
+                    ...prev,
+                    logisticsPartnerName: text,
+                  }))
                 }
               />
 
@@ -1958,15 +1986,21 @@ export const TradeFinanceScreen = () => {
                 <TouchableOpacity
                   style={[
                     styles.confirmButton,
-                    (!shippingForm.trackingNumber || !shippingForm.carrier || !shippingForm.logisticsPartnerName) &&
+                    (!shippingForm.trackingNumber ||
+                      !shippingForm.carrier ||
+                      !shippingForm.logisticsPartnerName) &&
                       styles.disabledButton,
                   ]}
                   onPress={processShippingConfirmation}
                   disabled={
-                    !shippingForm.trackingNumber || !shippingForm.carrier || !shippingForm.logisticsPartnerName
+                    !shippingForm.trackingNumber ||
+                    !shippingForm.carrier ||
+                    !shippingForm.logisticsPartnerName
                   }
                 >
-                  <Text style={styles.confirmButtonText}>Sign & Confirm Shipment</Text>
+                  <Text style={styles.confirmButtonText}>
+                    Sign & Confirm Shipment
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -2193,6 +2227,7 @@ export const TradeFinanceScreen = () => {
         {selectedBuyerApplication && (
           <BuyerApplicationView
             application={selectedBuyerApplication}
+            onPayCollateral={() => handlePayCollateral(selectedBuyerApplication)}
             onPayFee={() => handlePayFee(selectedBuyerApplication)}
             onPayInvoice={() => openSettlementModal(selectedBuyerApplication)}
             onConfirmDelivery={() =>
