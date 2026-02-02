@@ -16,6 +16,7 @@ import {
   Proposal as StakingProposal,
 } from "@/services/stakingService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { backgroundDataLoader } from "@/services/backgroundDataLoader";
 
 interface StakingData {
   stakedAmount: string;
@@ -494,26 +495,59 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const initialize = async () => {
       console.log(
-        "[TreasuryContext] Initializing with cache-first strategy...",
+        "[TreasuryContext] ⚡ INSTANT LOAD - Using background preloaded data...",
       );
+      const startTime = performance.now();
 
       // Initialize event service
       treasuryEventService.setNetwork(chainId, currentNetwork);
 
-      // 1. Load cached data immediately (INSTANT UI - < 100ms)
-      await loadCachedData();
+      try {
+        // 1. Load background preloaded data (INSTANT - already fetched during unlock screen)
+        const cachedData = await backgroundDataLoader.getCachedTreasuryData();
 
-      // 2. Load historical events in background (sync)
-      await loadHistoricalEvents();
+        if (cachedData.pools.length > 0 || cachedData.position) {
+          console.log(`[TreasuryContext] 📦 Found preloaded treasury data`);
 
-      // 3. Start real-time listeners
-      treasuryEventService.startListening(address, handleRealtimeEvent);
+          // Use preloaded position data if available
+          if (cachedData.position) {
+            setStakingData(cachedData.position.stakingData || null);
+            setFinancierStatus(cachedData.position.financierStatus || null);
+          }
 
-      hasInitialized.current = true;
-      lastInitializedKey.current = initKey;
-      console.log(
-        "[TreasuryContext] ✅ Initialization complete (cache + sync)",
-      );
+          const loadTime = performance.now() - startTime;
+          console.log(
+            `[TreasuryContext] ✅ INSTANT load in ${loadTime.toFixed(0)}ms (preloaded data)`,
+          );
+        } else {
+          // Fallback to legacy cached data if background preload missed
+          console.log(
+            "[TreasuryContext] 📊 No preloaded data - using legacy cache",
+          );
+          await loadCachedData();
+        }
+
+        // 2. Start real-time listeners immediately (no need to wait for sync)
+        treasuryEventService.startListening(address, handleRealtimeEvent);
+
+        // 3. Load historical events in background (non-blocking, runs after UI is shown)
+        loadHistoricalEvents().catch((err) => {
+          console.warn("[TreasuryContext] Background sync error:", err);
+        });
+
+        hasInitialized.current = true;
+        lastInitializedKey.current = initKey;
+
+        const totalTime = performance.now() - startTime;
+        console.log(
+          `[TreasuryContext] ✅ Context ready in ${totalTime.toFixed(0)}ms`,
+        );
+      } catch (error) {
+        console.error("[TreasuryContext] Initialization error:", error);
+        // Fallback to full data fetch
+        await loadCachedData();
+        await loadHistoricalEvents();
+      }
     };
 
     initialize();

@@ -8,10 +8,18 @@ import { RootStackParamList } from "@/navigation/types";
 import { palette } from "@/theme/colors";
 import { useNavigation } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
-import { Alert, Animated, StyleSheet, View, Pressable } from "react-native";
+import {
+  Alert,
+  Animated,
+  StyleSheet,
+  View,
+  Pressable,
+  ActivityIndicator,
+} from "react-native";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
+import { backgroundDataLoader } from "@/services/backgroundDataLoader";
 
 type UnlockForm = {
   password: string;
@@ -37,22 +45,62 @@ export const UnlockWalletScreen: React.FC = () => {
     ]).start();
   };
 
-
   const {
     unlockWallet,
     unlockWithBiometrics,
     // settings,
     isBiometricAvailable,
     isBiometricEnabled,
+    address,
+    selectedNetwork,
   } = useWallet();
   const navigation = useNavigation<NavigationProp>();
   const [isLoading, setIsLoading] = useState(false);
   const [secureText, setSecureText] = useState(true);
+  const [isPreloading, setIsPreloading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   const { control, handleSubmit, reset } = useForm<UnlockForm>({
     defaultValues: { password: "" },
   });
+
+  // ⚡ PERFORMANCE: Start background preloading when screen appears
+  useEffect(() => {
+    let isActive = true;
+
+    const startBackgroundPreload = async () => {
+      if (!address || !selectedNetwork) {
+        console.log("[UnlockScreen] ⏭️ Skipping preload - no address/network");
+        return;
+      }
+
+      console.log("[UnlockScreen] 🚀 Starting background preload...");
+      setIsPreloading(true);
+
+      try {
+        await backgroundDataLoader.startPreloading(
+          address,
+          selectedNetwork.chainId,
+        );
+
+        if (isActive) {
+          console.log("[UnlockScreen] ✅ Background preload complete");
+          setIsPreloading(false);
+        }
+      } catch (error) {
+        console.error("[UnlockScreen] ⚠️ Preload error:", error);
+        if (isActive) {
+          setIsPreloading(false);
+        }
+      }
+    };
+
+    startBackgroundPreload();
+
+    return () => {
+      isActive = false;
+    };
+  }, [address, selectedNetwork]);
 
   const triggerShake = () => {
     Animated.sequence([
@@ -104,7 +152,7 @@ export const UnlockWalletScreen: React.FC = () => {
       triggerShake();
       Alert.alert(
         "Biometric Authentication Failed",
-        "Please use your password to unlock the wallet."
+        "Please use your password to unlock the wallet.",
       );
     } finally {
       setIsLoading(false);
@@ -120,6 +168,20 @@ export const UnlockWalletScreen: React.FC = () => {
         <Text color={palette.neutralMid}>
           Enter your password to access the BlockFinaX dashboard.
         </Text>
+
+        {/* Background preloading indicator */}
+        {isPreloading && (
+          <View style={styles.preloadIndicator}>
+            <ActivityIndicator size="small" color={palette.primaryBlue} />
+            <Text
+              variant="caption"
+              color={palette.neutralMid}
+              style={{ marginLeft: 8 }}
+            >
+              Loading your data in background...
+            </Text>
+          </View>
+        )}
 
         {isBiometricAvailable && isBiometricEnabled ? (
           <Button
@@ -154,7 +216,7 @@ export const UnlockWalletScreen: React.FC = () => {
                   <Pressable
                     onPress={() => {
                       animateEye();
-                      setSecureText(prev => !prev);
+                      setSecureText((prev) => !prev);
                     }}
                   >
                     <Animated.View style={{ transform: [{ scale: eyeScale }] }}>
@@ -167,7 +229,6 @@ export const UnlockWalletScreen: React.FC = () => {
                   </Pressable>
                 }
               />
-
             )}
           />
         </Animated.View>
@@ -195,5 +256,16 @@ const styles = StyleSheet.create({
   },
   biometricButton: {
     marginTop: 12,
+  },
+  preloadIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: palette.backgroundLight,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: palette.neutralLight,
   },
 });

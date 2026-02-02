@@ -6,7 +6,7 @@
 
 The "My Pool Guarantee Applications" screen was loading very slowly due to multiple bottlenecks:
 
-1. **N+1 Query Problem**: 
+1. **N+1 Query Problem**:
    - `getAllPGAsByBuyer()` made 1 call to get IDs, then N individual calls for each PGA
    - For 20 PGAs: 21 network calls (1 + 20)
    - Each call: ~200-500ms on testnet
@@ -46,7 +46,7 @@ public async getPGA(pgaId: string, skipCache: boolean = false): Promise<PGAInfo>
             return cached.data; // ⚡ INSTANT RETURN
         }
     }
-    
+
     // Fetch from blockchain and cache
     const pgaInfo = await fetchFromBlockchain(pgaId);
     this.pgaCache.set(pgaId, { data: pgaInfo, timestamp: Date.now() });
@@ -55,6 +55,7 @@ public async getPGA(pgaId: string, skipCache: boolean = false): Promise<PGAInfo>
 ```
 
 **Benefits**:
+
 - First load: Normal speed
 - Subsequent loads (within 30s): **INSTANT** (0ms)
 - Automatic cache invalidation on real-time events
@@ -69,6 +70,7 @@ public async getPGA(pgaId: string, skipCache: boolean = false): Promise<PGAInfo>
 **File**: `mobile_app/src/services/tradeFinanceService.ts`
 
 **Before** (Sequential):
+
 ```typescript
 public async getAllPGAsByBuyer(buyer: string): Promise<PGAInfo[]> {
     const ids = await contract.getPGAsByBuyer(buyer);
@@ -77,12 +79,13 @@ public async getAllPGAsByBuyer(buyer: string): Promise<PGAInfo[]> {
 ```
 
 **After** (Batched Parallel):
+
 ```typescript
 public async getAllPGAsByBuyer(buyer: string, skipCache: boolean = false): Promise<PGAInfo[]> {
     const ids = await contract.getPGAsByBuyer(buyer);
     const BATCH_SIZE = 10;
     const results: PGAInfo[] = [];
-    
+
     // Process 10 at a time
     for (let i = 0; i < ids.length; i += BATCH_SIZE) {
         const batch = ids.slice(i, i + BATCH_SIZE);
@@ -90,17 +93,18 @@ public async getAllPGAsByBuyer(buyer: string, skipCache: boolean = false): Promi
             batch.map(id => this.getPGA(id, skipCache))
         );
         results.push(...batchResults);
-        
+
         // Progress logging
         const progress = Math.round(((i + BATCH_SIZE) / ids.length) * 100);
         console.log(`⏳ Progress: ${progress}% (${i + BATCH_SIZE}/${ids.length})`);
     }
-    
+
     return results;
 }
 ```
 
 **Benefits**:
+
 - Prevents RPC rate limiting
 - Smooth progress reporting
 - Better error handling (partial failures don't block everything)
@@ -115,23 +119,27 @@ public async getAllPGAsByBuyer(buyer: string, skipCache: boolean = false): Promi
 **File**: `mobile_app/src/services/tradeFinanceEventService.ts`
 
 **Before**:
+
 ```typescript
 const BATCH_SIZE = 10; // Too conservative!
 // 10,000 blocks = 1,000 RPC calls
 ```
 
 **After**:
+
 ```typescript
 const BATCH_SIZE = 2000; // Modern RPC providers can handle this
 // 10,000 blocks = 5 RPC calls
 ```
 
 **Benefits**:
+
 - **200x reduction** in RPC calls for historical events
 - Alchemy/Infura free tier: 2,000 blocks per call is safe
 - 10,000 blocks: ~5 seconds (down from ~5 minutes)
 
 **Block Range Limits**:
+
 - First sync: 500 blocks max (fast initial load)
 - Incremental sync: 200 blocks max (quick updates)
 - Prevents overwhelming RPC on first load
@@ -143,41 +151,44 @@ const BATCH_SIZE = 2000; // Modern RPC providers can handle this
 **File**: `mobile_app/src/contexts/TradeFinanceContext.tsx`
 
 **Before** (Double Fetch):
+
 ```typescript
 const preload = async () => {
-    await loadCachedData();        // Load from AsyncStorage
-    await loadHistoricalEvents();  // Fetch events + all PGAs
-    await fetchBlockchainData();   // Fetch ALL PGAs again! ❌
-    startListening();
+  await loadCachedData(); // Load from AsyncStorage
+  await loadHistoricalEvents(); // Fetch events + all PGAs
+  await fetchBlockchainData(); // Fetch ALL PGAs again! ❌
+  startListening();
 };
 ```
 
 **After** (Conditional Fetch):
+
 ```typescript
 const preload = async () => {
-    console.log('🚀 Starting optimized preload...');
-    
-    // 1. Load cached data (instant)
-    await loadCachedData();
-    
-    // 2. Load only NEW events since last sync
-    await loadHistoricalEvents();
-    
-    // 3. SMART DECISION: Only full fetch if needed
-    const shouldFullFetch = lastSyncedBlock === 0 || applications.length === 0;
-    if (shouldFullFetch) {
-        console.log('📊 First load - doing full blockchain fetch');
-        await fetchBlockchainData();
-    } else {
-        console.log('⚡ Using cached data + incremental events');
-    }
-    
-    // 4. Start real-time listeners
-    startListening();
+  console.log("🚀 Starting optimized preload...");
+
+  // 1. Load cached data (instant)
+  await loadCachedData();
+
+  // 2. Load only NEW events since last sync
+  await loadHistoricalEvents();
+
+  // 3. SMART DECISION: Only full fetch if needed
+  const shouldFullFetch = lastSyncedBlock === 0 || applications.length === 0;
+  if (shouldFullFetch) {
+    console.log("📊 First load - doing full blockchain fetch");
+    await fetchBlockchainData();
+  } else {
+    console.log("⚡ Using cached data + incremental events");
+  }
+
+  // 4. Start real-time listeners
+  startListening();
 };
 ```
 
 **Benefits**:
+
 - First load: ~5-8 seconds (full fetch)
 - Subsequent loads: ~0.5-2 seconds (cache + incremental events)
 - **90% reduction** in load time for repeat visits
@@ -190,25 +201,26 @@ const preload = async () => {
 
 ```typescript
 const handleRealtimeEvent = async (event: PGAEvent) => {
-    // ⚡ Invalidate cache for this PGA
-    tradeFinanceService.invalidatePGACache(event.pgaId);
-    
-    // Fetch fresh data (will hit blockchain since cache is cleared)
-    const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
-    
-    // Update UI instantly
-    setApplications(prev => {
-        const updated = [...prev];
-        const index = updated.findIndex(app => app.id === event.pgaId);
-        if (index >= 0) {
-            updated[index] = mapPGAInfoToApplication(pgaInfo);
-        }
-        return updated;
-    });
+  // ⚡ Invalidate cache for this PGA
+  tradeFinanceService.invalidatePGACache(event.pgaId);
+
+  // Fetch fresh data (will hit blockchain since cache is cleared)
+  const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
+
+  // Update UI instantly
+  setApplications((prev) => {
+    const updated = [...prev];
+    const index = updated.findIndex((app) => app.id === event.pgaId);
+    if (index >= 0) {
+      updated[index] = mapPGAInfoToApplication(pgaInfo);
+    }
+    return updated;
+  });
 };
 ```
 
 **Benefits**:
+
 - Ensures UI shows latest data after events
 - Prevents stale cache issues
 - Next fetch of this PGA will be fresh
@@ -237,9 +249,10 @@ function getBatchPGAs(string[] calldata pgaIds)
 ```
 
 **Usage** (Frontend):
+
 ```typescript
 // Before: 20 calls
-const pgas = await Promise.all(ids.map(id => contract.getPGA(id)));
+const pgas = await Promise.all(ids.map((id) => contract.getPGA(id)));
 
 // After: 1 call! ⚡
 const batchData = await contract.getBatchPGAs(ids);
@@ -249,6 +262,7 @@ const pgas = parseBatchResponse(batchData);
 **Note**: Requires contract upgrade to activate. When deployed, this will reduce 20 calls to 1 call.
 
 **Expected Performance**:
+
 - 20 PGAs: ~500ms (down from 4-6 seconds)
 - 50 PGAs: ~1 second (down from 10-15 seconds)
 
@@ -258,27 +272,27 @@ const pgas = parseBatchResponse(batchData);
 
 ### Before Optimization
 
-| Scenario | Network Calls | Time |
-|----------|---------------|------|
+| Scenario             | Network Calls                                             | Time          |
+| -------------------- | --------------------------------------------------------- | ------------- |
 | First Load (20 PGAs) | 1,021 (1 ID fetch + 20 PGA fetches + 1,000 event batches) | ~8-10 seconds |
-| Subsequent Load | 1,021 (no caching) | ~8-10 seconds |
-| Real-time Update | 1 | ~300ms |
+| Subsequent Load      | 1,021 (no caching)                                        | ~8-10 seconds |
+| Real-time Update     | 1                                                         | ~300ms        |
 
 ### After Optimization
 
-| Scenario | Network Calls | Time |
-|----------|---------------|------|
-| First Load (20 PGAs) | 26 (1 ID fetch + 2 PGA batches + 5 event batches) | ~3-5 seconds |
-| Subsequent Load (cached) | 6 (1 incremental event batch) | ~0.5-1 second |
-| Subsequent Load (cache hit) | 0 | ~0ms (instant) |
-| Real-time Update | 1 | ~200ms |
+| Scenario                    | Network Calls                                     | Time           |
+| --------------------------- | ------------------------------------------------- | -------------- |
+| First Load (20 PGAs)        | 26 (1 ID fetch + 2 PGA batches + 5 event batches) | ~3-5 seconds   |
+| Subsequent Load (cached)    | 6 (1 incremental event batch)                     | ~0.5-1 second  |
+| Subsequent Load (cache hit) | 0                                                 | ~0ms (instant) |
+| Real-time Update            | 1                                                 | ~200ms         |
 
 ### With Batch Contract Function (Future)
 
-| Scenario | Network Calls | Time |
-|----------|---------------|------|
-| First Load (20 PGAs) | 7 (1 ID fetch + 1 batch PGA fetch + 5 event batches) | ~2-3 seconds |
-| Subsequent Load (cached) | 6 (incremental events) | ~0.5-1 second |
+| Scenario                 | Network Calls                                        | Time          |
+| ------------------------ | ---------------------------------------------------- | ------------- |
+| First Load (20 PGAs)     | 7 (1 ID fetch + 1 batch PGA fetch + 5 event batches) | ~2-3 seconds  |
+| Subsequent Load (cached) | 6 (incremental events)                               | ~0.5-1 second |
 
 ---
 
@@ -307,26 +321,31 @@ const pgas = parseBatchResponse(batchData);
 ## Best Practices Applied
 
 ### 1. Progressive Loading
+
 - Show cached data immediately
 - Load incremental updates in background
 - Update UI as data arrives
 
 ### 2. Smart Caching
+
 - 30-second TTL balances freshness and performance
 - Automatic invalidation on events
 - Cleared on network switch
 
 ### 3. Batch Processing
+
 - 10 PGAs per batch prevents RPC overload
 - Progress indicators for user feedback
 - Graceful error handling
 
 ### 4. Incremental Syncing
+
 - Track last synced block
 - Only fetch NEW events
 - Avoid redundant full scans
 
 ### 5. Conditional Fetching
+
 - Check cache before blockchain
 - Skip full fetch if data is fresh
 - Full fetch only on first load or cache miss
@@ -336,28 +355,35 @@ const pgas = parseBatchResponse(batchData);
 ## Future Optimizations
 
 ### 1. IndexedDB Storage (Long-term Cache)
+
 Replace AsyncStorage with IndexedDB for:
+
 - Larger storage capacity
 - Faster read/write
 - Offline-first capability
 
 ### 2. Service Worker (Background Sync)
+
 - Fetch events in background
 - Pre-cache data before user navigates
 - Update cache while app is closed
 
 ### 3. GraphQL Subgraph (The Graph Protocol)
+
 - Query blockchain data via GraphQL
 - Complex filters and aggregations
 - Sub-second query times
 
 ### 4. WebSocket Real-time Events
+
 Replace polling with WebSocket:
+
 - Lower latency (10-50ms vs 200-500ms)
 - Less network overhead
 - Better battery life
 
 ### 5. Pagination
+
 - Load 10 PGAs initially
 - Infinite scroll for remaining
 - Virtual scrolling for thousands of items
@@ -367,18 +393,21 @@ Replace polling with WebSocket:
 ## Monitoring & Analytics
 
 ### Performance Tracking
+
 ```typescript
-console.log('[Performance] PGA Load Time:', loadTime);
-console.log('[Performance] Cache Hit Rate:', cacheHitRate);
-console.log('[Performance] Network Calls:', callCount);
+console.log("[Performance] PGA Load Time:", loadTime);
+console.log("[Performance] Cache Hit Rate:", cacheHitRate);
+console.log("[Performance] Network Calls:", callCount);
 ```
 
 ### Key Performance Indicators (KPIs)
+
 - **Target Load Time**: <3 seconds (first load), <1 second (cached)
 - **Cache Hit Rate**: >60% for typical usage
 - **Network Call Reduction**: >95% vs original
 
 ### User Experience Metrics
+
 - **Time to First Paint**: Show cached data immediately
 - **Time to Interactive**: Full data loaded and ready
 - **Perceived Performance**: Progress indicators + optimistic updates
@@ -388,6 +417,7 @@ console.log('[Performance] Network Calls:', callCount);
 ## Deployment Notes
 
 ### Phase 1 (Current - No Contract Changes)
+
 - ✅ Smart caching layer
 - ✅ Parallel batch processing
 - ✅ Optimized event batching
@@ -398,6 +428,7 @@ console.log('[Performance] Network Calls:', callCount);
 **Impact**: 60-90% faster load times
 
 ### Phase 2 (Requires Contract Upgrade)
+
 - ⏳ Deploy `getBatchPGAs()` function
 - ⏳ Update frontend to use batch function
 - ⏳ Deprecate individual getPGA calls

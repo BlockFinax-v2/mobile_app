@@ -18,6 +18,7 @@ import {
 } from "@/services/tradeFinanceEventService";
 import { useWallet } from "./WalletContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { backgroundDataLoader } from "@/services/backgroundDataLoader";
 
 type TradeFinanceCache = {
   applications: Application[];
@@ -705,8 +706,43 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
    * Handle real-time events from the blockchain
    */
   /**
+   * Determine if an event should remove a card from the list
+   * Cards persist until explicit removal events are emitted
+   *
+   * Removal triggers:
+   * - PGACompleted: Transaction fully complete
+   * - PGACancelled: Transaction cancelled
+   * - PGAExpired: Voting period expired without approval
+   * - Status changed to Rejected/Cancelled
+   */
+  const shouldRemoveCard = useCallback((event: PGAEvent): boolean => {
+    // PGACompleted event = transaction finished, remove card
+    if (event.eventType === "PGACompleted") {
+      console.log(
+        `[TradeFinanceContext] 🗑️ Removing completed PGA: ${event.pgaId}`,
+      );
+      return true;
+    }
+
+    // Status change to terminal states = remove card
+    if (event.eventType === "PGAStatusChanged") {
+      const newStatus = event.data.newStatus;
+      // Remove if status is Rejected (5), Cancelled (6), or Expired
+      if (newStatus === 5 || newStatus === 6) {
+        console.log(
+          `[TradeFinanceContext] 🗑️ Removing PGA with terminal status: ${event.pgaId}`,
+        );
+        return true;
+      }
+    }
+
+    return false;
+  }, []);
+
+  /**
    * Real-time event handler - optimized for microsecond-level updates
    * Uses fire-and-forget persistence and optimistic UI updates
+   * ⚡ PERSISTENCE: Cards persist until removal events are emitted
    */
   const handleRealtimeEvent = useCallback(
     async (event: PGAEvent) => {
@@ -726,6 +762,24 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
         // ⚡ PERFORMANCE: Invalidate cache for this PGA to ensure fresh data
         tradeFinanceService.invalidatePGACache(event.pgaId);
+
+        // 🗑️ PERSISTENCE: Check if this event should remove the card
+        if (shouldRemoveCard(event)) {
+          console.log(
+            `[TradeFinanceContext] 🗑️ Removing card for PGA: ${event.pgaId}`,
+          );
+
+          setApplications((prev) =>
+            prev.filter((app) => app.id !== event.pgaId),
+          );
+
+          // Persist the removal
+          persistData();
+
+          // Clean up pending flag
+          setTimeout(() => pendingUpdates.delete(eventKey), 1000);
+          return;
+        }
 
         // Fetch updated PGA data (will get from blockchain since cache is invalidated)
         const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
@@ -775,7 +829,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         );
       }
     },
-    [lastSyncedBlock, persistData, pendingUpdates],
+    [lastSyncedBlock, persistData, pendingUpdates, shouldRemoveCard],
   );
 
   /**
@@ -885,44 +939,68 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       return;
     }
 
-    console.log('[TradeFinanceContext] 🚀 Starting optimized preload...');
+    console.log(
+      "[TradeFinanceContext] ⚡ INSTANT LOAD - Using background preloaded data...",
+    );
     const preloadStart = performance.now();
 
-    // 1. Load cached data first (instant)
-    await loadCachedData();
-    
-    // 2. Load historical events (only new events since last sync)
-    await loadHistoricalEvents();
-    
-    // 3. Only do full blockchain fetch if:
-    //    - First time loading (lastSyncedBlock === 0)
-    //    - OR we have no cached applications
-    const shouldFullFetch = lastSyncedBlock === 0 || applications.length === 0;
-    if (shouldFullFetch) {
-      console.log('[TradeFinanceContext] 📊 First load - doing full blockchain fetch');
-      await fetchBlockchainData();
-    } else {
-      console.log('[TradeFinanceContext] ⚡ Using cached data + incremental events');
-    }
-    
-    // 4. Start real-time listeners
-    tradeFinanceEventService.startListening(address, handleRealtimeEvent);
+    try {
+      // 1. Load background preloaded data (INSTANT - already fetched during unlock screen)
+      const cachedData = await backgroundDataLoader.getCachedTradeFinanceData();
 
-    hasInitialized.current = true;
-    lastInitializedKey.current = initKey;
-    
-    const preloadTime = performance.now() - preloadStart;
-    console.log(`[TradeFinanceContext] ✅ Preload complete in ${preloadTime.toFixed(0)}ms`);
+      if (cachedData.applications.length > 0) {
+        console.log(
+          `[TradeFinanceContext] 📦 Found ${cachedData.applications.length} preloaded PGAs`,
+        );
+
+        // Map PGAs to applications
+        const apps = cachedData.applications.map(mapPGAInfoToApplication);
+        setApplications(apps);
+        setLogisticsPartners(cachedData.logisticsPartners);
+        setDeliveryPersons(cachedData.deliveryPersons);
+
+        const loadTime = performance.now() - preloadStart;
+        console.log(
+          `[TradeFinanceContext] ✅ INSTANT load in ${loadTime.toFixed(0)}ms (preloaded data)`,
+        );
+      } else {
+        // Fallback to legacy cached data if background preload missed
+        console.log(
+          "[TradeFinanceContext] 📊 No preloaded data - using legacy cache",
+        );
+        await loadCachedData();
+      }
+
+      // 2. Start real-time listeners immediately (no need to wait for sync)
+      tradeFinanceEventService.startListening(address, handleRealtimeEvent);
+
+      // 3. Fetch only NEW events since last sync (background, non-blocking)
+      // This runs after UI is already shown to user
+      loadHistoricalEvents().catch((err) => {
+        console.warn("[TradeFinanceContext] Background sync error:", err);
+      });
+
+      hasInitialized.current = true;
+      lastInitializedKey.current = initKey;
+
+      const totalTime = performance.now() - preloadStart;
+      console.log(
+        `[TradeFinanceContext] ✅ Context ready in ${totalTime.toFixed(0)}ms`,
+      );
+    } catch (error) {
+      console.error("[TradeFinanceContext] Preload error:", error);
+      // Fallback to full fetch
+      await fetchBlockchainData();
+    }
   }, [
     address,
     isUnlocked,
     selectedNetwork,
-    lastSyncedBlock,
-    applications.length,
     loadCachedData,
     loadHistoricalEvents,
     fetchBlockchainData,
     handleRealtimeEvent,
+    mapPGAInfoToApplication,
   ]);
 
   // Background refresh to keep list accurate (adds/removes)
