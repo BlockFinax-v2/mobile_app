@@ -99,7 +99,6 @@ export const TradeFinanceScreen = () => {
     votePGABlockchain,
     sellerVotePGABlockchain,
     payCollateralBlockchain,
-    payIssuanceFeeBlockchain,
     confirmGoodsShippedBlockchain,
     payBalancePaymentBlockchain,
     issueCertificateBlockchain,
@@ -709,7 +708,10 @@ export const TradeFinanceScreen = () => {
         application.collateralValue.split(" ")[0],
       );
 
-      await payCollateralBlockchain(application.id, collateralAmount.toString());
+      await payCollateralBlockchain(
+        application.id,
+        collateralAmount.toString(),
+      );
 
       Alert.alert(
         "Success",
@@ -725,20 +727,12 @@ export const TradeFinanceScreen = () => {
   };
 
   const handlePayFee = async (application: Application) => {
-    try {
-      await payIssuanceFeeBlockchain(application.id);
-
-      Alert.alert(
-        "Success",
-        "Issuance fee paid successfully! Certificate will be generated.",
-      );
-
-      // Refresh applications to update status
-      await fetchBlockchainData();
-    } catch (error: any) {
-      console.error("Issuance fee payment error:", error);
-      Alert.alert("Error", error.message || "Failed to pay issuance fee");
-    }
+    // Note: In the latest contract version, issuance fee is handled automatically
+    // or integrated into the collateral/balance flow to reduce gas.
+    Alert.alert(
+      "Notice",
+      "Issuance fee payment is no longer a separate step. Please proceed to shipping.",
+    );
   };
 
   const processPayment = () => {
@@ -2227,7 +2221,9 @@ export const TradeFinanceScreen = () => {
         {selectedBuyerApplication && (
           <BuyerApplicationView
             application={selectedBuyerApplication}
-            onPayCollateral={() => handlePayCollateral(selectedBuyerApplication)}
+            onPayCollateral={() =>
+              handlePayCollateral(selectedBuyerApplication)
+            }
             onPayFee={() => handlePayFee(selectedBuyerApplication)}
             onPayInvoice={() => openSettlementModal(selectedBuyerApplication)}
             onConfirmDelivery={() =>

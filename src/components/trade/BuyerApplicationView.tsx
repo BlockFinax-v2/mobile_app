@@ -422,12 +422,22 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           color={colors.success}
         />
         <Text style={styles.statusBannerText}>
-          Seller approved! - Action required: {application.issuanceFeePaid ? 'Awaiting certificate' : application.collateralPaid ? 'Pay issuance fee' : 'Pay collateral'}
+          Seller approved! - Action required:{" "}
+          {application.issuanceFeePaid
+            ? "Awaiting certificate"
+            : application.collateralPaid
+              ? "Pay issuance fee"
+              : "Pay collateral"}
         </Text>
       </View>
 
       {/* Step 1: Collateral Payment */}
-      <View style={[styles.feePaymentCard, application.collateralPaid && styles.completedCard]}>
+      <View
+        style={[
+          styles.feePaymentCard,
+          application.collateralPaid && styles.completedCard,
+        ]}
+      >
         <View style={styles.feeHeader}>
           <MaterialCommunityIcons
             name={application.collateralPaid ? "check-circle" : "shield-lock"}
@@ -435,7 +445,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
             color={application.collateralPaid ? colors.success : colors.primary}
           />
           <View style={styles.feeHeaderText}>
-            <Text style={styles.feeTitle}>Step 1: Collateral Payment {application.collateralPaid ? '✓' : ''}</Text>
+            <Text style={styles.feeTitle}>
+              Step 1: Collateral Payment {application.collateralPaid ? "✓" : ""}
+            </Text>
             <Text style={styles.feeAmount}>{application.collateralValue}</Text>
           </View>
         </View>
@@ -463,7 +475,11 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
               <ActivityIndicator size="small" color="white" />
             ) : (
               <>
-                <MaterialCommunityIcons name="shield-check" size={20} color="white" />
+                <MaterialCommunityIcons
+                  name="shield-check"
+                  size={20}
+                  color="white"
+                />
                 <Text style={styles.payFeeButtonText}>Pay Collateral</Text>
               </>
             )}
@@ -472,25 +488,54 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         {application.collateralPaid && (
           <View style={styles.paidBadge}>
-            <MaterialCommunityIcons name="check" size={16} color={colors.success} />
+            <MaterialCommunityIcons
+              name="check"
+              size={16}
+              color={colors.success}
+            />
             <Text style={styles.paidText}>Collateral Paid</Text>
           </View>
         )}
       </View>
 
       {/* Step 2: Issuance Fee Payment */}
-      <View style={[styles.feePaymentCard, !application.collateralPaid && styles.disabledCard, application.issuanceFeePaid && styles.completedCard]}>
+      <View
+        style={[
+          styles.feePaymentCard,
+          !application.collateralPaid && styles.disabledCard,
+          application.issuanceFeePaid && styles.completedCard,
+        ]}
+      >
         <View style={styles.feeHeader}>
           <MaterialCommunityIcons
-            name={application.issuanceFeePaid ? "check-circle" : "cash-multiple"}
+            name={
+              application.issuanceFeePaid ? "check-circle" : "cash-multiple"
+            }
             size={40}
-            color={application.issuanceFeePaid ? colors.success : application.collateralPaid ? colors.primary : colors.textSecondary}
+            color={
+              application.issuanceFeePaid
+                ? colors.success
+                : application.collateralPaid
+                  ? colors.primary
+                  : colors.textSecondary
+            }
           />
           <View style={styles.feeHeaderText}>
-            <Text style={[styles.feeTitle, !application.collateralPaid && styles.disabledText]}>
-              Step 2: Issuance Fee Payment {application.issuanceFeePaid ? '✓' : ''}
+            <Text
+              style={[
+                styles.feeTitle,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              Step 2: Issuance Fee Payment{" "}
+              {application.issuanceFeePaid ? "✓" : ""}
             </Text>
-            <Text style={[styles.feeAmount, !application.collateralPaid && styles.disabledText]}>
+            <Text
+              style={[
+                styles.feeAmount,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
               {application.issuanceFee}
             </Text>
           </View>
@@ -500,24 +545,68 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         <View style={styles.feeDetails}>
           <View style={styles.feeRow}>
-            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Guarantee Amount:</Text>
-            <Text style={[styles.feeValue, !application.collateralPaid && styles.disabledText]}>{application.guaranteeAmount}</Text>
+            <Text
+              style={[
+                styles.feeLabel,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              Guarantee Amount:
+            </Text>
+            <Text
+              style={[
+                styles.feeValue,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              {application.guaranteeAmount}
+            </Text>
           </View>
           <View style={styles.feeRow}>
-            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Issuance Fee (1%):</Text>
-            <Text style={[styles.feeValue, styles.feeHighlight, !application.collateralPaid && styles.disabledText]}>
+            <Text
+              style={[
+                styles.feeLabel,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              Issuance Fee (1%):
+            </Text>
+            <Text
+              style={[
+                styles.feeValue,
+                styles.feeHighlight,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
               {application.issuanceFee}
             </Text>
           </View>
           <View style={styles.feeRow}>
-            <Text style={[styles.feeLabel, !application.collateralPaid && styles.disabledText]}>Paid to:</Text>
-            <Text style={[styles.feeValue, !application.collateralPaid && styles.disabledText]}>BlockFinax Treasury</Text>
+            <Text
+              style={[
+                styles.feeLabel,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              Paid to:
+            </Text>
+            <Text
+              style={[
+                styles.feeValue,
+                !application.collateralPaid && styles.disabledText,
+              ]}
+            >
+              BlockFinax Treasury
+            </Text>
           </View>
         </View>
 
         {!application.issuanceFeePaid && application.collateralPaid && (
           <TouchableOpacity
-            style={[styles.payFeeButton, !application.collateralPaid && styles.disabledButton]}
+            style={[
+              styles.payFeeButton,
+              !application.collateralPaid && styles.disabledButton,
+            ]}
             onPress={onPayFee}
             disabled={isProcessing || !application.collateralPaid}
           >
@@ -534,7 +623,11 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         {application.issuanceFeePaid && (
           <View style={styles.paidBadge}>
-            <MaterialCommunityIcons name="check" size={16} color={colors.success} />
+            <MaterialCommunityIcons
+              name="check"
+              size={16}
+              color={colors.success}
+            />
             <Text style={styles.paidText}>Issuance Fee Paid</Text>
           </View>
         )}
@@ -544,19 +637,43 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         <Text style={styles.sectionTitle}>Payment Steps</Text>
         <View style={styles.stepsList}>
           <View style={styles.stepItem}>
-            <View style={[styles.stepNumber, application.collateralPaid && styles.stepNumberComplete]}>
-              <Text style={styles.stepNumberText}>{application.collateralPaid ? '✓' : '1'}</Text>
+            <View
+              style={[
+                styles.stepNumber,
+                application.collateralPaid && styles.stepNumberComplete,
+              ]}
+            >
+              <Text style={styles.stepNumberText}>
+                {application.collateralPaid ? "✓" : "1"}
+              </Text>
             </View>
-            <Text style={styles.stepText}>Pay collateral to Diamond (staking model)</Text>
+            <Text style={styles.stepText}>
+              Pay collateral to Diamond (staking model)
+            </Text>
           </View>
           <View style={styles.stepItem}>
-            <View style={[styles.stepNumber, application.issuanceFeePaid && styles.stepNumberComplete, !application.collateralPaid && styles.stepNumberDisabled]}>
-              <Text style={styles.stepNumberText}>{application.issuanceFeePaid ? '✓' : '2'}</Text>
+            <View
+              style={[
+                styles.stepNumber,
+                application.issuanceFeePaid && styles.stepNumberComplete,
+                !application.collateralPaid && styles.stepNumberDisabled,
+              ]}
+            >
+              <Text style={styles.stepNumberText}>
+                {application.issuanceFeePaid ? "✓" : "2"}
+              </Text>
             </View>
-            <Text style={styles.stepText}>Pay issuance fee to BlockFinax Treasury</Text>
+            <Text style={styles.stepText}>
+              Pay issuance fee to BlockFinax Treasury
+            </Text>
           </View>
           <View style={styles.stepItem}>
-            <View style={[styles.stepNumber, !application.issuanceFeePaid && styles.stepNumberDisabled]}>
+            <View
+              style={[
+                styles.stepNumber,
+                !application.issuanceFeePaid && styles.stepNumberDisabled,
+              ]}
+            >
               <Text style={styles.stepNumberText}>3</Text>
             </View>
             <Text style={styles.stepText}>

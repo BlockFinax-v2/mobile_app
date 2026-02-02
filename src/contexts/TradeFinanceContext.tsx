@@ -209,7 +209,6 @@ interface TradeFinanceContextType {
   votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
   sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
   payCollateralBlockchain: (pgaId: string, amount: string) => Promise<void>;
-  payIssuanceFeeBlockchain: (pgaId: string) => Promise<void>;
   confirmGoodsShippedBlockchain: (
     pgaId: string,
     logisticPartnerName: string,
@@ -222,6 +221,11 @@ interface TradeFinanceContextType {
     consent: boolean,
   ) => Promise<void>;
   releasePaymentToSellerBlockchain: (pgaId: string) => Promise<void>;
+
+  // Logistics Discovery
+  logisticsPartners: string[];
+  deliveryPersons: string[];
+  refreshLogisticsProviders: () => Promise<void>;
 }
 
 const TradeFinanceContext = createContext<TradeFinanceContextType | undefined>(
@@ -238,6 +242,8 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
   const [lastSyncedBlock, setLastSyncedBlock] = useState<number>(0);
   const [isLoadingFromCache, setIsLoadingFromCache] = useState<boolean>(true);
   const [pendingUpdates, setPendingUpdates] = useState<Set<string>>(new Set());
+  const [logisticsPartners, setLogisticsPartners] = useState<string[]>([]);
+  const [deliveryPersons, setDeliveryPersons] = useState<string[]>([]);
 
   // Prevent re-initialization on screen navigation
   const hasInitialized = useRef(false);
@@ -653,6 +659,22 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     };
   };
 
+  const refreshLogisticsProviders = useCallback(async () => {
+    try {
+      const [partners, persons] = await Promise.all([
+        tradeFinanceService.getAllLogisticsPartners(),
+        tradeFinanceService.getAllDeliveryPersons(),
+      ]);
+      setLogisticsPartners(partners);
+      setDeliveryPersons(persons);
+    } catch (error) {
+      console.warn(
+        "[TradeFinanceContext] Failed to fetch logistics providers:",
+        error,
+      );
+    }
+  }, []);
+
   const fetchBlockchainData = useCallback(async () => {
     if (!address || !isUnlocked) return;
     try {
@@ -666,10 +688,13 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       allApps.forEach((app) => uniqueMap.set(app.id, app));
 
       setApplications(Array.from(uniqueMap.values()));
+
+      // Refresh logistics providers in background
+      refreshLogisticsProviders();
     } catch (error) {
       console.error("Error fetching blockchain data:", error);
     }
-  }, [address, isUnlocked]);
+  }, [address, isUnlocked, refreshLogisticsProviders]);
 
   /**
    * Handle real-time events from the blockchain
@@ -700,7 +725,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
         // Special handling: When fee is paid (CollateralPaid), trigger certificate generation
         if (event.eventType === "CollateralPaid") {
-          console.log(`[TradeFinanceContext] 💳 Fee paid for PGA ${event.pgaId} → Triggering certificate generation`);
+          console.log(
+            `[TradeFinanceContext] 💳 Fee paid for PGA ${event.pgaId} → Triggering certificate generation`,
+          );
           // Certificate generation would happen here (on-chain or off-chain)
           // For now, the CertificateIssued event will update the state
         }
@@ -757,18 +784,19 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     try {
       // SYSTEMATIC BLOCK MANAGEMENT: Start from last synced block
       const fromBlock = lastSyncedBlock > 0 ? lastSyncedBlock + 1 : 0;
-      
+
       // Get current block for progress tracking
-      const currentBlock = await tradeFinanceEventService["provider"]?.getBlockNumber();
+      const currentBlock =
+        await tradeFinanceEventService["provider"]?.getBlockNumber();
       const blocksToSync = currentBlock ? currentBlock - fromBlock : 0;
-      
+
       console.log(
         `[TradeFinanceContext] 📊 Syncing ${blocksToSync} blocks (${fromBlock} → ${currentBlock})`,
       );
 
       // SMART BATCHING: Only fetch recent blocks if fully synced, otherwise do full catch-up
       const maxBlockRange = lastSyncedBlock === 0 ? 500 : 200; // First sync: 500 blocks, incremental: 200 blocks
-      
+
       const pastEvents = await tradeFinanceEventService.fetchPastEvents(
         address,
         fromBlock,
@@ -796,7 +824,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         const pgaInfos = (await Promise.all(pgaPromises)).filter(
           (p) => p !== null,
         ) as PGAInfo[];
-        
+
         const newApps = pgaInfos.map(mapPGAInfoToApplication);
 
         // Merge with existing applications (update or add)
@@ -1022,11 +1050,6 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     setTimeout(() => loadHistoricalEvents(), 2000);
   };
 
-  const payIssuanceFeeBlockchain = async (pgaId: string) => {
-    await tradeFinanceService.payIssuanceFee(pgaId);
-    setTimeout(() => loadHistoricalEvents(), 2000);
-  };
-
   const confirmGoodsShippedBlockchain = async (
     pgaId: string,
     logisticPartnerName: string,
@@ -1083,18 +1106,15 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         votePGABlockchain,
         sellerVotePGABlockchain,
         payCollateralBlockchain,
-        payIssuanceFeeBlockchain,
-        confirmGoodsShippedBlockchain,
-        createPGABlockchain,
-        votePGABlockchain,
-        sellerVotePGABlockchain,
-        payCollateralBlockchain,
         confirmGoodsShippedBlockchain,
         payBalancePaymentBlockchain,
         issueCertificateBlockchain,
         createDeliveryAgreementBlockchain,
         buyerConsentToDeliveryBlockchain,
         releasePaymentToSellerBlockchain,
+        logisticsPartners,
+        deliveryPersons,
+        refreshLogisticsProviders,
       }}
     >
       {children}
