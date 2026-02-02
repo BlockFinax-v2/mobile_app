@@ -65,6 +65,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "function voteOnPGA(string pgaId, bool support) external",
     "function sellerVoteOnPGA(string pgaId, bool approve) external",
     "function payCollateral(string pgaId) external",
+    "function payIssuanceFee(string pgaId) external",
     "function confirmGoodsShipped(string pgaId, string logisticPartnerName) external",
     "function payBalancePayment(string pgaId) external",
     "function issueCertificate(string pgaId) external",
@@ -73,7 +74,7 @@ const TRADE_FINANCE_FACET_ABI = [
     "function releasePaymentToSeller(string pgaId) external",
     "function refundCollateral(string pgaId) external",
     "function cancelPGA(string pgaId) external",
-    "function getPGA(string pgaId) external view returns (string _pgaId, address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI, string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] uploadedDocuments)",
+    "function getPGA(string pgaId) external view returns (string _pgaId, address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool issuanceFeePaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI, string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] uploadedDocuments)",
     "function getPGADocuments(string pgaId) external view returns (string[] memory)",
     "function getAllPGAs() external view returns (string[] memory)",
     "function getActivePGAs() external view returns (string[] memory)",
@@ -248,14 +249,14 @@ class TradeFinanceService {
         const data = await contract.getPGA(pgaId);
         const decimals = await this.getPrimaryTokenDecimals();
 
-        // ✅ FIX: Unified return with 25 fields
+        // ✅ FIX: Unified return with 26 fields
         // [0] _pgaId, [1] buyer, [2] seller, [3] tradeValue, [4] guaranteeAmount, 
         // [5] collateralAmount, [6] duration, [7] votesFor, [8] votesAgainst, 
         // [9] createdAt, [10] votingDeadline, [11] status, [12] collateralPaid, 
-        // [13] balancePaymentPaid, [14] goodsShipped, [15] logisticPartner, 
-        // [16] certificateIssuedAt, [17] deliveryAgreementId, [18] metadataURI,
-        // [19] companyName, [20] registrationNumber, [21] tradeDescription,
-        // [22] beneficiaryName, [23] beneficiaryWallet, [24] uploadedDocuments
+        // [13] issuanceFeePaid, [14] balancePaymentPaid, [15] goodsShipped, 
+        // [16] logisticPartner, [17] certificateIssuedAt, [18] deliveryAgreementId, [19] metadataURI,
+        // [20] companyName, [21] registrationNumber, [22] tradeDescription,
+        // [23] beneficiaryName, [24] beneficiaryWallet, [25] uploadedDocuments
         return {
             pgaId: data[0],                                                    // string pgaId
             buyer: data[1],                                                    // address buyer
@@ -270,19 +271,19 @@ class TradeFinanceService {
             votingDeadline: data[10].toNumber(),                               // uint256 votingDeadline
             status: data[11] as PGAStatus,                                     // PGAStatus status
             collateralPaid: data[12],                                          // bool collateralPaid
-            issuanceFeePaid: false,                                            // Deprecated in favor of status flow
-            balancePaymentPaid: data[13],                                      // bool balancePaymentPaid
-            goodsShipped: data[14],                                            // bool goodsShipped
-            logisticPartner: data[15],                                         // string logisticPartner
-            certificateIssuedAt: data[16].toNumber(),                          // uint256 certificateIssuedAt
-            deliveryAgreementId: data[17],                                     // string deliveryAgreementId
-            metadataURI: data[18],                                             // string metadataURI
-            companyName: data[19],                                             // string companyName
-            registrationNumber: data[20],                                      // string registrationNumber
-            tradeDescription: data[21],                                        // string tradeDescription
-            beneficiaryName: data[22],                                         // string beneficiaryName
-            beneficiaryWallet: data[23],                                       // address beneficiaryWallet
-            documents: data[24]                                                // string[] uploadedDocuments
+            issuanceFeePaid: data[13],                                         // bool issuanceFeePaid
+            balancePaymentPaid: data[14],                                      // bool balancePaymentPaid
+            goodsShipped: data[15],                                            // bool goodsShipped
+            logisticPartner: data[16],                                         // string logisticPartner
+            certificateIssuedAt: data[17].toNumber(),                          // uint256 certificateIssuedAt
+            deliveryAgreementId: data[18],                                     // string deliveryAgreementId
+            metadataURI: data[19],                                             // string metadataURI
+            companyName: data[20],                                             // string companyName
+            registrationNumber: data[21],                                      // string registrationNumber
+            tradeDescription: data[22],                                        // string tradeDescription
+            beneficiaryName: data[23],                                         // string beneficiaryName
+            beneficiaryWallet: data[24],                                       // address beneficiaryWallet
+            documents: data[25]                                                // string[] uploadedDocuments
         };
     }
 
@@ -388,6 +389,27 @@ class TradeFinanceService {
         }
 
         const tx = await contract.payCollateral(pgaId);
+        return tx.wait();
+    }
+
+    public async payIssuanceFee(pgaId: string, amount: string) {
+        const contract = await this.getContract();
+        const usdc = await this.getUSDCContract();
+        const diamond = this.getDiamondAddress();
+        const decimals = await this.getPrimaryTokenDecimals();
+        const amountRaw = ethers.utils.parseUnits(amount, decimals);
+
+        // Initial check for allowance
+        const signer = await this.getSigner();
+        const address = await signer.getAddress();
+        const allowance = await usdc.allowance(address, diamond);
+
+        if (allowance.lt(amountRaw)) {
+            const approveTx = await usdc.approve(diamond, amountRaw);
+            await approveTx.wait();
+        }
+
+        const tx = await contract.payIssuanceFee(pgaId);
         return tx.wait();
     }
 

@@ -104,6 +104,46 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
+  const handlePayCollateral = async () => {
+    if (!onPayCollateral) return;
+    setIsProcessing(true);
+    try {
+      await onPayCollateral();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePayFee = async () => {
+    if (!onPayFee) return;
+    setIsProcessing(true);
+    try {
+      await onPayFee();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handlePayInvoice = async () => {
+    if (!onPayInvoice) return;
+    setIsProcessing(true);
+    try {
+      await onPayInvoice();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConfirmDelivery = async () => {
+    if (!onConfirmDelivery) return;
+    setIsProcessing(true);
+    try {
+      await onConfirmDelivery();
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const viewDocument = (url?: string) => {
     if (!url) return;
     setViewerUrl(url);
@@ -468,7 +508,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         {!application.collateralPaid && (
           <TouchableOpacity
             style={styles.payFeeButton}
-            onPress={onPayCollateral}
+            onPress={handlePayCollateral}
             disabled={isProcessing}
           >
             {isProcessing ? (
@@ -607,7 +647,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
               styles.payFeeButton,
               !application.collateralPaid && styles.disabledButton,
             ]}
-            onPress={onPayFee}
+            onPress={handlePayFee}
             disabled={isProcessing || !application.collateralPaid}
           >
             {isProcessing ? (
@@ -949,7 +989,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         <TouchableOpacity
           style={styles.confirmDeliveryButton}
-          onPress={onConfirmDelivery}
+          onPress={handleConfirmDelivery}
         >
           <MaterialCommunityIcons
             name="checkbox-marked-circle"
@@ -1084,7 +1124,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
 
         <TouchableOpacity
           style={styles.payInvoiceButton}
-          onPress={onPayInvoice}
+          onPress={handlePayInvoice}
           disabled={isProcessing}
         >
           {isProcessing ? (

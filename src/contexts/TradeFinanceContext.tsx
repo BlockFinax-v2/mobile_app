@@ -209,6 +209,7 @@ interface TradeFinanceContextType {
   votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
   sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
   payCollateralBlockchain: (pgaId: string, amount: string) => Promise<void>;
+  payIssuanceFeeBlockchain: (pgaId: string, amount: string) => Promise<void>;
   confirmGoodsShippedBlockchain: (
     pgaId: string,
     logisticPartnerName: string,
@@ -451,7 +452,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
    * Load cached data from AsyncStorage (< 50ms target for instant UI)
    */
   const loadCachedData = useCallback(async (): Promise<boolean> => {
-    if (!selectedNetwork || !address) return;
+    if (!selectedNetwork || !address) return false;
 
     const startTime = performance.now();
     setIsLoadingFromCache(true);
@@ -554,6 +555,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
   const mapPGAStatusToAppStatus = (
     status: PGAStatus,
+    issuanceFeePaid: boolean = false,
   ): Application["status"] => {
     switch (status) {
       case PGAStatus.Created:
@@ -563,7 +565,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       case PGAStatus.SellerApproved:
         return "Seller Approved";
       case PGAStatus.CollateralPaid:
-        return "Fee Paid";
+        return issuanceFeePaid ? "Fee Paid" : "Approved";
       case PGAStatus.GoodsShipped:
         return "Goods Shipped";
       case PGAStatus.BalancePaymentPaid:
@@ -585,7 +587,10 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     }
   };
 
-  const mapPGAStatusToStage = (status: PGAStatus): number => {
+  const mapPGAStatusToStage = (
+    status: PGAStatus,
+    issuanceFeePaid: boolean = false,
+  ): number => {
     switch (status) {
       case PGAStatus.Created:
         return 2; // Pool Review
@@ -594,9 +599,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       case PGAStatus.SellerApproved:
         return 4; // Awaiting Fee Payment
       case PGAStatus.CollateralPaid:
-        return 5; // Fee Paid → Certificate Generated + Logistics Enabled
+        return issuanceFeePaid ? 5 : 4; // Fee Paid → Stage 5, otherwise stay in Stage 4
       case PGAStatus.CertificateIssued:
-        return 5; // Certificate Issued (same as fee paid)
+        return 5; // Certificate Issued
       case PGAStatus.GoodsShipped:
         return 6; // Goods Shipped by Logistics
       case PGAStatus.BalancePaymentPaid:
@@ -624,7 +629,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       companyName: pga.companyName || "Buyer",
       guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
       tradeValue: `${pga.tradeValue} ${symbol}`,
-      status: mapPGAStatusToAppStatus(pga.status),
+      status: mapPGAStatusToAppStatus(pga.status, pga.issuanceFeePaid),
       submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
       contractNumber: "",
       tradeDescription: pga.tradeDescription || "",
@@ -651,7 +656,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       collateralValue: `${pga.collateralAmount} ${symbol}`,
       collateralPaid: pga.collateralPaid,
       issuanceFeePaid: pga.issuanceFeePaid,
-      currentStage: mapPGAStatusToStage(pga.status),
+      currentStage: mapPGAStatusToStage(pga.status, pga.issuanceFeePaid),
       isDraft: false,
       lastUpdated: new Date().toISOString(),
       certificateIssuedAt: pga.certificateIssuedAt,
@@ -1050,6 +1055,11 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     setTimeout(() => loadHistoricalEvents(), 2000);
   };
 
+  const payIssuanceFeeBlockchain = async (pgaId: string, amount: string) => {
+    await tradeFinanceService.payIssuanceFee(pgaId, amount);
+    setTimeout(() => loadHistoricalEvents(), 2000);
+  };
+
   const confirmGoodsShippedBlockchain = async (
     pgaId: string,
     logisticPartnerName: string,
@@ -1103,9 +1113,15 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         completeTransaction,
         updateApplicationStage,
         saveDraft,
+        fetchBlockchainData,
+        refreshAll,
+        isRefreshing,
+        preload,
+        createPGABlockchain,
         votePGABlockchain,
         sellerVotePGABlockchain,
         payCollateralBlockchain,
+        payIssuanceFeeBlockchain,
         confirmGoodsShippedBlockchain,
         payBalancePaymentBlockchain,
         issueCertificateBlockchain,

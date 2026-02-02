@@ -99,6 +99,7 @@ export const TradeFinanceScreen = () => {
     votePGABlockchain,
     sellerVotePGABlockchain,
     payCollateralBlockchain,
+    payIssuanceFeeBlockchain,
     confirmGoodsShippedBlockchain,
     payBalancePaymentBlockchain,
     issueCertificateBlockchain,
@@ -727,12 +728,22 @@ export const TradeFinanceScreen = () => {
   };
 
   const handlePayFee = async (application: Application) => {
-    // Note: In the latest contract version, issuance fee is handled automatically
-    // or integrated into the collateral/balance flow to reduce gas.
-    Alert.alert(
-      "Notice",
-      "Issuance fee payment is no longer a separate step. Please proceed to shipping.",
-    );
+    try {
+      const feeAmount = parseFloat(application.issuanceFee.split(" ")[0]);
+
+      await payIssuanceFeeBlockchain(application.id, feeAmount.toString());
+
+      Alert.alert(
+        "Success",
+        "Issuance fee paid successfully! Your certificate will now be generated.",
+      );
+
+      // Refresh data
+      await fetchBlockchainData();
+    } catch (error: any) {
+      console.error("Issuance fee payment error:", error);
+      Alert.alert("Error", error.message || "Failed to pay issuance fee");
+    }
   };
 
   const processPayment = () => {
