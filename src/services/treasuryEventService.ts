@@ -74,8 +74,15 @@ class TreasuryEventService {
         this.currentChainId = chainId;
         this.currentNetworkConfig = networkConfig;
         this.provider = new ethers.providers.JsonRpcProvider(networkConfig.rpcUrl);
+        const diamondAddress = this.getDiamondAddress();
+        if (!diamondAddress) {
+            this.contract = null;
+            this.lastProcessedBlock = 0;
+            console.log(`[TreasuryEventService] No Diamond for chainId ${chainId}. Events disabled.`);
+            return;
+        }
         this.contract = new ethers.Contract(
-            this.getDiamondAddress(),
+            diamondAddress,
             TREASURY_EVENT_ABI,
             this.provider
         );
@@ -83,13 +90,12 @@ class TreasuryEventService {
         console.log(`[TreasuryEventService] Network switched to chainId: ${chainId}`);
     }
 
-    private getDiamondAddress(): string {
+    private getDiamondAddress(): string | null {
         if (this.currentNetworkConfig?.diamondAddress) {
             return this.currentNetworkConfig.diamondAddress;
         }
         const address = DIAMOND_ADDRESSES[this.currentChainId];
-        if (!address) throw new Error(`No Diamond contract for network ${this.currentChainId}`);
-        return address;
+        return address || null;
     }
 
     /**
@@ -103,7 +109,7 @@ class TreasuryEventService {
         maxBlockRange: number = 1000
     ): Promise<TreasuryEvent[]> {
         if (!this.contract || !this.provider) {
-            throw new Error("Service not initialized. Call setNetwork first.");
+            return [];
         }
 
         console.log(`[TreasuryEventService] Fetching past events from block ${fromBlock} to ${toBlock}`);

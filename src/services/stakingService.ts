@@ -1728,6 +1728,8 @@ class StakingService {
       onProgress?.('staking', 'Staking USDC as financier...');
 
       const contract = await this.getStakingContract();
+      const signer = await this.getSigner();
+      const fromAddress = await signer.getAddress();
       
       console.log("Staking USDC as financier:", {
         amount,
@@ -1738,6 +1740,19 @@ class StakingService {
       });
 
       try {
+        const iface = new ethers.utils.Interface(LIQUIDITY_POOL_FACET_ABI as any);
+        const data = iface.encodeFunctionData('stakeTokenAsFinancier', [
+          usdcAddress,
+          amountInWei,
+          0,
+          amountInWei,
+        ]);
+        await signer.provider?.call({
+          to: this.getDiamondAddress(),
+          from: fromAddress,
+          data,
+        });
+
         await contract.callStatic.stakeTokenAsFinancier(
           usdcAddress,
           amountInWei,

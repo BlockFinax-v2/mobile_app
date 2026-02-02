@@ -414,8 +414,32 @@ class SmartContractTransactionService {
       const wallet = new ethers.Wallet(privateKey, provider);
       const contract = new ethers.Contract(contractAddress, abi, wallet);
 
-      const tx = await contract[functionName](...args, {
+      const callOverrides = {
         value: value ? ethers.utils.parseEther(value) : 0,
+      };
+
+      try {
+        await contract.callStatic[functionName](...args, callOverrides);
+      } catch (error: any) {
+        const reason =
+          error?.reason ||
+          error?.error?.message ||
+          error?.message ||
+          "Transaction precheck failed";
+        throw new Error(reason);
+      }
+
+      let gasLimit: ethers.BigNumber | undefined;
+      try {
+        const estimatedGas = await contract.estimateGas[functionName](...args, callOverrides);
+        gasLimit = estimatedGas.mul(120).div(100);
+      } catch (error) {
+        gasLimit = ethers.BigNumber.from(600000);
+      }
+
+      const tx = await contract[functionName](...args, {
+        ...callOverrides,
+        gasLimit,
       });
 
       const receipt = await tx.wait();
