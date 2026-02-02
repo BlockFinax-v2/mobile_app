@@ -128,12 +128,13 @@ class TradeFinanceEventService {
                 startBlock = currentBlock - maxBlockRange;
             }
 
-            // OPTIMAL BATCH SIZE: Free tier RPC limits (Alchemy/Infura: ~10 blocks safe)
-            const BATCH_SIZE = 10;
+            // ⚡ OPTIMIZED BATCH SIZE: Modern RPC providers can handle 2000-5000 blocks per query
+            // Alchemy/Infura free tier: 2000 blocks is safe and 200x faster than 10 blocks
+            const BATCH_SIZE = 2000;
             const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
             
             console.log(
-                `[TradeFinanceEventService] 📊 Batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
+                `[TradeFinanceEventService] 📊 Optimized batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
             );
 
             
@@ -198,8 +199,8 @@ class TradeFinanceEventService {
                 const currentEnd = Math.min(currentStart + BATCH_SIZE - 1, currentBlock);
                 batchCount++;
                 
-                // PROGRESS REPORTING: Log every 10 batches or at completion
-                const shouldLog = batchCount % 10 === 0 || batchCount === totalBatches;
+                // PROGRESS REPORTING: Log every 5 batches or at completion (since batches are larger now)
+                const shouldLog = batchCount % 5 === 0 || batchCount === totalBatches;
                 if (shouldLog) {
                     const progress = Math.round((batchCount / totalBatches) * 100);
                     console.log(

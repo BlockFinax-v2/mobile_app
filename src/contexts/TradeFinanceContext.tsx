@@ -724,7 +724,10 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         }
         pendingUpdates.add(eventKey);
 
-        // Fetch updated PGA data
+        // ⚡ PERFORMANCE: Invalidate cache for this PGA to ensure fresh data
+        tradeFinanceService.invalidatePGACache(event.pgaId);
+
+        // Fetch updated PGA data (will get from blockchain since cache is invalidated)
         const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
         const updatedApp = mapPGAInfoToApplication(pgaInfo);
 
@@ -818,9 +821,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       pastEvents.forEach((event) => pgaIds.add(event.pgaId));
 
       if (pgaIds.size > 0) {
-        // Fetch current state for all PGAs mentioned in NEW events
+        // ⚡ Fetch current state for all PGAs (skip cache to get latest)
         const pgaPromises = Array.from(pgaIds).map((pgaId) =>
-          tradeFinanceService.getPGA(pgaId).catch((err) => {
+          tradeFinanceService.getPGA(pgaId, true).catch((err) => {
             console.warn(`Failed to fetch PGA ${pgaId}:`, err);
             return null;
           }),
@@ -882,17 +885,40 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       return;
     }
 
+    console.log('[TradeFinanceContext] 🚀 Starting optimized preload...');
+    const preloadStart = performance.now();
+
+    // 1. Load cached data first (instant)
     await loadCachedData();
+    
+    // 2. Load historical events (only new events since last sync)
     await loadHistoricalEvents();
-    await fetchBlockchainData();
+    
+    // 3. Only do full blockchain fetch if:
+    //    - First time loading (lastSyncedBlock === 0)
+    //    - OR we have no cached applications
+    const shouldFullFetch = lastSyncedBlock === 0 || applications.length === 0;
+    if (shouldFullFetch) {
+      console.log('[TradeFinanceContext] 📊 First load - doing full blockchain fetch');
+      await fetchBlockchainData();
+    } else {
+      console.log('[TradeFinanceContext] ⚡ Using cached data + incremental events');
+    }
+    
+    // 4. Start real-time listeners
     tradeFinanceEventService.startListening(address, handleRealtimeEvent);
 
     hasInitialized.current = true;
     lastInitializedKey.current = initKey;
+    
+    const preloadTime = performance.now() - preloadStart;
+    console.log(`[TradeFinanceContext] ✅ Preload complete in ${preloadTime.toFixed(0)}ms`);
   }, [
     address,
     isUnlocked,
     selectedNetwork,
+    lastSyncedBlock,
+    applications.length,
     loadCachedData,
     loadHistoricalEvents,
     fetchBlockchainData,

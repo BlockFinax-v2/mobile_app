@@ -153,6 +153,10 @@ class TradeFinanceService {
     private currentSigner: ethers.Wallet | null = null;
     private tokenDecimalsCache: Map<string, number> = new Map();
     private metadataUnsupportedChains: Set<number> = new Set();
+    
+    // ⚡ PERFORMANCE: In-memory cache for PGA data
+    private pgaCache: Map<string, { data: PGAInfo; timestamp: number }> = new Map();
+    private readonly CACHE_TTL_MS = 30000; // 30 seconds cache
 
     public static getInstance(): TradeFinanceService {
         if (!TradeFinanceService.instance) {
@@ -165,7 +169,23 @@ class TradeFinanceService {
         this.currentChainId = chainId;
         this.currentNetworkConfig = networkConfig;
         this.currentSigner = null;
+        this.pgaCache.clear(); // Clear cache on network switch
         console.log(`[TradeFinanceService] Network switched to chainId: ${chainId}`);
+    }
+
+    /**
+     * Clear PGA cache (useful for forcing refresh)
+     */
+    public clearCache(): void {
+        this.pgaCache.clear();
+        console.log('[TradeFinanceService] Cache cleared');
+    }
+
+    /**
+     * Invalidate specific PGA cache entry
+     */
+    public invalidatePGACache(pgaId: string): void {
+        this.pgaCache.delete(pgaId);
     }
 
     private async getSigner(): Promise<ethers.Wallet> {
@@ -244,7 +264,15 @@ class TradeFinanceService {
         return this.getTokenDecimals(usdcAddress);
     }
 
-    public async getPGA(pgaId: string): Promise<PGAInfo> {
+    public async getPGA(pgaId: string, skipCache: boolean = false): Promise<PGAInfo> {
+        // ⚡ Check cache first (unless explicitly skipped)
+        if (!skipCache) {
+            const cached = this.pgaCache.get(pgaId);
+            if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+                return cached.data;
+            }
+        }
+
         const contract = await this.getContract();
         const data = await contract.getPGA(pgaId);
         const decimals = await this.getPrimaryTokenDecimals();
@@ -257,7 +285,7 @@ class TradeFinanceService {
         // [16] logisticPartner, [17] certificateIssuedAt, [18] deliveryAgreementId, [19] metadataURI,
         // [20] companyName, [21] registrationNumber, [22] tradeDescription,
         // [23] beneficiaryName, [24] beneficiaryWallet, [25] uploadedDocuments
-        return {
+        const pgaInfo: PGAInfo = {
             pgaId: data[0],                                                    // string pgaId
             buyer: data[1],                                                    // address buyer
             seller: data[2],                                                   // address seller
@@ -285,18 +313,72 @@ class TradeFinanceService {
             beneficiaryWallet: data[24],                                       // address beneficiaryWallet
             documents: data[25]                                                // string[] uploadedDocuments
         };
+
+        // ⚡ Cache the result
+        this.pgaCache.set(pgaId, { data: pgaInfo, timestamp: Date.now() });
+        
+        return pgaInfo;
     }
 
-    public async getAllPGAsByBuyer(buyer: string): Promise<PGAInfo[]> {
+    public async getAllPGAsByBuyer(buyer: string, skipCache: boolean = false): Promise<PGAInfo[]> {
+        const startTime = performance.now();
         const contract = await this.getContract();
         const ids = await contract.getPGAsByBuyer(buyer);
-        return Promise.all(ids.map((id: string) => this.getPGA(id)));
+        
+        console.log(`[TradeFinanceService] 📊 Fetching ${ids.length} PGAs for buyer`);
+        
+        // ⚡ OPTIMIZATION: Batch process in parallel (10 at a time to avoid overwhelming RPC)
+        const BATCH_SIZE = 10;
+        const results: PGAInfo[] = [];
+        
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(
+                batch.map((id: string) => this.getPGA(id, skipCache))
+            );
+            results.push(...batchResults);
+            
+            // Progress logging for large datasets
+            if (ids.length > BATCH_SIZE) {
+                const progress = Math.min(100, Math.round(((i + BATCH_SIZE) / ids.length) * 100));
+                console.log(`[TradeFinanceService] ⏳ Progress: ${progress}% (${i + BATCH_SIZE}/${ids.length})`);
+            }
+        }
+        
+        const fetchTime = performance.now() - startTime;
+        console.log(`[TradeFinanceService] ✅ Fetched ${results.length} PGAs in ${fetchTime.toFixed(0)}ms`);
+        
+        return results;
     }
 
-    public async getAllPGAsBySeller(seller: string): Promise<PGAInfo[]> {
+    public async getAllPGAsBySeller(seller: string, skipCache: boolean = false): Promise<PGAInfo[]> {
+        const startTime = performance.now();
         const contract = await this.getContract();
         const ids = await contract.getPGAsBySeller(seller);
-        return Promise.all(ids.map((id: string) => this.getPGA(id)));
+        
+        console.log(`[TradeFinanceService] 📊 Fetching ${ids.length} PGAs for seller`);
+        
+        // ⚡ OPTIMIZATION: Batch process in parallel (10 at a time)
+        const BATCH_SIZE = 10;
+        const results: PGAInfo[] = [];
+        
+        for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+            const batch = ids.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(
+                batch.map((id: string) => this.getPGA(id, skipCache))
+            );
+            results.push(...batchResults);
+            
+            if (ids.length > BATCH_SIZE) {
+                const progress = Math.min(100, Math.round(((i + BATCH_SIZE) / ids.length) * 100));
+                console.log(`[TradeFinanceService] ⏳ Progress: ${progress}% (${i + BATCH_SIZE}/${ids.length})`);
+            }
+        }
+        
+        const fetchTime = performance.now() - startTime;
+        console.log(`[TradeFinanceService] ✅ Fetched ${results.length} PGAs in ${fetchTime.toFixed(0)}ms`);
+        
+        return results;
     }
 
     public async createPGA(params: {
