@@ -340,32 +340,78 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Load historical events from blockchain
    */
+  /**
+   * Load historical events incrementally (PERSISTENT STORAGE STRATEGY)
+   *
+   * Strategy:
+   * - Staking data, proposals, and events stored permanently in AsyncStorage
+   * - Only fetch NEW events since last sync (incremental updates)
+   * - First install: One-time full fetch, then incremental forever
+   * - Completed proposals/stakes persist for historical reference
+   * - Saves API quota, battery, and loading time
+   */
   const loadHistoricalEvents = useCallback(async () => {
     if (!address || !chainId || !currentNetwork) return;
 
     try {
       setEventSyncStatus("syncing");
+      const startTime = performance.now();
 
       // Get last synced block from AsyncStorage
       const storageKey = `treasury_last_block_${chainId}_${address}`;
       const lastBlockStr = await AsyncStorage.getItem(storageKey);
       const fromBlock = lastBlockStr ? parseInt(lastBlockStr, 10) + 1 : 0;
 
-      console.log(`[TreasuryContext] Loading events from block ${fromBlock}`);
+      // Get current block
+      const currentBlock =
+        await treasuryEventService["provider"]?.getBlockNumber();
+      const blocksToSync = currentBlock ? currentBlock - fromBlock : 0;
 
-      // Fetch past events (limit to 500 blocks for faster initial load on free tier)
+      // Skip if already synced (no new blocks)
+      if (blocksToSync === 0 && fromBlock > 0) {
+        console.log("[TreasuryContext] ✅ Already synced - no new blocks");
+        setEventSyncStatus("synced");
+        return;
+      }
+
+      console.log(
+        `[TreasuryContext] 🔄 Incremental sync: ${blocksToSync} new blocks (${fromBlock} → ${currentBlock})`,
+      );
+
+      // FIRST TIME SETUP: If never synced, do ONE-TIME full fetch
+      if (fromBlock === 0) {
+        console.log(
+          "[TreasuryContext] 🚀 First time setup - doing one-time full fetch...",
+        );
+        await refreshStakingData();
+        await refreshProposals();
+
+        if (currentBlock) {
+          await AsyncStorage.setItem(storageKey, currentBlock.toString());
+        }
+
+        persistData();
+        setEventSyncStatus("synced");
+        setLastSyncTime(Date.now());
+        return;
+      }
+
+      // INCREMENTAL UPDATES: Only fetch events for new blocks (very fast)
+      const maxBlockRange = 200; // Sync up to 200 new blocks
+
       const events = await treasuryEventService.fetchPastEvents(
         address,
         fromBlock,
         "latest",
-        500,
+        maxBlockRange,
       );
 
-      if (events.length > 0) {
-        console.log(
-          `[TreasuryContext] Loaded ${events.length} historical events`,
-        );
+      console.log(
+        `[TreasuryContext] ✅ Fetched ${events.length} new events in ${(performance.now() - startTime).toFixed(0)}ms`,
+      );
 
+      // EVENT-DRIVEN UPDATES: Apply changes based on event types
+      if (events.length > 0) {
         // Add new events to recent events (keep last 50)
         setRecentEvents((prev) => {
           const combined = [...prev, ...events];
@@ -373,20 +419,56 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
           return sorted.slice(0, 50);
         });
 
-        // Update staking data based on events
-        await refreshStakingData();
-        await refreshProposals();
+        // Determine what needs refreshing based on event types
+        const hasStakingEvents = events.some((e) =>
+          [
+            "Staked",
+            "Unstaked",
+            "RewardsClaimed",
+            "EmergencyWithdrawn",
+            "CustomDeadlineSet",
+            "FinancierStatusChanged",
+            "FinancierRevocationRequested",
+            "FinancierRevocationCompleted",
+            "FinancierRevocationCancelled",
+          ].includes(e.eventType),
+        );
+
+        const hasProposalEvents = events.some((e) =>
+          [
+            "ProposalCreated",
+            "ProposalVoteCast",
+            "ProposalStatusChanged",
+            "ProposalExecuted",
+          ].includes(e.eventType),
+        );
+
+        console.log(
+          `[TreasuryContext] 📝 Updating affected data (staking: ${hasStakingEvents}, proposals: ${hasProposalEvents})`,
+        );
+
+        // Refresh only affected data
+        const updatePromises: Promise<void>[] = [];
+        if (hasStakingEvents) updatePromises.push(refreshStakingData());
+        if (hasProposalEvents) updatePromises.push(refreshProposals());
+
+        await Promise.all(updatePromises);
 
         // Save last processed block
         const lastBlock = Math.max(...events.map((e) => e.blockNumber));
         await AsyncStorage.setItem(storageKey, lastBlock.toString());
       }
 
-      // Persist updated data to cache (fire-and-forget)
+      // PERSIST TO STORAGE: Save all data for offline access and fast next load
       persistData();
 
       setEventSyncStatus("synced");
       setLastSyncTime(Date.now());
+
+      const totalTime = performance.now() - startTime;
+      console.log(
+        `[TreasuryContext] ⚡ Incremental sync complete in ${totalTime.toFixed(0)}ms - Data persists forever`,
+      );
     } catch (err: any) {
       console.error("[TreasuryContext] Error loading historical events:", err);
       setEventSyncStatus("error");

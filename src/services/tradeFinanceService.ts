@@ -61,20 +61,22 @@ const TRADE_FINANCE_FACET_ABI = [
     "event BuyerConsentGiven(string indexed agreementId, string indexed pgaId, address indexed buyer, uint256 timestamp)",
     "event PGACompleted(string indexed pgaId, address indexed buyer, address indexed seller, uint256 completedAt)",
 
-    "function createPGA(string pgaId, address seller, string companyName, string registrationNumber, string tradeDescription, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, string beneficiaryName, address beneficiaryWallet, string metadataURI, string[] documentURIs) external",
+    "function createPGA(string pgaId, address seller, string companyName, string registrationNumber, string tradeDescription, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 issuanceFee, uint256 duration, string beneficiaryName, address beneficiaryWallet, string metadataURI, string[] documentURIs) external",
     "function voteOnPGA(string pgaId, bool support) external",
     "function sellerVoteOnPGA(string pgaId, bool approve) external",
-    "function payCollateral(string pgaId) external",
-    "function payIssuanceFee(string pgaId) external",
-    "function confirmGoodsShipped(string pgaId, string logisticPartnerName) external",
-    "function payBalancePayment(string pgaId) external",
+    "function payCollateral(string pgaId, address tokenAddress) external",
+    "function payIssuanceFee(string pgaId, address tokenAddress) external",
+    "function confirmGoodsShipped(string pgaId) external",
+    "function takeUpPGA(string pgaId) external",
+    "function confirmGoodsDelivered(string pgaId) external",
+    "function payBalancePayment(string pgaId, address tokenAddress) external",
     "function issueCertificate(string pgaId) external",
     "function createDeliveryAgreement(string agreementId, string pgaId, uint256 agreementDeadline, string deliveryNotes, string deliveryProofURI) external",
     "function buyerConsentToDelivery(string agreementId, bool consent) external",
     "function releasePaymentToSeller(string pgaId) external",
     "function refundCollateral(string pgaId) external",
     "function cancelPGA(string pgaId) external",
-    "function getPGA(string pgaId) external view returns (string _pgaId, address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool issuanceFeePaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI, string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] uploadedDocuments)",
+    "function getPGA(string pgaId) external view returns (string _pgaId, address buyer, address seller, uint256 tradeValue, uint256 guaranteeAmount, uint256 collateralAmount, uint256 issuanceFee, uint256 duration, uint256 votesFor, uint256 votesAgainst, uint256 createdAt, uint256 votingDeadline, uint8 status, bool collateralPaid, bool issuanceFeePaid, bool balancePaymentPaid, bool goodsShipped, string logisticPartner, address logisticsPartner, uint256 certificateIssuedAt, string deliveryAgreementId, string metadataURI, string companyName, string registrationNumber, string tradeDescription, string beneficiaryName, address beneficiaryWallet, string[] uploadedDocuments)",
     "function getPGADocuments(string pgaId) external view returns (string[] memory)",
     "function getAllPGAs() external view returns (string[] memory)",
     "function getActivePGAs() external view returns (string[] memory)",
@@ -90,12 +92,13 @@ const TRADE_FINANCE_FACET_ABI = [
     "function getPGAStats() external view returns (uint256 totalPGAs, uint256 activePGAs, uint256 completedPGAs, uint256 rejectedPGAs)"
 ];
 
-// ERC-20 ABI for USDC approval
+// ERC-20 ABI for token operations
 const ERC20_ABI = [
     "function approve(address spender, uint256 amount) returns (bool)",
     "function allowance(address owner, address spender) view returns (uint256)",
     "function balanceOf(address account) view returns (uint256)",
-    "function decimals() view returns (uint8)"
+    "function decimals() view returns (uint8)",
+    "function symbol() view returns (string)"
 ];
 
 export enum PGAStatus {
@@ -104,10 +107,12 @@ export enum PGAStatus {
     GuaranteeApproved,
     SellerApproved,
     CollateralPaid,
+    LogisticsNotified,
+    LogisticsTakeup,
     GoodsShipped,
+    GoodsDelivered,
     BalancePaymentPaid,
     CertificateIssued,
-    DeliveryAwaitingConsent,
     Completed,
     Rejected,
     Expired,
@@ -121,6 +126,7 @@ export interface PGAInfo {
     tradeValue: string;
     guaranteeAmount: string;
     collateralAmount: string;
+    issuanceFee: string;
     duration: number;
     votesFor: string;
     votesAgainst: string;
@@ -132,6 +138,7 @@ export interface PGAInfo {
     balancePaymentPaid: boolean;
     goodsShipped: boolean;
     logisticPartner: string;
+    logisticsPartner: string;
     certificateIssuedAt: number;
     deliveryAgreementId: string;
     metadataURI: string;
@@ -153,7 +160,7 @@ class TradeFinanceService {
     private currentSigner: ethers.Wallet | null = null;
     private tokenDecimalsCache: Map<string, number> = new Map();
     private metadataUnsupportedChains: Set<number> = new Set();
-    
+
     // ⚡ PERFORMANCE: In-memory cache for PGA data
     private pgaCache: Map<string, { data: PGAInfo; timestamp: number }> = new Map();
     private readonly CACHE_TTL_MS = 30000; // 30 seconds cache
@@ -220,6 +227,13 @@ class TradeFinanceService {
         }
     }
 
+    private async getProvider(): Promise<ethers.providers.Provider> {
+        if (!this.currentNetworkConfig?.rpcUrl) {
+            throw new Error('No RPC URL configured for current network');
+        }
+        return new ethers.providers.JsonRpcProvider(this.currentNetworkConfig.rpcUrl);
+    }
+
     private getDiamondAddress(): string {
         if (this.currentNetworkConfig?.diamondAddress) {
             return this.currentNetworkConfig.diamondAddress;
@@ -277,46 +291,48 @@ class TradeFinanceService {
         const data = await contract.getPGA(pgaId);
         const decimals = await this.getPrimaryTokenDecimals();
 
-        // ✅ FIX: Unified return with 26 fields
+        // ✅ FIX: Unified return with 28 fields
         // [0] _pgaId, [1] buyer, [2] seller, [3] tradeValue, [4] guaranteeAmount, 
-        // [5] collateralAmount, [6] duration, [7] votesFor, [8] votesAgainst, 
-        // [9] createdAt, [10] votingDeadline, [11] status, [12] collateralPaid, 
-        // [13] issuanceFeePaid, [14] balancePaymentPaid, [15] goodsShipped, 
-        // [16] logisticPartner, [17] certificateIssuedAt, [18] deliveryAgreementId, [19] metadataURI,
-        // [20] companyName, [21] registrationNumber, [22] tradeDescription,
-        // [23] beneficiaryName, [24] beneficiaryWallet, [25] uploadedDocuments
+        // [5] collateralAmount, [6] issuanceFee, [7] duration, [8] votesFor, [9] votesAgainst, 
+        // [10] createdAt, [11] votingDeadline, [12] status, [13] collateralPaid, 
+        // [14] issuanceFeePaid, [15] balancePaymentPaid, [16] goodsShipped, 
+        // [17] logisticPartner (string), [18] logisticsPartner (address), [19] certificateIssuedAt, 
+        // [20] deliveryAgreementId, [21] metadataURI, [22] companyName, [23] registrationNumber, 
+        // [24] tradeDescription, [25] beneficiaryName, [26] beneficiaryWallet, [27] uploadedDocuments
         const pgaInfo: PGAInfo = {
-            pgaId: data[0],                                                    // string pgaId
-            buyer: data[1],                                                    // address buyer
-            seller: data[2],                                                   // address seller
-            tradeValue: ethers.utils.formatUnits(data[3], decimals),           // uint256 tradeValue
-            guaranteeAmount: ethers.utils.formatUnits(data[4], decimals),      // uint256 guaranteeAmount
-            collateralAmount: ethers.utils.formatUnits(data[5], decimals),     // uint256 collateralAmount
-            duration: data[6].toNumber(),                                      // uint256 duration
-            votesFor: ethers.utils.formatUnits(data[7], decimals),             // uint256 votesFor
-            votesAgainst: ethers.utils.formatUnits(data[8], decimals),         // uint256 votesAgainst
-            createdAt: data[9].toNumber(),                                     // uint256 createdAt
-            votingDeadline: data[10].toNumber(),                               // uint256 votingDeadline
-            status: data[11] as PGAStatus,                                     // PGAStatus status
-            collateralPaid: data[12],                                          // bool collateralPaid
-            issuanceFeePaid: data[13],                                         // bool issuanceFeePaid
-            balancePaymentPaid: data[14],                                      // bool balancePaymentPaid
-            goodsShipped: data[15],                                            // bool goodsShipped
-            logisticPartner: data[16],                                         // string logisticPartner
-            certificateIssuedAt: data[17].toNumber(),                          // uint256 certificateIssuedAt
-            deliveryAgreementId: data[18],                                     // string deliveryAgreementId
-            metadataURI: data[19],                                             // string metadataURI
-            companyName: data[20],                                             // string companyName
-            registrationNumber: data[21],                                      // string registrationNumber
-            tradeDescription: data[22],                                        // string tradeDescription
-            beneficiaryName: data[23],                                         // string beneficiaryName
-            beneficiaryWallet: data[24],                                       // address beneficiaryWallet
-            documents: data[25]                                                // string[] uploadedDocuments
+            pgaId: data[0],
+            buyer: data[1],
+            seller: data[2],
+            tradeValue: ethers.utils.formatUnits(data[3], decimals),
+            guaranteeAmount: ethers.utils.formatUnits(data[4], decimals),
+            collateralAmount: ethers.utils.formatUnits(data[5], decimals),
+            issuanceFee: ethers.utils.formatUnits(data[6], decimals),
+            duration: data[7].toNumber(),
+            votesFor: ethers.utils.formatUnits(data[8], decimals),
+            votesAgainst: ethers.utils.formatUnits(data[9], decimals),
+            createdAt: data[10].toNumber(),
+            votingDeadline: data[11].toNumber(),
+            status: data[12] as PGAStatus,
+            collateralPaid: data[13],
+            issuanceFeePaid: data[14],
+            balancePaymentPaid: data[15],
+            goodsShipped: data[16],
+            logisticPartner: data[17],
+            logisticsPartner: data[18],
+            certificateIssuedAt: data[19].toNumber(),
+            deliveryAgreementId: data[20],
+            metadataURI: data[21],
+            companyName: data[22],
+            registrationNumber: data[23],
+            tradeDescription: data[24],
+            beneficiaryName: data[25],
+            beneficiaryWallet: data[26],
+            documents: data[27]
         };
 
         // ⚡ Cache the result
         this.pgaCache.set(pgaId, { data: pgaInfo, timestamp: Date.now() });
-        
+
         return pgaInfo;
     }
 
@@ -324,30 +340,30 @@ class TradeFinanceService {
         const startTime = performance.now();
         const contract = await this.getContract();
         const ids = await contract.getPGAsByBuyer(buyer);
-        
+
         console.log(`[TradeFinanceService] 📊 Fetching ${ids.length} PGAs for buyer`);
-        
+
         // ⚡ OPTIMIZATION: Batch process in parallel (10 at a time to avoid overwhelming RPC)
         const BATCH_SIZE = 10;
         const results: PGAInfo[] = [];
-        
+
         for (let i = 0; i < ids.length; i += BATCH_SIZE) {
             const batch = ids.slice(i, i + BATCH_SIZE);
             const batchResults = await Promise.all(
                 batch.map((id: string) => this.getPGA(id, skipCache))
             );
             results.push(...batchResults);
-            
+
             // Progress logging for large datasets
             if (ids.length > BATCH_SIZE) {
                 const progress = Math.min(100, Math.round(((i + BATCH_SIZE) / ids.length) * 100));
                 console.log(`[TradeFinanceService] ⏳ Progress: ${progress}% (${i + BATCH_SIZE}/${ids.length})`);
             }
         }
-        
+
         const fetchTime = performance.now() - startTime;
         console.log(`[TradeFinanceService] ✅ Fetched ${results.length} PGAs in ${fetchTime.toFixed(0)}ms`);
-        
+
         return results;
     }
 
@@ -355,29 +371,29 @@ class TradeFinanceService {
         const startTime = performance.now();
         const contract = await this.getContract();
         const ids = await contract.getPGAsBySeller(seller);
-        
+
         console.log(`[TradeFinanceService] 📊 Fetching ${ids.length} PGAs for seller`);
-        
+
         // ⚡ OPTIMIZATION: Batch process in parallel (10 at a time)
         const BATCH_SIZE = 10;
         const results: PGAInfo[] = [];
-        
+
         for (let i = 0; i < ids.length; i += BATCH_SIZE) {
             const batch = ids.slice(i, i + BATCH_SIZE);
             const batchResults = await Promise.all(
                 batch.map((id: string) => this.getPGA(id, skipCache))
             );
             results.push(...batchResults);
-            
+
             if (ids.length > BATCH_SIZE) {
                 const progress = Math.min(100, Math.round(((i + BATCH_SIZE) / ids.length) * 100));
                 console.log(`[TradeFinanceService] ⏳ Progress: ${progress}% (${i + BATCH_SIZE}/${ids.length})`);
             }
         }
-        
+
         const fetchTime = performance.now() - startTime;
         console.log(`[TradeFinanceService] ✅ Fetched ${results.length} PGAs in ${fetchTime.toFixed(0)}ms`);
-        
+
         return results;
     }
 
@@ -453,72 +469,203 @@ class TradeFinanceService {
         });
     }
 
-    public async payCollateral(pgaId: string, amount: string) {
-        const contract = await this.getContract();
-        const usdc = await this.getUSDCContract();
-        const diamond = this.getDiamondAddress();
-        const decimals = await this.getPrimaryTokenDecimals();
-        const amountRaw = ethers.utils.parseUnits(amount, decimals);
+    /**
+     * Pay collateral with multi-token support
+     * @param pgaId Pool Guarantee Application ID
+     * @param tokenAddress ERC20 token address (e.g., USDC, USDT, DAI)
+     * @param onProgress Optional progress callback
+     * 
+     * Architecture follows Treasury Portal pattern:
+     * - Accepts any supported ERC20 token
+     * - Auto-approves if needed
+     * - Account Abstraction compatible (uses resolvedBuyer)
+     * - Amount is determined from PGA data on-chain
+     */
+    public async payCollateral(
+        pgaId: string,
+        tokenAddress: string,
+        onProgress?: (stage: 'checking' | 'approving' | 'paying', message: string) => void
+    ) {
+        try {
+            onProgress?.('checking', 'Checking payment requirements...');
 
-        // Initial check for allowance
-        const signer = await this.getSigner();
-        const address = await signer.getAddress();
-        const allowance = await usdc.allowance(address, diamond);
+            const contract = await this.getContract();
+            const diamond = this.getDiamondAddress();
 
-        if (allowance.lt(amountRaw)) {
-            const approveTx = await usdc.approve(diamond, amountRaw);
-            await approveTx.wait();
+            // Get PGA data to determine collateral amount
+            const pgaData = await contract.getPGA(pgaId);
+            const collateralAmount = pgaData.collateralAmount;
+
+            // Get token contract and decimals
+            const provider = await this.getProvider();
+            const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+            const decimals = await token.decimals();
+
+            // Check balance
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const balance = await token.balanceOf(address);
+
+            if (balance.lt(collateralAmount)) {
+                throw new Error(`Insufficient ${await token.symbol()} balance`);
+            }
+
+            // Check and handle approval
+            const allowance = await token.allowance(address, diamond);
+            if (allowance.lt(collateralAmount)) {
+                onProgress?.('approving', `Approving ${await token.symbol()} spend...`);
+                const tokenWithSigner = token.connect(signer);
+                const approveTx = await tokenWithSigner.approve(diamond, collateralAmount);
+                await approveTx.wait();
+            }
+
+            onProgress?.('paying', 'Paying collateral...');
+
+            // Multi-token signature: payCollateral(pgaId, tokenAddress)
+            const tx = await contract.payCollateral(pgaId, tokenAddress);
+            return tx.wait();
+        } catch (error: any) {
+            console.error('[TradeFinanceService] payCollateral error:', error);
+            throw error;
         }
-
-        const tx = await contract.payCollateral(pgaId);
-        return tx.wait();
     }
 
-    public async payIssuanceFee(pgaId: string, amount: string) {
-        const contract = await this.getContract();
-        const usdc = await this.getUSDCContract();
-        const diamond = this.getDiamondAddress();
-        const decimals = await this.getPrimaryTokenDecimals();
-        const amountRaw = ethers.utils.parseUnits(amount, decimals);
+    /**
+     * Pay issuance fee (1% of guarantee amount) with multi-token support
+     * @param pgaId Pool Guarantee Application ID
+     * @param tokenAddress ERC20 token address (e.g., USDC, USDT, DAI)
+     * @param onProgress Optional progress callback
+     * 
+     * Architecture follows Treasury Portal pattern:
+     * - Accepts any supported ERC20 token
+     * - Auto-approves if needed
+     * - Account Abstraction compatible (uses resolvedBuyer)
+     * - Fee amount (1% of guarantee) is calculated on-chain
+     */
+    public async payIssuanceFee(
+        pgaId: string,
+        tokenAddress: string,
+        onProgress?: (stage: 'checking' | 'approving' | 'paying', message: string) => void
+    ) {
+        try {
+            onProgress?.('checking', 'Checking fee payment requirements...');
 
-        // Initial check for allowance
-        const signer = await this.getSigner();
-        const address = await signer.getAddress();
-        const allowance = await usdc.allowance(address, diamond);
+            const contract = await this.getContract();
+            const diamond = this.getDiamondAddress();
 
-        if (allowance.lt(amountRaw)) {
-            const approveTx = await usdc.approve(diamond, amountRaw);
-            await approveTx.wait();
+            // Get PGA data to calculate fee (1% of guarantee amount)
+            const pgaData = await contract.getPGA(pgaId);
+            const feeAmount = pgaData.guaranteeAmount.div(100); // 1% of guarantee
+
+            // Get token contract and decimals
+            const provider = await this.getProvider();
+            const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+
+            // Check balance
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const balance = await token.balanceOf(address);
+
+            if (balance.lt(feeAmount)) {
+                throw new Error(`Insufficient ${await token.symbol()} balance`);
+            }
+
+            // Check and handle approval
+            const allowance = await token.allowance(address, diamond);
+            if (allowance.lt(feeAmount)) {
+                onProgress?.('approving', `Approving ${await token.symbol()} spend...`);
+                const tokenWithSigner = token.connect(signer);
+                const approveTx = await tokenWithSigner.approve(diamond, feeAmount);
+                await approveTx.wait();
+            }
+
+            onProgress?.('paying', 'Paying issuance fee...');
+
+            // Multi-token signature: payIssuanceFee(pgaId, tokenAddress)
+            const tx = await contract.payIssuanceFee(pgaId, tokenAddress);
+            return tx.wait();
+        } catch (error: any) {
+            console.error('[TradeFinanceService] payIssuanceFee error:', error);
+            throw error;
         }
-
-        const tx = await contract.payIssuanceFee(pgaId);
-        return tx.wait();
     }
 
-    public async confirmGoodsShipped(pgaId: string, logisticPartnerName: string) {
+    public async confirmGoodsShipped(pgaId: string) {
         const contract = await this.getContract();
-        const tx = await contract.confirmGoodsShipped(pgaId, logisticPartnerName);
-        return tx.wait();
+        const tx = await contract.confirmGoodsShipped(pgaId);
+        return await tx.wait();
     }
 
-    public async payBalancePayment(pgaId: string, amount: string) {
+    public async confirmGoodsDelivered(pgaId: string) {
         const contract = await this.getContract();
-        const usdc = await this.getUSDCContract();
-        const diamond = this.getDiamondAddress();
-        const decimals = await this.getPrimaryTokenDecimals();
-        const amountRaw = ethers.utils.parseUnits(amount, decimals);
+        const tx = await contract.confirmGoodsDelivered(pgaId);
+        return await tx.wait();
+    }
 
-        const signer = await this.getSigner();
-        const address = await signer.getAddress();
-        const allowance = await usdc.allowance(address, diamond);
+    public async takeUpPGA(pgaId: string) {
+        const contract = await this.getContract();
+        const tx = await contract.takeUpPGA(pgaId);
+        return await tx.wait();
+    }
 
-        if (allowance.lt(amountRaw)) {
-            const approveTx = await usdc.approve(diamond, amountRaw);
-            await approveTx.wait();
+    /**
+     * Pay balance payment with multi-token support
+     * @param pgaId Pool Guarantee Application ID
+     * @param tokenAddress ERC20 token address (e.g., USDC, USDT, DAI)
+     * @param onProgress Optional progress callback
+     * 
+     * Architecture follows Treasury Portal pattern:
+     * - Accepts any supported ERC20 token
+     * - Auto-approves if needed
+     * - Account Abstraction compatible (uses resolvedBuyer)
+     * - Balance amount (tradeValue - collateral) is calculated on-chain
+     */
+    public async payBalancePayment(
+        pgaId: string,
+        tokenAddress: string,
+        onProgress?: (stage: 'checking' | 'approving' | 'paying', message: string) => void
+    ) {
+        try {
+            onProgress?.('checking', 'Checking balance payment requirements...');
+
+            const contract = await this.getContract();
+            const diamond = this.getDiamondAddress();
+
+            // Get PGA data to calculate balance (tradeValue - collateral)
+            const pgaData = await contract.getPGA(pgaId);
+            const balanceAmount = pgaData.tradeValue.sub(pgaData.collateralAmount);
+
+            // Get token contract
+            const provider = await this.getProvider();
+            const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+
+            // Check balance
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const balance = await token.balanceOf(address);
+
+            if (balance.lt(balanceAmount)) {
+                throw new Error(`Insufficient ${await token.symbol()} balance`);
+            }
+
+            // Check and handle approval
+            const allowance = await token.allowance(address, diamond);
+            if (allowance.lt(balanceAmount)) {
+                onProgress?.('approving', `Approving ${await token.symbol()} spend...`);
+                const tokenWithSigner = token.connect(signer);
+                const approveTx = await tokenWithSigner.approve(diamond, balanceAmount);
+                await approveTx.wait();
+            }
+
+            onProgress?.('paying', 'Paying balance amount...');
+
+            // Multi-token signature: payBalancePayment(pgaId, tokenAddress)
+            const tx = await contract.payBalancePayment(pgaId, tokenAddress);
+            return tx.wait();
+        } catch (error: any) {
+            console.error('[TradeFinanceService] payBalancePayment error:', error);
+            throw error;
         }
-
-        const tx = await contract.payBalancePayment(pgaId);
-        return tx.wait();
     }
 
     public async issueCertificate(pgaId: string) {
@@ -573,7 +720,7 @@ class TradeFinanceService {
     public async getAuthorizedLogisticsPartners(): Promise<string[]> {
         const contract = await this.getContract();
         const allPartners = await contract.getAllLogisticsPartners();
-        
+
         // Filter to get only authorized partners
         const authorized: string[] = [];
         for (const partner of allPartners) {
@@ -612,6 +759,18 @@ class TradeFinanceService {
     public async isAuthorizedDeliveryPerson(deliveryPerson: string): Promise<boolean> {
         const contract = await this.getContract();
         return await contract.isAuthorizedDeliveryPerson(deliveryPerson);
+    }
+
+    /**
+     * Get default token address for payments
+     * @returns The primary stablecoin address for the current network
+     */
+    public getDefaultTokenAddress(): string {
+        const tokenAddress = this.currentNetworkConfig?.stablecoins?.[0]?.address;
+        if (!tokenAddress) {
+            throw new Error(`Primary payment token not found for network ${this.currentNetworkConfig?.name}`);
+        }
+        return tokenAddress;
     }
 }
 

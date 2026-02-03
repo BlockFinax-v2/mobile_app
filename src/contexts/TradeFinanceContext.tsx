@@ -48,6 +48,9 @@ interface Application {
     | "Draft Sent to Pool"
     | "Draft Sent to Seller"
     | "Seller Approved"
+    | "Collateral Paid"
+    | "Logistics Notified"
+    | "Logistics Claimed"
     | "Fee Paid"
     | "Awaiting Certificate"
     | "Invoice Settled"
@@ -204,18 +207,27 @@ interface TradeFinanceContextType {
   // Blockchain Sync
   fetchBlockchainData: () => Promise<void>;
   refreshAll: () => Promise<void>; // Pull-to-refresh handler
+  refreshPGA: (pgaId: string) => Promise<void>; // Refresh specific PGA from blockchain
   isRefreshing: boolean; // Pull-to-refresh loading state
   preload: () => Promise<void>; // App startup preload
   createPGABlockchain: (params: any) => Promise<void>;
   votePGABlockchain: (pgaId: string, support: boolean) => Promise<void>;
   sellerVotePGABlockchain: (pgaId: string, approve: boolean) => Promise<void>;
-  payCollateralBlockchain: (pgaId: string, amount: string) => Promise<void>;
-  payIssuanceFeeBlockchain: (pgaId: string, amount: string) => Promise<void>;
-  confirmGoodsShippedBlockchain: (
+  payCollateralBlockchain: (
     pgaId: string,
-    logisticPartnerName: string,
+    tokenAddress: string,
   ) => Promise<void>;
-  payBalancePaymentBlockchain: (pgaId: string, amount: string) => Promise<void>;
+  payIssuanceFeeBlockchain: (
+    pgaId: string,
+    tokenAddress: string,
+  ) => Promise<void>;
+  confirmGoodsShippedBlockchain: (pgaId: string) => Promise<void>;
+  confirmGoodsDeliveredBlockchain: (pgaId: string) => Promise<void>;
+  takeUpPGABlockchain: (pgaId: string) => Promise<void>;
+  payBalancePaymentBlockchain: (
+    pgaId: string,
+    tokenAddress: string,
+  ) => Promise<void>;
   issueCertificateBlockchain: (pgaId: string) => Promise<void>;
   createDeliveryAgreementBlockchain: (params: any) => Promise<void>;
   buyerConsentToDeliveryBlockchain: (
@@ -228,13 +240,149 @@ interface TradeFinanceContextType {
   logisticsPartners: string[];
   deliveryPersons: string[];
   refreshLogisticsProviders: () => Promise<void>;
+
+  // Data mapping
+  mapPGAInfoToApplication: (pga: PGAInfo) => Application;
+  mapPGAStatusToAppStatus: (
+    status: PGAStatus,
+    issuanceFeePaid?: boolean,
+  ) => Application["status"];
+  mapPGAStatusToStage: (status: PGAStatus, issuanceFeePaid?: boolean) => number;
 }
 
-const TradeFinanceContext = createContext<TradeFinanceContextType | undefined>(
-  undefined,
-);
+export const TradeFinanceContext = createContext<
+  TradeFinanceContextType | undefined
+>(undefined);
 
-export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
+export const mapPGAStatusToAppStatus = (
+  status: PGAStatus,
+  issuanceFeePaid: boolean = false,
+): Application["status"] => {
+  switch (status) {
+    case PGAStatus.Created:
+      return "Draft Sent to Pool";
+    case PGAStatus.GuaranteeApproved:
+      return "Draft Sent to Seller";
+    case PGAStatus.SellerApproved:
+      return "Seller Approved";
+    case PGAStatus.CollateralPaid:
+      return issuanceFeePaid ? "Certificate Issued" : "Collateral Paid";
+    case PGAStatus.LogisticsNotified:
+      return "Logistics Notified";
+    case PGAStatus.LogisticsTakeup:
+      return "Logistics Claimed";
+    case PGAStatus.GoodsShipped:
+      return "Goods Shipped";
+    case PGAStatus.GoodsDelivered:
+      return "Delivery Confirmed";
+    case PGAStatus.BalancePaymentPaid:
+      return "Invoice Settled";
+    case PGAStatus.CertificateIssued:
+      return "Transaction Complete";
+    case PGAStatus.Completed:
+      return "Transaction Complete";
+    case PGAStatus.Rejected:
+      return "Pending Draft";
+    case PGAStatus.Expired:
+      return "Pending Draft";
+    case PGAStatus.Disputed:
+      return "Processing";
+    default:
+      return "Pending Draft";
+  }
+};
+
+export const mapPGAStatusToStage = (
+  status: PGAStatus,
+  issuanceFeePaid: boolean = false,
+): number => {
+  switch (status) {
+    case PGAStatus.Created:
+      return 2; // Pool Review
+    case PGAStatus.GuaranteeApproved:
+      return 3; // Seller Review
+    case PGAStatus.SellerApproved:
+      return 4; // Payment Pending
+    case PGAStatus.CollateralPaid:
+      return issuanceFeePaid ? 5 : 4; // Fee Paid → Stage 5 (Certificate Issued), otherwise stay in Stage 4
+    case PGAStatus.LogisticsNotified:
+      return 5; // Certificate / Logistics
+    case PGAStatus.LogisticsTakeup:
+      return 5; // Still in Logistics stage
+    case PGAStatus.GoodsShipped:
+      return 6; // Shipped
+    case PGAStatus.GoodsDelivered:
+      return 7; // Delivered
+    case PGAStatus.BalancePaymentPaid:
+      return 8; // Balance Paid
+    case PGAStatus.CertificateIssued:
+      return 9; // Complete
+    case PGAStatus.Completed:
+      return 9; // Complete
+    case PGAStatus.Rejected:
+      return 1;
+    case PGAStatus.Expired:
+      return 1;
+    case PGAStatus.Disputed:
+      return 8;
+    default:
+      return 1;
+  }
+};
+
+export const mapPGAInfoToApplication = (
+  pga: PGAInfo,
+  selectedNetwork?: any,
+): Application => {
+  const symbol = selectedNetwork?.stablecoins?.[0]?.symbol || "USDC";
+  return {
+    id: pga.pgaId,
+    requestId: pga.pgaId,
+    companyName: pga.companyName || "Buyer",
+    guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
+    tradeValue: `${pga.tradeValue} ${symbol}`,
+    status: mapPGAStatusToAppStatus(pga.status, pga.issuanceFeePaid),
+    submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
+    contractNumber: "",
+    tradeDescription: pga.tradeDescription || "",
+    buyer: {
+      company: pga.companyName || "Buyer",
+      registration: pga.registrationNumber || "",
+      country: "",
+      contact: "",
+      email: "",
+      phone: "",
+      walletAddress: pga.buyer || "",
+      applicationDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
+    },
+    seller: {
+      walletAddress: pga.seller || "",
+    },
+    beneficiaryName: pga.beneficiaryName || "",
+    beneficiaryWallet: pga.beneficiaryWallet || "",
+    applicationDate: new Date(pga.createdAt * 1000).toISOString(),
+    paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
+    financingDuration: pga.duration,
+    issuanceFee: `${pga.issuanceFee} ${symbol}`,
+    collateralDescription: "",
+    collateralValue: `${pga.collateralAmount} ${symbol}`,
+    collateralPaid: pga.collateralPaid,
+    issuanceFeePaid: pga.issuanceFeePaid,
+    currentStage: mapPGAStatusToStage(pga.status, pga.issuanceFeePaid),
+    isDraft: false,
+    lastUpdated: new Date().toISOString(),
+    certificateIssuedAt: pga.certificateIssuedAt,
+    certificateIssuedDate:
+      pga.certificateIssuedAt > 0
+        ? new Date(pga.certificateIssuedAt * 1000).toLocaleDateString()
+        : pga.status >= PGAStatus.CollateralPaid && pga.issuanceFeePaid
+          ? new Date().toLocaleDateString()
+          : undefined,
+    deliveryAgreementId: pga.deliveryAgreementId,
+  };
+};
+
+export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [applications, setApplications] = useState<Application[]>([]);
@@ -554,117 +702,6 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     }
   }, [selectedNetwork]);
 
-  const mapPGAStatusToAppStatus = (
-    status: PGAStatus,
-    issuanceFeePaid: boolean = false,
-  ): Application["status"] => {
-    switch (status) {
-      case PGAStatus.Created:
-        return "Draft Sent to Pool";
-      case PGAStatus.GuaranteeApproved:
-        return "Draft Sent to Seller";
-      case PGAStatus.SellerApproved:
-        return "Seller Approved";
-      case PGAStatus.CollateralPaid:
-        return issuanceFeePaid ? "Fee Paid" : "Approved";
-      case PGAStatus.GoodsShipped:
-        return "Goods Shipped";
-      case PGAStatus.BalancePaymentPaid:
-        return "Invoice Settled";
-      case PGAStatus.CertificateIssued:
-        return "Certificate Issued";
-      case PGAStatus.DeliveryAwaitingConsent:
-        return "Awaiting Certificate";
-      case PGAStatus.Completed:
-        return "Transaction Complete";
-      case PGAStatus.Rejected:
-        return "Pending Draft";
-      case PGAStatus.Expired:
-        return "Pending Draft";
-      case PGAStatus.Disputed:
-        return "Processing";
-      default:
-        return "Pending Draft";
-    }
-  };
-
-  const mapPGAStatusToStage = (
-    status: PGAStatus,
-    issuanceFeePaid: boolean = false,
-  ): number => {
-    switch (status) {
-      case PGAStatus.Created:
-        return 2; // Pool Review
-      case PGAStatus.GuaranteeApproved:
-        return 3; // Seller Review
-      case PGAStatus.SellerApproved:
-        return 4; // Awaiting Fee Payment
-      case PGAStatus.CollateralPaid:
-        return issuanceFeePaid ? 5 : 4; // Fee Paid → Stage 5, otherwise stay in Stage 4
-      case PGAStatus.CertificateIssued:
-        return 5; // Certificate Issued
-      case PGAStatus.GoodsShipped:
-        return 6; // Goods Shipped by Logistics
-      case PGAStatus.BalancePaymentPaid:
-        return 7; // Balance Paid
-      case PGAStatus.DeliveryAwaitingConsent:
-        return 8; // Delivery Confirmation
-      case PGAStatus.Completed:
-        return 9; // Complete
-      case PGAStatus.Rejected:
-        return 1;
-      case PGAStatus.Expired:
-        return 1;
-      case PGAStatus.Disputed:
-        return 7;
-      default:
-        return 1;
-    }
-  };
-
-  const mapPGAInfoToApplication = (pga: PGAInfo): Application => {
-    const symbol = selectedNetwork?.stablecoins?.[0]?.symbol || "USDC";
-    return {
-      id: pga.pgaId,
-      requestId: pga.pgaId,
-      companyName: pga.companyName || "Buyer",
-      guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
-      tradeValue: `${pga.tradeValue} ${symbol}`,
-      status: mapPGAStatusToAppStatus(pga.status, pga.issuanceFeePaid),
-      submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
-      contractNumber: "",
-      tradeDescription: pga.tradeDescription || "",
-      buyer: {
-        company: pga.companyName || "Buyer",
-        registration: pga.registrationNumber || "",
-        country: "",
-        contact: "",
-        email: "",
-        phone: "",
-        walletAddress: pga.buyer || "",
-        applicationDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
-      },
-      seller: {
-        walletAddress: pga.seller || "",
-      },
-      beneficiaryName: pga.beneficiaryName || "",
-      beneficiaryWallet: pga.beneficiaryWallet || "",
-      applicationDate: new Date(pga.createdAt * 1000).toISOString(),
-      paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
-      financingDuration: pga.duration,
-      issuanceFee: `${(parseFloat(pga.guaranteeAmount) * 0.01).toFixed(2)} ${symbol}`,
-      collateralDescription: "",
-      collateralValue: `${pga.collateralAmount} ${symbol}`,
-      collateralPaid: pga.collateralPaid,
-      issuanceFeePaid: pga.issuanceFeePaid,
-      currentStage: mapPGAStatusToStage(pga.status, pga.issuanceFeePaid),
-      isDraft: false,
-      lastUpdated: new Date().toISOString(),
-      certificateIssuedAt: pga.certificateIssuedAt,
-      deliveryAgreementId: pga.deliveryAgreementId,
-    };
-  };
-
   const refreshLogisticsProviders = useCallback(async () => {
     try {
       const [partners, persons] = await Promise.all([
@@ -687,8 +724,8 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       const buyerPGAs = await tradeFinanceService.getAllPGAsByBuyer(address);
       const sellerPGAs = await tradeFinanceService.getAllPGAsBySeller(address);
 
-      const allApps = [...buyerPGAs, ...sellerPGAs].map(
-        mapPGAInfoToApplication,
+      const allApps = [...buyerPGAs, ...sellerPGAs].map((pga) =>
+        mapPGAInfoToApplication(pga, selectedNetwork),
       );
       const uniqueMap = new Map<string, Application>();
       allApps.forEach((app) => uniqueMap.set(app.id, app));
@@ -700,7 +737,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     } catch (error) {
       console.error("Error fetching blockchain data:", error);
     }
-  }, [address, isUnlocked, refreshLogisticsProviders]);
+  }, [address, isUnlocked, refreshLogisticsProviders, selectedNetwork]);
 
   /**
    * Handle real-time events from the blockchain
@@ -783,15 +820,14 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
         // Fetch updated PGA data (will get from blockchain since cache is invalidated)
         const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
-        const updatedApp = mapPGAInfoToApplication(pgaInfo);
+        const updatedApp = mapPGAInfoToApplication(pgaInfo, selectedNetwork);
 
-        // Special handling: When fee is paid (CollateralPaid), trigger certificate generation
+        // Special handling: When fee is paid (CollateralPaid), ensure certificate is issued
         if (event.eventType === "CollateralPaid") {
           console.log(
-            `[TradeFinanceContext] 💳 Fee paid for PGA ${event.pgaId} → Triggering certificate generation`,
+            `[TradeFinanceContext] 💳 Fee paid for PGA ${event.pgaId} → Certificate issued simultaneously with Logistics notification`,
           );
-          // Certificate generation would happen here (on-chain or off-chain)
-          // For now, the CertificateIssued event will update the state
+          // Certificate is now considered issued as per redesigned flow
         }
 
         // INSTANT UI update (optimistic)
@@ -841,23 +877,39 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
     setIsLoadingHistory(true);
     const startTime = performance.now();
-    console.log("[TradeFinanceContext] 🔄 Loading historical events...");
 
     try {
-      // SYSTEMATIC BLOCK MANAGEMENT: Start from last synced block
+      // PERSISTENT STORAGE STRATEGY: Only sync NEW events since last sync
+      // PGAs are stored permanently in AsyncStorage and never refetched from scratch
       const fromBlock = lastSyncedBlock > 0 ? lastSyncedBlock + 1 : 0;
-
-      // Get current block for progress tracking
       const currentBlock =
         await tradeFinanceEventService["provider"]?.getBlockNumber();
       const blocksToSync = currentBlock ? currentBlock - fromBlock : 0;
 
+      // Skip if already synced (no new blocks)
+      if (blocksToSync === 0 && lastSyncedBlock > 0) {
+        console.log("[TradeFinanceContext] ✅ Already synced - no new blocks");
+        setIsLoadingHistory(false);
+        return;
+      }
+
       console.log(
-        `[TradeFinanceContext] 📊 Syncing ${blocksToSync} blocks (${fromBlock} → ${currentBlock})`,
+        `[TradeFinanceContext] 🔄 Incremental sync: ${blocksToSync} new blocks (${fromBlock} → ${currentBlock})`,
       );
 
-      // SMART BATCHING: Only fetch recent blocks if fully synced, otherwise do full catch-up
-      const maxBlockRange = lastSyncedBlock === 0 ? 500 : 200; // First sync: 500 blocks, incremental: 200 blocks
+      // FIRST TIME SETUP: If never synced, do ONE-TIME full blockchain fetch
+      if (lastSyncedBlock === 0 && applications.length === 0) {
+        console.log(
+          "[TradeFinanceContext] 🚀 First time setup - doing one-time full fetch...",
+        );
+        await fetchBlockchainData();
+        await saveLastSyncedBlock(currentBlock || 0);
+        setIsLoadingHistory(false);
+        return;
+      }
+
+      // INCREMENTAL UPDATES: Only fetch events for new blocks (very fast)
+      const maxBlockRange = 200; // Sync up to 200 new blocks
 
       const pastEvents = await tradeFinanceEventService.fetchPastEvents(
         address,
@@ -867,15 +919,19 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
       );
 
       console.log(
-        `[TradeFinanceContext] ✅ Fetched ${pastEvents.length} events in ${(performance.now() - startTime).toFixed(0)}ms`,
+        `[TradeFinanceContext] ✅ Fetched ${pastEvents.length} new events in ${(performance.now() - startTime).toFixed(0)}ms`,
       );
 
-      // Process events to build application state (only for NEW events)
-      const pgaIds = new Set<string>();
-      pastEvents.forEach((event) => pgaIds.add(event.pgaId));
+      // EVENT-DRIVEN UPDATES: Apply changes only to affected PGAs
+      if (pastEvents.length > 0) {
+        const pgaIds = new Set<string>();
+        pastEvents.forEach((event) => pgaIds.add(event.pgaId));
 
-      if (pgaIds.size > 0) {
-        // ⚡ Fetch current state for all PGAs (skip cache to get latest)
+        console.log(
+          `[TradeFinanceContext] 📝 Updating ${pgaIds.size} PGAs with new events...`,
+        );
+
+        // Fetch ONLY the PGAs that have new events (not all PGAs)
         const pgaPromises = Array.from(pgaIds).map((pgaId) =>
           tradeFinanceService.getPGA(pgaId, true).catch((err) => {
             console.warn(`Failed to fetch PGA ${pgaId}:`, err);
@@ -883,27 +939,30 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
           }),
         );
 
-        const pgaInfos = (await Promise.all(pgaPromises)).filter(
+        const updatedPGAs = (await Promise.all(pgaPromises)).filter(
           (p) => p !== null,
         ) as PGAInfo[];
 
-        const newApps = pgaInfos.map(mapPGAInfoToApplication);
+        const updatedApps = updatedPGAs.map((pga) =>
+          mapPGAInfoToApplication(pga, selectedNetwork),
+        );
 
-        // Merge with existing applications (update or add)
+        // SMART MERGE: Update existing PGAs, add new ones, NEVER remove
         setApplications((prev) => {
-          const updatedMap = new Map(prev.map((app) => [app.id, app]));
-          newApps.forEach((app) => updatedMap.set(app.id, app));
-          return Array.from(updatedMap.values());
+          const appMap = new Map(prev.map((app) => [app.id, app]));
+          updatedApps.forEach((app) => appMap.set(app.id, app));
+          const merged = Array.from(appMap.values());
+          console.log(
+            `[TradeFinanceContext] 💾 Total PGAs: ${merged.length} (${updatedApps.length} updated)`,
+          );
+          return merged;
         });
-      } else if (lastSyncedBlock === 0) {
-        // First sync and no events - do a full blockchain fetch
-        await fetchBlockchainData();
       }
 
-      // Fire-and-forget persistence
+      // PERSIST TO STORAGE: Save all PGAs for offline access and fast next load
       persistData();
 
-      // Save the latest block processed
+      // UPDATE SYNC CHECKPOINT: Save the latest block so we only fetch new events next time
       const latestBlock = tradeFinanceEventService.getLastProcessedBlock();
       if (latestBlock > lastSyncedBlock) {
         await saveLastSyncedBlock(latestBlock);
@@ -911,7 +970,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
 
       const totalTime = performance.now() - startTime;
       console.log(
-        `[TradeFinanceContext] ⚡ Historical sync complete in ${totalTime.toFixed(0)}ms`,
+        `[TradeFinanceContext] ⚡ Incremental sync complete in ${totalTime.toFixed(0)}ms - PGAs persist forever`,
       );
     } catch (error) {
       console.error(
@@ -954,7 +1013,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         );
 
         // Map PGAs to applications
-        const apps = cachedData.applications.map(mapPGAInfoToApplication);
+        const apps = cachedData.applications.map((pga: any) =>
+          mapPGAInfoToApplication(pga, selectedNetwork),
+        );
         setApplications(apps);
         setLogisticsPartners(cachedData.logisticsPartners);
         setDeliveryPersons(cachedData.deliveryPersons);
@@ -1003,19 +1064,22 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     mapPGAInfoToApplication,
   ]);
 
-  // Background refresh to keep list accurate (adds/removes)
+  // SMART BACKGROUND SYNC: Only fetch NEW events every 2 minutes (not full refresh)
   useEffect(() => {
     if (!address || !isUnlocked || !selectedNetwork) return;
 
     const intervalId = setInterval(
       () => {
-        fetchBlockchainData();
+        console.log(
+          "[TradeFinanceContext] ⏰ Background sync - checking for new events...",
+        );
+        loadHistoricalEvents(); // Only fetches NEW events since last sync
       },
       2 * 60 * 1000,
     );
 
     return () => clearInterval(intervalId);
-  }, [address, isUnlocked, selectedNetwork, fetchBlockchainData]);
+  }, [address, isUnlocked, selectedNetwork, loadHistoricalEvents]);
 
   /**
    * Pull-to-refresh handler - fetches latest blockchain data
@@ -1056,7 +1120,9 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
           const pgaInfos = (await Promise.all(pgaPromises)).filter(
             (p) => p !== null,
           ) as PGAInfo[];
-          const updatedApps = pgaInfos.map(mapPGAInfoToApplication);
+          const updatedApps = pgaInfos.map((pga) =>
+            mapPGAInfoToApplication(pga, selectedNetwork),
+          );
 
           // Merge with existing applications
           setApplications((prev) => {
@@ -1137,54 +1203,103 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     handleRealtimeEvent,
   ]);
 
+  // Force refresh a specific PGA from blockchain
+  const refreshPGA = async (pgaId: string) => {
+    try {
+      console.log(`[TradeFinanceContext] 🔄 Force refreshing PGA: ${pgaId}`);
+
+      // Invalidate cache
+      tradeFinanceService.invalidatePGACache(pgaId);
+
+      // Fetch fresh data from blockchain
+      const updatedPGA = await tradeFinanceService.getPGA(pgaId, true);
+      const updatedApp = mapPGAInfoToApplication(updatedPGA, selectedNetwork);
+
+      // Update state
+      setApplications((prev) => {
+        const appMap = new Map(prev.map((app) => [app.id, app]));
+        appMap.set(updatedApp.id, updatedApp);
+        const updated = Array.from(appMap.values());
+
+        // Persist
+        setTimeout(() => persistData(), 0);
+
+        return updated;
+      });
+
+      console.log(
+        `[TradeFinanceContext] ✅ PGA ${pgaId} refreshed successfully`,
+      );
+    } catch (error) {
+      console.error(
+        `[TradeFinanceContext] ❌ Error refreshing PGA ${pgaId}:`,
+        error,
+      );
+      throw error;
+    }
+  };
+
   const createPGABlockchain = async (params: any) => {
     await tradeFinanceService.createPGA(params);
-    // Event listener will automatically pick up the PGACreated event
-    // But we can also manually refresh as a fallback
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(params.pgaId);
+    loadHistoricalEvents();
   };
 
   const votePGABlockchain = async (pgaId: string, support: boolean) => {
     await tradeFinanceService.voteOnPGA(pgaId, support);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
   const sellerVotePGABlockchain = async (pgaId: string, approve: boolean) => {
     await tradeFinanceService.sellerVoteOnPGA(pgaId, approve);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
-  const payCollateralBlockchain = async (pgaId: string, amount: string) => {
-    await tradeFinanceService.payCollateral(pgaId, amount);
-    setTimeout(() => loadHistoricalEvents(), 2000);
-  };
-
-  const payIssuanceFeeBlockchain = async (pgaId: string, amount: string) => {
-    await tradeFinanceService.payIssuanceFee(pgaId, amount);
-    setTimeout(() => loadHistoricalEvents(), 2000);
-  };
-
-  const confirmGoodsShippedBlockchain = async (
+  const payCollateralBlockchain = async (
     pgaId: string,
-    logisticPartnerName: string,
+    tokenAddress: string,
   ) => {
-    await tradeFinanceService.confirmGoodsShipped(pgaId, logisticPartnerName);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await tradeFinanceService.payCollateral(pgaId, tokenAddress);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
-  const payBalancePaymentBlockchain = async (pgaId: string, amount: string) => {
-    await tradeFinanceService.payBalancePayment(pgaId, amount);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+  const payIssuanceFeeBlockchain = async (
+    pgaId: string,
+    tokenAddress: string,
+  ) => {
+    await tradeFinanceService.payIssuanceFee(pgaId, tokenAddress);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
+  };
+
+  const confirmGoodsShippedBlockchain = async (pgaId: string) => {
+    await tradeFinanceService.confirmGoodsShipped(pgaId);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
+  };
+
+  const payBalancePaymentBlockchain = async (
+    pgaId: string,
+    tokenAddress: string,
+  ) => {
+    await tradeFinanceService.payBalancePayment(pgaId, tokenAddress);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
   const issueCertificateBlockchain = async (pgaId: string) => {
     await tradeFinanceService.issueCertificate(pgaId);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
   const createDeliveryAgreementBlockchain = async (params: any) => {
     await tradeFinanceService.createDeliveryAgreement(params);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(params.pgaId);
+    loadHistoricalEvents();
   };
 
   const buyerConsentToDeliveryBlockchain = async (
@@ -1192,12 +1307,31 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
     consent: boolean,
   ) => {
     await tradeFinanceService.buyerConsentToDelivery(agreementId, consent);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    // Find pgaId by agreementId
+    const app = applications.find((a) => a.deliveryAgreementId === agreementId);
+    if (app) {
+      await refreshPGA(app.id);
+    }
+    loadHistoricalEvents();
   };
 
   const releasePaymentToSellerBlockchain = async (pgaId: string) => {
     await tradeFinanceService.releasePaymentToSeller(pgaId);
-    setTimeout(() => loadHistoricalEvents(), 2000);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
+  };
+
+  // New methods
+  const confirmGoodsDeliveredBlockchain = async (pgaId: string) => {
+    await tradeFinanceService.confirmGoodsDelivered(pgaId);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
+  };
+
+  const takeUpPGABlockchain = async (pgaId: string) => {
+    await tradeFinanceService.takeUpPGA(pgaId);
+    await refreshPGA(pgaId);
+    loadHistoricalEvents();
   };
 
   return (
@@ -1219,6 +1353,7 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         saveDraft,
         fetchBlockchainData,
         refreshAll,
+        refreshPGA,
         isRefreshing,
         preload,
         createPGABlockchain,
@@ -1235,6 +1370,12 @@ export const TradeFinanceProvider: React.FC<{ children: ReactNode }> = ({
         logisticsPartners,
         deliveryPersons,
         refreshLogisticsProviders,
+        confirmGoodsDeliveredBlockchain,
+        takeUpPGABlockchain,
+        mapPGAInfoToApplication: (pga: PGAInfo) =>
+          mapPGAInfoToApplication(pga, selectedNetwork),
+        mapPGAStatusToAppStatus,
+        mapPGAStatusToStage,
       }}
     >
       {children}

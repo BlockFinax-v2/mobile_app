@@ -87,7 +87,8 @@ export type WalletStackParamList = {
   DocumentCenter: undefined;
   Rewards: undefined;
   TradeFinancePayment: {
-    paymentType: "invoice" | "fee" | "settlement";
+    // Old invoice/fee/settlement flow
+    paymentType?: "invoice" | "fee" | "settlement" | "collateral" | "issuanceFee" | "balancePayment";
     invoiceAmount?: number;
     supplierAddress?: string;
     invoiceId?: string;
@@ -96,6 +97,20 @@ export type WalletStackParamList = {
     applicationId?: string;
     settlementAmount?: number;
     settlementAddress?: string;
+    
+    // New PGA payment flow
+    pgaId?: string;
+    amount?: number;
+    collateralAmount?: number;
+    guaranteeAmount?: number;
+    tradeValue?: number;
+    diamondAddress?: string;
+    buyerName?: string;
+    sellerName?: string;
+    description?: string;
+    productCategory?: string;
+    
+    // Common
     preferredToken?: string;
     preferredNetwork?: string;
   };
@@ -177,10 +192,10 @@ export type MessagesStackParamList = {
       paymentType: string;
       applicationId?: string;
       invoiceId?: string;
-    };
-  } | undefined;
+    };  } | undefined;
   TradeFinancePayment: {
-    paymentType: "invoice" | "fee" | "settlement";
+    // Old invoice/fee/settlement flow
+    paymentType?: "invoice" | "fee" | "settlement" | "collateral" | "issuanceFee" | "balancePayment";
     invoiceAmount?: number;
     supplierAddress?: string;
     invoiceId?: string;
@@ -189,6 +204,20 @@ export type MessagesStackParamList = {
     applicationId?: string;
     settlementAmount?: number;
     settlementAddress?: string;
+    
+    // New PGA payment flow
+    pgaId?: string;
+    amount?: number;
+    collateralAmount?: number;
+    guaranteeAmount?: number;
+    tradeValue?: number;
+    diamondAddress?: string;
+    buyerName?: string;
+    sellerName?: string;
+    description?: string;
+    productCategory?: string;
+    
+    // Common
     preferredToken?: string;
     preferredNetwork?: string;
   };
@@ -207,7 +236,8 @@ export type TradeStackParamList = {
     };
   } | undefined;
   TradeFinancePayment: {
-    paymentType: "invoice" | "fee" | "settlement";
+    // Old invoice/fee/settlement flow
+    paymentType?: "invoice" | "fee" | "settlement" | "collateral" | "issuanceFee" | "balancePayment";
     invoiceAmount?: number;
     supplierAddress?: string;
     invoiceId?: string;
@@ -216,6 +246,20 @@ export type TradeStackParamList = {
     applicationId?: string;
     settlementAmount?: number;
     settlementAddress?: string;
+    
+    // New PGA payment flow
+    pgaId?: string;
+    amount?: number;
+    collateralAmount?: number;
+    guaranteeAmount?: number;
+    tradeValue?: number;
+    diamondAddress?: string;
+    buyerName?: string;
+    sellerName?: string;
+    description?: string;
+    productCategory?: string;
+    
+    // Common
     preferredToken?: string;
     preferredNetwork?: string;
   };

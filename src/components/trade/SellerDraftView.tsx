@@ -63,11 +63,11 @@ const STAGE_TITLES = [
   "Applied",
   "Pool Review",
   "Seller Review",
-  "Approved",
-  "Cert Issued",
-  "Goods Shipped",
-  "Delivery Confirmed",
-  "Invoice Paid",
+  "Payment Pending",
+  "Logistics",
+  "Shipped",
+  "Delivered",
+  "Balance Paid",
   "Complete",
 ];
 

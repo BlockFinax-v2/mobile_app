@@ -168,6 +168,13 @@ class BackgroundDataLoaderService {
 
   /**
    * Preload TradeFinance data
+   * 
+   * PERSISTENT STORAGE STRATEGY:
+   * - PGAs are stored permanently in AsyncStorage (never deleted)
+   * - Only fetch NEW events since last sync (incremental updates)
+   * - First install: One-time full fetch, then incremental forever
+   * - Completed PGAs persist for historical reference
+   * - Saves API quota, battery, and loading time
    */
   private async preloadTradeFinance(userAddress: string, chainId: number): Promise<void> {
     const startTime = performance.now();
@@ -235,14 +242,21 @@ class BackgroundDataLoaderService {
 
   /**
    * Preload Treasury data
-   * Note: Treasury uses TreasuryContext which handles its own caching via treasuryPortalPreload
+   * 
+   * PERSISTENT STORAGE STRATEGY:
+   * - Staking positions, proposals, and events stored permanently in AsyncStorage
+   * - Only fetch NEW events since last sync (incremental updates)
+   * - First install: One-time full fetch, then incremental forever
+   * - Completed proposals/stakes persist for historical reference
+   * - Saves API quota, battery, and loading time
+   * - TreasuryContext handles its own incremental sync logic
    */
   private async preloadTreasury(userAddress: string, chainId: number): Promise<void> {
     const startTime = performance.now();
     console.log('[BackgroundLoader] 💰 Treasury preload delegated to TreasuryContext');
 
     try {
-      // Mark treasury as ready - TreasuryContext handles its own preloading
+      // Mark treasury as ready - TreasuryContext handles its own persistent storage
       await AsyncStorage.setItem(STORAGE_KEYS.TREASURY_LAST_SYNC, Date.now().toString());
 
       const loadTime = performance.now() - startTime;

@@ -8,6 +8,7 @@ import {
   Alert,
   Modal,
   ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors } from "@/theme/colors";
@@ -65,17 +66,20 @@ interface BuyerApplicationViewProps {
   onPayFee?: () => void;
   onPayInvoice?: () => void;
   onConfirmDelivery?: () => void;
+  onIssueCertificate?: () => void;
+  onRefresh?: () => Promise<void>;
+  isRefreshing?: boolean;
 }
 
 const STAGE_TITLES = [
   "Applied",
   "Pool Review",
   "Seller Review",
-  "Approved",
-  "Cert Issued",
-  "Goods Shipped",
-  "Delivery Confirmed",
-  "Invoice Paid",
+  "Payment Pending",
+  "Logistics",
+  "Shipped",
+  "Delivered",
+  "Balance Paid",
   "Complete",
 ];
 
@@ -84,11 +88,11 @@ const STAGE_ICONS = [
   "send",
   "check-circle",
   "cash",
-  "certificate",
+  "truck-fast",
   "truck",
   "truck-delivery",
   "receipt",
-  "trophy",
+  "certificate",
 ];
 
 export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
@@ -98,6 +102,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
   onPayFee,
   onPayInvoice,
   onConfirmDelivery,
+  onIssueCertificate,
+  onRefresh,
+  isRefreshing = false,
 }) => {
   const [showFullCertificate, setShowFullCertificate] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -232,22 +239,58 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         return renderPoolReviewStage();
       case 3: // Seller Review
         return renderSellerReviewStage();
-      case 4: // Approved
+      case 4: // Payment Pending (Collateral + Fee)
         return renderApprovedStage();
-      case 5: // Certificate Issued
-        return renderCertificateIssuedStage();
+      case 5: // Logistics (Waiting for Takeup)
+        return renderLogisticsStage();
       case 6: // Goods Shipped
         return renderGoodsShippedStage();
       case 7: // Delivery Confirmed
         return renderDeliveryConfirmedStage();
-      case 8: // Invoice Paid
+      case 8: // Balance Paid
         return renderInvoicePaidStage();
-      case 9: // Payment Complete
-        return renderPaymentCompleteStage();
+      case 9: // Complete (Cert Issued)
+        return renderCertificateIssuedStage();
       default:
         return renderAppliedStage();
     }
   };
+
+  const renderLogisticsStage = () => (
+    <View style={styles.stageContent}>
+      <View style={styles.statusBanner}>
+        <MaterialCommunityIcons
+          name="truck-fast"
+          size={24}
+          color={colors.primary}
+        />
+        <Text style={styles.statusBannerText}>
+          Waiting for logistics partner to take up the application
+        </Text>
+      </View>
+
+      <View style={styles.infoSection}>
+        <Text style={styles.sectionTitle}>Logistics Status</Text>
+        <Text style={styles.infoDescription}>
+          The buyer has paid the collateral and issuance fee. The application is
+          now visible to authorized logistics partners.
+        </Text>
+        <View style={styles.logisticsNotifiedCard}>
+          <MaterialCommunityIcons
+            name="bell-ring"
+            size={40}
+            color={colors.primary}
+          />
+          <Text style={styles.logisticsNotifiedText}>
+            Logistics Partners Notified
+          </Text>
+          <Text style={styles.logisticsNotifiedSubtitle}>
+            Awaiting a partner to claim this shipment
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
 
   const renderAppliedStage = () => (
     <View style={styles.stageContent}>
@@ -463,11 +506,13 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         />
         <Text style={styles.statusBannerText}>
           Seller approved! - Action required:{" "}
-          {application.issuanceFeePaid
-            ? "Awaiting certificate"
-            : application.collateralPaid
-              ? "Pay issuance fee"
-              : "Pay collateral"}
+          {application.collateralPaid && application.issuanceFeePaid
+            ? "Awaiting logistics"
+            : !application.collateralPaid && !application.issuanceFeePaid
+              ? "Pay collateral and fee"
+              : !application.collateralPaid
+                ? "Pay collateral"
+                : "Pay issuance fee"}
         </Text>
       </View>
 
@@ -818,7 +863,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           color={colors.success}
         />
         <Text style={styles.statusBannerText}>
-          Certificate issued - Seller preparing shipment
+          Transaction Complete - Certificate Available
         </Text>
       </View>
 
@@ -867,18 +912,18 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
       </View>
 
       <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Next Steps</Text>
+        <Text style={styles.sectionTitle}>Transaction Finalized</Text>
         <View style={styles.alertCard}>
           <MaterialCommunityIcons
-            name="truck-outline"
+            name="check-circle"
             size={32}
-            color={colors.primary}
+            color={colors.success}
           />
           <View style={styles.alertContent}>
-            <Text style={styles.alertTitle}>Awaiting Shipment</Text>
+            <Text style={styles.alertTitle}>All Steps Completed</Text>
             <Text style={styles.alertDescription}>
-              The seller is preparing to ship your goods. You'll receive
-              tracking information once the shipment is dispatched.
+              This trade finance transaction has been fully settled and the
+              certificate is now valid for your records.
             </Text>
           </View>
         </View>
@@ -1080,7 +1125,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           color={colors.primary}
         />
         <Text style={styles.statusBannerText}>
-          Delivery confirmed - Pay invoice to complete transaction
+          {application.status === "Invoice Settled"
+            ? "Invoice settled - Request your certificate"
+            : "Delivery confirmed - Pay invoice to complete transaction"}
         </Text>
       </View>
 
@@ -1089,10 +1136,18 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
           <MaterialCommunityIcons
             name="file-document-outline"
             size={40}
-            color={colors.primary}
+            color={
+              application.status === "Invoice Settled"
+                ? colors.success
+                : colors.primary
+            }
           />
           <View style={styles.invoiceHeaderText}>
-            <Text style={styles.invoiceTitle}>Invoice Payment Required</Text>
+            <Text style={styles.invoiceTitle}>
+              {application.status === "Invoice Settled"
+                ? "Invoice Paid"
+                : "Invoice Payment Required"}
+            </Text>
             <Text style={styles.invoiceAmount}>
               {application.invoiceAmount || application.guaranteeAmount}
             </Text>
@@ -1114,28 +1169,56 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
               {application.invoiceAmount || application.guaranteeAmount}
             </Text>
           </View>
-          <View style={styles.invoiceRow}>
-            <Text style={styles.invoiceLabel}>Payment Due:</Text>
-            <Text style={styles.invoiceValue}>
-              {application.paymentDueDate}
-            </Text>
-          </View>
+          {application.status === "Invoice Settled" && (
+            <View style={styles.invoiceRow}>
+              <Text style={styles.invoiceLabel}>Status:</Text>
+              <Text style={[styles.invoiceValue, { color: colors.success }]}>
+                Paid
+              </Text>
+            </View>
+          )}
         </View>
 
-        <TouchableOpacity
-          style={styles.payInvoiceButton}
-          onPress={handlePayInvoice}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <>
-              <MaterialCommunityIcons name="cash" size={20} color="white" />
-              <Text style={styles.payInvoiceButtonText}>Pay Invoice</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        {application.status === "Invoice Settled" ? (
+          <TouchableOpacity
+            style={[
+              styles.payInvoiceButton,
+              { backgroundColor: colors.success },
+            ]}
+            onPress={onIssueCertificate}
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name="certificate"
+                  size={20}
+                  color="white"
+                />
+                <Text style={styles.payInvoiceButtonText}>
+                  Issue Certificate
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.payInvoiceButton}
+            onPress={handlePayInvoice}
+            disabled={isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="cash" size={20} color="white" />
+                <Text style={styles.payInvoiceButtonText}>Pay Invoice</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.infoSection}>
@@ -1280,6 +1363,16 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         style={styles.content}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          ) : undefined
+        }
       >
         {renderStageContent()}
       </ScrollView>

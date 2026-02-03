@@ -343,9 +343,10 @@ class StakingService {
 
   /**
    * Get provider for current network
+   * Uses StaticJsonRpcProvider to avoid network auto-detection issues
    */
-  private getProvider(): ethers.providers.JsonRpcProvider {
-    return new ethers.providers.JsonRpcProvider(this.currentNetworkConfig.rpcUrl, {
+  private getProvider(): ethers.providers.StaticJsonRpcProvider {
+    return new ethers.providers.StaticJsonRpcProvider(this.currentNetworkConfig.rpcUrl, {
       name: this.currentNetworkConfig.name,
       chainId: this.currentNetworkConfig.chainId,
     });

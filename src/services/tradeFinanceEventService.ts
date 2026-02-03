@@ -128,13 +128,13 @@ class TradeFinanceEventService {
                 startBlock = currentBlock - maxBlockRange;
             }
 
-            // ⚡ OPTIMIZED BATCH SIZE: Modern RPC providers can handle 2000-5000 blocks per query
-            // Alchemy/Infura free tier: 2000 blocks is safe and 200x faster than 10 blocks
-            const BATCH_SIZE = 2000;
+            // ⚡ BATCH SIZE: Alchemy free tier allows max 10 blocks per eth_getLogs request
+            // Paid plans can use 2000-5000 blocks. Set to 10 for free tier compatibility.
+            const BATCH_SIZE = 10; // Free tier limit: 10 blocks per request
             const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
             
             console.log(
-                `[TradeFinanceEventService] 📊 Optimized batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
+                `[TradeFinanceEventService] 📊 Batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
             );
 
             
@@ -199,8 +199,8 @@ class TradeFinanceEventService {
                 const currentEnd = Math.min(currentStart + BATCH_SIZE - 1, currentBlock);
                 batchCount++;
                 
-                // PROGRESS REPORTING: Log every 5 batches or at completion (since batches are larger now)
-                const shouldLog = batchCount % 5 === 0 || batchCount === totalBatches;
+                // PROGRESS REPORTING: Log every 50 batches or at completion (since batches are smaller now)
+                const shouldLog = batchCount % 50 === 0 || batchCount === totalBatches;
                 if (shouldLog) {
                     const progress = Math.round((batchCount / totalBatches) * 100);
                     console.log(
@@ -209,31 +209,59 @@ class TradeFinanceEventService {
                 }
 
                 for (const eventFilter of eventFilters) {
-                    try {
-                        // Fetch all events (no user filtering at query level)
-                        const logs = await this.contract.queryFilter(
-                            eventFilter.filter,
-                            currentStart,
-                            currentEnd
-                        );
+                    let retries = 0;
+                    const MAX_RETRIES = 3;
+                    
+                    while (retries <= MAX_RETRIES) {
+                        try {
+                            // Fetch all events (no user filtering at query level)
+                            const logs = await this.contract.queryFilter(
+                                eventFilter.filter,
+                                currentStart,
+                                currentEnd
+                            );
 
-                        // Process events and filter for user
-                        for (const log of logs) {
-                            const parsedEvent = await this.parseEventLog(log, eventFilter.name);
-                            if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
-                                // Check for duplicates before adding
-                                const isDuplicate = events.some(
-                                    e => e.transactionHash === parsedEvent.transactionHash && 
-                                         e.eventType === parsedEvent.eventType
-                                );
-                                if (!isDuplicate) {
-                                    events.push(parsedEvent);
-                                    eventCount++; // Track progress
+                            // Process events and filter for user
+                            for (const log of logs) {
+                                const parsedEvent = await this.parseEventLog(log, eventFilter.name);
+                                if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
+                                    // Check for duplicates before adding
+                                    const isDuplicate = events.some(
+                                        e => e.transactionHash === parsedEvent.transactionHash && 
+                                             e.eventType === parsedEvent.eventType
+                                    );
+                                    if (!isDuplicate) {
+                                        events.push(parsedEvent);
+                                        eventCount++; // Track progress
+                                    }
                                 }
                             }
+                            
+                            break; // Success - exit retry loop
+                        } catch (error: any) {
+                            retries++;
+                            
+                            // Check if it's a block range error
+                            const isBlockRangeError = error?.body?.includes('block range') || 
+                                                     error?.message?.includes('block range');
+                            
+                            if (isBlockRangeError && retries <= MAX_RETRIES) {
+                                const delay = Math.min(1000 * Math.pow(2, retries - 1), 5000);
+                                console.warn(
+                                    `[TradeFinanceEventService] ⚠️ ${eventFilter.name} batch ${batchCount} failed (attempt ${retries}/${MAX_RETRIES}), retrying in ${delay}ms...`
+                                );
+                                await new Promise(resolve => setTimeout(resolve, delay));
+                            } else if (retries > MAX_RETRIES) {
+                                console.error(
+                                    `[TradeFinanceEventService] ❌ ${eventFilter.name} failed after ${MAX_RETRIES} retries:`,
+                                    error?.message || error
+                                );
+                                break; // Give up after max retries
+                            } else {
+                                console.error(`[TradeFinanceEventService] ⚠️ Error fetching ${eventFilter.name}:`, error);
+                                break; // Non-retryable error
+                            }
                         }
-                    } catch (error) {
-                        console.error(`[TradeFinanceEventService] ⚠️ Error fetching ${eventFilter.name}:`, error);
                     }
                 }
             }

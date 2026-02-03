@@ -6,6 +6,8 @@ import {
   useTradeFinance,
   Application,
   DraftCertificate,
+  mapPGAStatusToAppStatus,
+  mapPGAStatusToStage,
 } from "@/contexts/TradeFinanceContext";
 import {
   getAllSupportedTokens,
@@ -36,6 +38,7 @@ import {
   Platform,
   Dimensions,
   Pressable,
+  RefreshControl,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
@@ -95,6 +98,9 @@ export const TradeFinanceScreen = () => {
     updateApplicationStage,
     saveDraft,
     fetchBlockchainData,
+    refreshAll,
+    refreshPGA,
+    isRefreshing,
     createPGABlockchain,
     votePGABlockchain,
     sellerVotePGABlockchain,
@@ -106,6 +112,9 @@ export const TradeFinanceScreen = () => {
     createDeliveryAgreementBlockchain,
     buyerConsentToDeliveryBlockchain,
     releasePaymentToSellerBlockchain,
+    takeUpPGABlockchain,
+    confirmGoodsDeliveredBlockchain,
+    mapPGAInfoToApplication,
   } = useTradeFinance();
 
   const { selectedNetwork, address } = useWallet();
@@ -142,6 +151,7 @@ export const TradeFinanceScreen = () => {
     useState(false);
   const [selectedBuyerApplication, setSelectedBuyerApplication] =
     useState<any>(null);
+  const [isRefreshingApplication, setIsRefreshingApplication] = useState(false);
 
   const mapApplicationToBuyerView = (app: Application) => ({
     id: app.id,
@@ -163,6 +173,8 @@ export const TradeFinanceScreen = () => {
     collateralDescription: app.collateralDescription || "",
     guaranteeAmount: app.guaranteeAmount,
     collateralValue: app.collateralValue,
+    collateralPaid: (app as any).collateralPaid || false,
+    issuanceFeePaid: (app as any).issuanceFeePaid || false,
     financingDuration: app.financingDuration,
     contractNumber: app.contractNumber || "",
     paymentDueDate: app.paymentDueDate || "",
@@ -204,14 +216,17 @@ export const TradeFinanceScreen = () => {
       collateralDescription: fallback?.collateralDescription || "",
       guaranteeAmount: `${pga.guaranteeAmount} ${symbol}`,
       collateralValue: `${pga.collateralAmount} ${symbol}`,
+      collateralPaid: pga.collateralPaid,
+      issuanceFeePaid: pga.issuanceFeePaid,
       financingDuration: pga.duration,
       contractNumber: fallback?.contractNumber || "",
       paymentDueDate: new Date(pga.votingDeadline * 1000).toLocaleDateString(),
-      status: fallback?.status || "Draft Sent to Pool",
-      currentStage: fallback?.currentStage || 2,
-      issuanceFee:
-        fallback?.issuanceFee ||
-        `${(parseFloat(pga.guaranteeAmount) * 0.1).toFixed(2)} ${symbol}`,
+      status: mapPGAStatusToAppStatus(pga.status, pga.issuanceFeePaid),
+      currentStage: mapPGAStatusToStage(pga.status, pga.issuanceFeePaid),
+      issuanceFee: pga.issuanceFee
+        ? `${pga.issuanceFee} ${symbol}`
+        : fallback?.issuanceFee ||
+          `${(parseFloat(pga.guaranteeAmount) * 0.01).toFixed(2)} ${symbol}`,
       content: "",
       submittedDate: new Date(pga.createdAt * 1000).toLocaleDateString(),
       companyName: pga.companyName,
@@ -367,10 +382,15 @@ export const TradeFinanceScreen = () => {
 
           case "invoice":
           case "settlement":
-            payBalancePaymentBlockchain(applicationId, amount).catch(
-              console.error,
-            );
-            showToast("Processing balance payment on-chain...");
+            const tokenAddress = selectedNetwork?.stablecoins?.[0]?.address;
+            if (tokenAddress) {
+              payBalancePaymentBlockchain(applicationId, tokenAddress).catch(
+                console.error,
+              );
+              showToast("Processing balance payment on-chain...");
+            } else {
+              console.error("Payment token not available");
+            }
             break;
         }
       }
@@ -640,6 +660,9 @@ export const TradeFinanceScreen = () => {
 
       const pgaId = `PG-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
 
+      // Calculate issuance fee (e.g. 0.5% of guarantee)
+      const issuanceFee = (guaranteeAmount * 0.005).toString();
+
       await createPGABlockchain({
         pgaId,
         seller: data.sellerWalletAddress,
@@ -649,6 +672,7 @@ export const TradeFinanceScreen = () => {
         tradeValue: tradeValue.toString(),
         guaranteeAmount: guaranteeAmount.toString(),
         collateralAmount: collateralAmount.toString(),
+        issuanceFee,
         duration: parseInt(data.financingDuration) || 90,
         beneficiaryName: data.contactPerson, // Using contact person as name for now
         beneficiaryWallet: data.sellerWalletAddress,
@@ -705,22 +729,25 @@ export const TradeFinanceScreen = () => {
 
   const handlePayCollateral = async (application: Application) => {
     try {
-      const collateralAmount = parseFloat(
-        application.collateralValue.split(" ")[0],
-      );
+      // Get default token address from selected network
+      const tokenAddress = selectedNetwork?.stablecoins?.[0]?.address;
 
-      await payCollateralBlockchain(
-        application.id,
-        collateralAmount.toString(),
-      );
+      if (!tokenAddress) {
+        throw new Error("Payment token not available for current network");
+      }
+
+      await payCollateralBlockchain(application.id, tokenAddress);
+
+      // Immediately fetch fresh PGA data and update the view
+      const pgaInfo = await tradeFinanceService.getPGA(application.id, true);
+      const app = applications.find((a) => a.id === application.id);
+      const updated = mapPgaToBuyerView(pgaInfo, app);
+      setSelectedBuyerApplication(updated);
 
       Alert.alert(
         "Success",
         "Collateral paid successfully! You can now pay the issuance fee.",
       );
-
-      // Refresh applications to update collateralPaid status
-      await fetchBlockchainData();
     } catch (error: any) {
       console.error("Collateral payment error:", error);
       Alert.alert("Error", error.message || "Failed to pay collateral");
@@ -729,20 +756,65 @@ export const TradeFinanceScreen = () => {
 
   const handlePayFee = async (application: Application) => {
     try {
-      const feeAmount = parseFloat(application.issuanceFee.split(" ")[0]);
+      // Get default token address from selected network
+      const tokenAddress = selectedNetwork?.stablecoins?.[0]?.address;
 
-      await payIssuanceFeeBlockchain(application.id, feeAmount.toString());
+      if (!tokenAddress) {
+        throw new Error("Payment token not available for current network");
+      }
+
+      await payIssuanceFeeBlockchain(application.id, tokenAddress);
+
+      // Immediately fetch fresh PGA data and update the view
+      const pgaInfo = await tradeFinanceService.getPGA(application.id, true);
+      const app = applications.find((a) => a.id === application.id);
+      const updated = mapPgaToBuyerView(pgaInfo, app);
+      setSelectedBuyerApplication(updated);
 
       Alert.alert(
         "Success",
         "Issuance fee paid successfully! Your certificate will now be generated.",
       );
-
-      // Refresh data
-      await fetchBlockchainData();
     } catch (error: any) {
       console.error("Issuance fee payment error:", error);
       Alert.alert("Error", error.message || "Failed to pay issuance fee");
+    }
+  };
+
+  const handleRefreshApplication = async () => {
+    if (!selectedBuyerApplication?.id) return;
+
+    setIsRefreshingApplication(true);
+    try {
+      // Refresh PGA in context (updates the applications array)
+      await refreshPGA(selectedBuyerApplication.id);
+
+      // Fetch fresh PGA data directly from blockchain with cache bypass
+      const pgaInfo = await tradeFinanceService.getPGA(
+        selectedBuyerApplication.id,
+        true,
+      );
+
+      // Find the updated app from context (after refreshPGA updated it)
+      const app = applications.find(
+        (a) => a.id === selectedBuyerApplication.id,
+      );
+
+      // Map the fresh PGA data to buyer view format
+      const updated = mapPgaToBuyerView(pgaInfo, app);
+
+      console.log("[TradeFinanceScreen] Refreshed PGA:", {
+        id: pgaInfo.pgaId,
+        collateralPaid: pgaInfo.collateralPaid,
+        issuanceFeePaid: pgaInfo.issuanceFeePaid,
+        status: pgaInfo.status,
+      });
+
+      setSelectedBuyerApplication(updated);
+    } catch (error) {
+      console.error("Error refreshing application:", error);
+    } finally {
+      setIsRefreshingApplication(false);
     }
   };
 
@@ -823,14 +895,7 @@ export const TradeFinanceScreen = () => {
     if (!selectedApplication) return;
 
     try {
-      // First logistics partner to sign gets assigned
-      const logisticsName =
-        shippingForm.logisticsPartnerName || "Logistics Partner";
-
-      await confirmGoodsShippedBlockchain(
-        selectedApplication.id,
-        logisticsName,
-      );
+      await confirmGoodsShippedBlockchain(selectedApplication.id);
 
       const shippingDetails = {
         trackingNumber: shippingForm.trackingNumber,
@@ -1299,9 +1364,9 @@ export const TradeFinanceScreen = () => {
 
           {applications.filter(
             (app) =>
-              (app.status === "Certificate Issued" ||
-                app.status === "Fee Paid") &&
-              app.currentStage >= 5,
+              app.status === "Logistics Notified" ||
+              app.status === "Logistics Claimed" ||
+              app.status === "Goods Shipped",
           ).length === 0 ? (
             <View style={styles.emptyApplicationsState}>
               <MaterialCommunityIcons
@@ -1318,9 +1383,9 @@ export const TradeFinanceScreen = () => {
               {applications
                 .filter(
                   (app) =>
-                    (app.status === "Certificate Issued" ||
-                      app.status === "Fee Paid") &&
-                    app.currentStage >= 5,
+                    app.status === "Logistics Notified" ||
+                    app.status === "Logistics Claimed" ||
+                    app.status === "Goods Shipped",
                 )
                 .map((app) => (
                   <View key={app.id} style={styles.applicationListCard}>
@@ -1361,21 +1426,84 @@ export const TradeFinanceScreen = () => {
                       <Text style={styles.applicationListLabel}>
                         Seller:{" "}
                         <Text style={styles.applicationListValue}>
-                          {app.seller.walletAddress.substring(0, 8)}...
+                          {app.seller?.walletAddress?.substring(0, 8)}...
                         </Text>
                       </Text>
                     </View>
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => handleShippingConfirmation(app)}
-                    >
-                      <MaterialCommunityIcons
-                        name="signature-freehand"
-                        size={18}
-                        color="white"
-                      />
-                      <Text style={styles.actionButtonText}>Sign Shipment</Text>
-                    </TouchableOpacity>
+
+                    {app.status === "Certificate Issued" ||
+                    app.status === "Logistics Notified" ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.actionButton,
+                          { backgroundColor: colors.primary },
+                        ]}
+                        onPress={async () => {
+                          try {
+                            await takeUpPGABlockchain(app.id);
+                            showToast("Logistics assignment successful!");
+                          } catch (e: any) {
+                            Alert.alert(
+                              "Error",
+                              e.message || "Failed to take up application",
+                            );
+                          }
+                        }}
+                      >
+                        <MaterialCommunityIcons
+                          name="hand-back-right"
+                          size={18}
+                          color="white"
+                        />
+                        <Text style={styles.actionButtonText}>
+                          Claim Shipment
+                        </Text>
+                      </TouchableOpacity>
+                    ) : app.status === "Logistics Claimed" ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.actionButton,
+                          { backgroundColor: "#FF9800" },
+                        ]}
+                        onPress={() => handleShippingConfirmation(app)}
+                      >
+                        <MaterialCommunityIcons
+                          name="truck-fast"
+                          size={18}
+                          color="white"
+                        />
+                        <Text style={styles.actionButtonText}>
+                          Confirm Shipped
+                        </Text>
+                      </TouchableOpacity>
+                    ) : app.status === "Goods Shipped" ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.actionButton,
+                          { backgroundColor: "#4CAF50" },
+                        ]}
+                        onPress={async () => {
+                          try {
+                            await confirmGoodsDeliveredBlockchain(app.id);
+                            showToast("Delivery confirmed successfully!");
+                          } catch (e: any) {
+                            Alert.alert(
+                              "Error",
+                              e.message || "Failed to confirm delivery",
+                            );
+                          }
+                        }}
+                      >
+                        <MaterialCommunityIcons
+                          name="check-circle"
+                          size={18}
+                          color="white"
+                        />
+                        <Text style={styles.actionButtonText}>
+                          Confirm Delivered
+                        </Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 ))}
             </View>
@@ -1393,14 +1521,18 @@ export const TradeFinanceScreen = () => {
       case "Invoice Settled":
       case "Delivery Confirmed":
       case "Transaction Complete":
+      case "Logistics Claimed":
+      case "Goods Shipped":
         return "#4CAF50";
       case "Awaiting Fee Payment":
       case "Awaiting Certificate":
       case "Draft Sent":
       case "Seller Approved":
+      case "Collateral Paid":
+      case "Logistics Notified":
         return "#2196F3";
       case "Pending Draft":
-      case "Goods Shipped":
+      case "Processing":
         return "#FF9800";
       default:
         return "#f44336";
@@ -1423,10 +1555,54 @@ export const TradeFinanceScreen = () => {
     </View>
   );
 
+  const handleIssueCertificate = async (application: any) => {
+    if (!application?.id) return;
+
+    try {
+      Alert.alert(
+        "Issue Certificate",
+        "This will generate the final Pool Guarantee Certificate on-chain. Do you want to proceed?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Issue",
+            onPress: async () => {
+              try {
+                await issueCertificateBlockchain(application.id);
+                // After successful issuance, we refresh the PGA to update local state
+                await refreshPGA(application.id);
+                showToast("Certificate issued successfully!");
+              } catch (err: any) {
+                console.error("Certificate issuance error:", err);
+                Alert.alert(
+                  "Error",
+                  err.message || "Failed to issue certificate",
+                );
+              }
+            },
+          },
+        ],
+      );
+    } catch (error: any) {
+      console.error("Certificate preparation error:", error);
+    }
+  };
+
   return (
     <Screen>
       <StatusBar style="dark" />
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={refreshAll}
+            colors={[palette.primaryBlue]}
+            tintColor={palette.primaryBlue}
+          />
+        }
+      >
         {/* <View style={styles.header}>
           <Text style={styles.title}>Trade Finance Portal</Text>
           <Text style={styles.subtitle}>
@@ -2240,6 +2416,11 @@ export const TradeFinanceScreen = () => {
             onConfirmDelivery={() =>
               handleDeliveryConfirmation(selectedBuyerApplication)
             }
+            onIssueCertificate={() =>
+              handleIssueCertificate(selectedBuyerApplication)
+            }
+            onRefresh={handleRefreshApplication}
+            isRefreshing={isRefreshingApplication}
             onClose={() => {
               setShowBuyerApplicationView(false);
               setSelectedBuyerApplication(null);
