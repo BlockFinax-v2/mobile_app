@@ -117,8 +117,8 @@ class TradeFinanceEventService {
                 startBlock = currentBlock - maxBlockRange;
             }
 
-            // High performance batching: Alchemy free tier allows 10-100 blocks
-            const BATCH_SIZE = 100;
+            // High performance batching: Alchemy free tier allows 10 block range
+            const BATCH_SIZE = 10;
             const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
 
             // Generate topic list for all tracked events
