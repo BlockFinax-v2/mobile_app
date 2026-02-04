@@ -15,7 +15,7 @@ import {
   stakingService,
   Proposal as StakingProposal,
 } from "@/services/stakingService";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import { backgroundDataLoader } from "@/services/backgroundDataLoader";
 
 interface StakingData {
@@ -103,26 +103,14 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
   const persistData = useCallback(() => {
     if (!address || !chainId) return;
 
-    // Fire-and-forget - don't await, instant return
-    Promise.all([
-      AsyncStorage.setItem(STAKING_STORAGE_KEY, JSON.stringify(stakingData)),
-      AsyncStorage.setItem(
-        FINANCIER_STORAGE_KEY,
-        JSON.stringify(financierStatus),
-      ),
-      AsyncStorage.setItem(PROPOSALS_STORAGE_KEY, JSON.stringify(proposals)),
-      AsyncStorage.setItem(
-        EVENTS_STORAGE_KEY,
-        JSON.stringify(recentEvents.slice(0, 50)),
-      ),
-      AsyncStorage.setItem(SYNC_TIME_KEY, Date.now().toString()),
-    ])
-      .then(() => {
-        // Silent success - no logging to avoid console spam
-      })
-      .catch((error) => {
-        console.error("[TreasuryContext] ⚠️ Persist failed:", error);
-      });
+    // Synchronous writes are nearly instant with MMKV
+    Storage.setJSON(STAKING_STORAGE_KEY, stakingData);
+    Storage.setJSON(FINANCIER_STORAGE_KEY, financierStatus);
+    Storage.setJSON(PROPOSALS_STORAGE_KEY, proposals);
+    Storage.setJSON(EVENTS_STORAGE_KEY, recentEvents.slice(0, 50));
+    Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
+
+    console.log("[TreasuryContext] ⚡ Data persisted to MMKV");
   }, [
     address,
     chainId,
@@ -148,46 +136,21 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoadingFromCache(true);
 
     try {
-      // Parallel fetch - single async operation
-      const [
-        cachedStaking,
-        cachedFinancier,
-        cachedProposals,
-        cachedEvents,
-        lastSync,
-      ] = await Promise.all([
-        AsyncStorage.getItem(STAKING_STORAGE_KEY),
-        AsyncStorage.getItem(FINANCIER_STORAGE_KEY),
-        AsyncStorage.getItem(PROPOSALS_STORAGE_KEY),
-        AsyncStorage.getItem(EVENTS_STORAGE_KEY),
-        AsyncStorage.getItem(SYNC_TIME_KEY),
-      ]);
+      // Synchronous reads with MMKV
+      const staking = Storage.getJSON<StakingData>(STAKING_STORAGE_KEY);
+      const financier = Storage.getJSON<FinancierStatus>(FINANCIER_STORAGE_KEY);
+      const props = Storage.getJSON<Proposal[]>(PROPOSALS_STORAGE_KEY);
+      const events = Storage.getJSON<TreasuryEvent[]>(EVENTS_STORAGE_KEY);
+      const lastSync = Storage.getItem(SYNC_TIME_KEY);
 
-      // Parallel parsing - batch state updates
-      const updates: any = {};
-
-      if (cachedStaking) {
-        updates.staking = JSON.parse(cachedStaking);
-      }
-      if (cachedFinancier) {
-        updates.financier = JSON.parse(cachedFinancier);
-      }
-      if (cachedProposals) {
-        updates.proposals = JSON.parse(cachedProposals);
-      }
-      if (cachedEvents) {
-        updates.events = JSON.parse(cachedEvents);
-      }
-
-      // Single batch state update for maximum performance
-      if (updates.staking) setStakingData(updates.staking);
-      if (updates.financier) setFinancierStatus(updates.financier);
-      if (updates.proposals) setProposals(updates.proposals);
-      if (updates.events) setRecentEvents(updates.events);
+      if (staking) setStakingData(staking);
+      if (financier) setFinancierStatus(financier);
+      if (props) setProposals(props);
+      if (events) setRecentEvents(events);
 
       const loadTime = performance.now() - startTime;
       console.log(
-        `[TreasuryContext] ⚡ Cache loaded in ${loadTime.toFixed(2)}ms`,
+        `[TreasuryContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`,
       );
 
       if (lastSync) {
@@ -357,9 +320,9 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
       setEventSyncStatus("syncing");
       const startTime = performance.now();
 
-      // Get last synced block from AsyncStorage
+      // Get last synced block from Storage
       const storageKey = `treasury_last_block_${chainId}_${address}`;
-      const lastBlockStr = await AsyncStorage.getItem(storageKey);
+      const lastBlockStr = Storage.getItem(storageKey);
       const fromBlock = lastBlockStr ? parseInt(lastBlockStr, 10) + 1 : 0;
 
       // Get current block
@@ -387,7 +350,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
         await refreshProposals();
 
         if (currentBlock) {
-          await AsyncStorage.setItem(storageKey, currentBlock.toString());
+          Storage.setItem(storageKey, currentBlock.toString());
         }
 
         persistData();
@@ -456,7 +419,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Save last processed block
         const lastBlock = Math.max(...events.map((e) => e.blockNumber));
-        await AsyncStorage.setItem(storageKey, lastBlock.toString());
+        Storage.setItem(storageKey, lastBlock.toString());
       }
 
       // PERSIST TO STORAGE: Save all data for offline access and fast next load
@@ -531,10 +494,10 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
       // Execute updates in parallel
       await Promise.all(updatePromises);
 
-      // Save last processed block (fire-and-forget)
+      // Save last processed block (instant)
       if (address && chainId) {
         const storageKey = `treasury_last_block_${chainId}_${address}`;
-        AsyncStorage.setItem(storageKey, event.blockNumber.toString());
+        Storage.setItem(storageKey, event.blockNumber.toString());
       }
 
       // Clear pending update

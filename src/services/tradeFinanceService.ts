@@ -709,8 +709,13 @@ class TradeFinanceService {
      * @returns Array of logistics partner addresses
      */
     public async getAllLogisticsPartners(): Promise<string[]> {
-        const contract = await this.getContract();
-        return await contract.getAllLogisticsPartners();
+        try {
+            const contract = await this.getContract();
+            return await contract.getAllLogisticsPartners();
+        } catch (error) {
+            console.warn("[TradeFinanceService] getAllLogisticsPartners failed (potentially missing facet):", error);
+            return [];
+        }
     }
 
     /**
@@ -737,8 +742,13 @@ class TradeFinanceService {
      * @returns Array of delivery person addresses
      */
     public async getAllDeliveryPersons(): Promise<string[]> {
-        const contract = await this.getContract();
-        return await contract.getAllDeliveryPersons();
+        try {
+            const contract = await this.getContract();
+            return await contract.getAllDeliveryPersons();
+        } catch (error) {
+            console.warn("[TradeFinanceService] getAllDeliveryPersons failed (potentially missing facet):", error);
+            return [];
+        }
     }
 
     /**

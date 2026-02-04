@@ -5,7 +5,7 @@
  * Daily limit: 0.5 USDC equivalent
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Storage } from "@/utils/storage";
 
 const STORAGE_KEY = 'blockfinax.gaslessUsage';
 const DAILY_LIMIT_USD = 0.5; // $0.50 per day
@@ -43,16 +43,14 @@ class GaslessLimitService {
    */
   private async getDailyUsage(): Promise<DailyUsage> {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (!stored) {
+      const usage = Storage.getJSON<DailyUsage>(STORAGE_KEY);
+      if (!usage) {
         return {
           date: this.getTodayDate(),
           totalUSD: 0,
           transactions: [],
         };
       }
-
-      const usage: DailyUsage = JSON.parse(stored);
 
       // Reset if it's a new day
       if (usage.date !== this.getTodayDate()) {
@@ -79,7 +77,7 @@ class GaslessLimitService {
    */
   private async saveDailyUsage(usage: DailyUsage): Promise<void> {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(usage));
+      Storage.setJSON(STORAGE_KEY, usage);
     } catch (error) {
       console.error('Error saving daily usage:', error);
     }
@@ -152,7 +150,7 @@ class GaslessLimitService {
    * Reset usage (for testing or manual reset)
    */
   public async resetUsage(): Promise<void> {
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    Storage.removeItem(STORAGE_KEY);
   }
 }
 

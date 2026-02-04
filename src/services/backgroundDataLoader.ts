@@ -13,7 +13,7 @@
  * 5. Zero loading states visible to user
  */
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Storage } from "@/utils/storage";
 import { tradeFinanceService, PGAInfo } from './tradeFinanceService';
 import { tradeFinanceEventService } from './tradeFinanceEventService';
 
@@ -24,17 +24,17 @@ const STORAGE_KEYS = {
   TRADE_LAST_SYNC: 'bg_trade_last_sync',
   TRADE_LOGISTICS_PARTNERS: 'bg_trade_logistics_partners',
   TRADE_DELIVERY_PERSONS: 'bg_trade_delivery_persons',
-  
+
   // Treasury
   TREASURY_POOLS: 'bg_treasury_pools',
   TREASURY_POSITIONS: 'bg_treasury_positions',
   TREASURY_TRANSACTIONS: 'bg_treasury_transactions',
   TREASURY_LAST_SYNC: 'bg_treasury_last_sync',
-  
+
   // Wallet
   WALLET_BALANCES: 'bg_wallet_balances',
   WALLET_TRANSACTIONS: 'bg_wallet_transactions',
-  
+
   // Metadata
   PRELOAD_STATUS: 'bg_preload_status',
   PRELOAD_TIMESTAMP: 'bg_preload_timestamp',
@@ -79,16 +79,15 @@ class BackgroundDataLoaderService {
   /**
    * Get current preload status
    */
-  public async getPreloadStatus(): Promise<PreloadStatus> {
+  public getPreloadStatus(): PreloadStatus {
     try {
-      const statusStr = await AsyncStorage.getItem(STORAGE_KEYS.PRELOAD_STATUS);
-      const timestampStr = await AsyncStorage.getItem(STORAGE_KEYS.PRELOAD_TIMESTAMP);
-      
-      if (statusStr && timestampStr) {
-        const status = JSON.parse(statusStr);
+      const status = Storage.getJSON<any>(STORAGE_KEYS.PRELOAD_STATUS);
+      const timestampStr = Storage.getItem(STORAGE_KEYS.PRELOAD_TIMESTAMP);
+
+      if (status && timestampStr) {
         const timestamp = parseInt(timestampStr, 10);
         const cacheAge = Date.now() - timestamp;
-        
+
         return {
           ...status,
           lastPreloadTime: timestamp,
@@ -112,13 +111,13 @@ class BackgroundDataLoaderService {
   /**
    * Update preload status
    */
-  private async updatePreloadStatus(updates: Partial<PreloadStatus>): Promise<void> {
-    const current = await this.getPreloadStatus();
+  private updatePreloadStatus(updates: Partial<PreloadStatus>): void {
+    const current = this.getPreloadStatus();
     const newStatus: PreloadStatus = { ...current, ...updates };
-    
-    await AsyncStorage.setItem(STORAGE_KEYS.PRELOAD_STATUS, JSON.stringify(newStatus));
-    await AsyncStorage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now().toString());
-    
+
+    Storage.setJSON(STORAGE_KEYS.PRELOAD_STATUS, newStatus);
+    Storage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now().toString());
+
     this.notifyListeners(newStatus);
   }
 
@@ -135,11 +134,11 @@ class BackgroundDataLoaderService {
 
     this.isPreloading = true;
     const startTime = performance.now();
-    
+
     console.log('[BackgroundLoader] 🚀 Starting background preload...');
     console.log(`[BackgroundLoader] User: ${userAddress}, Chain: ${chainId}`);
 
-    await this.updatePreloadStatus({ isPreloading: true });
+    this.updatePreloadStatus({ isPreloading: true });
 
     try {
       // Run all preloads in parallel for maximum speed
@@ -151,8 +150,8 @@ class BackgroundDataLoaderService {
 
       const totalTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ Preload complete in ${totalTime.toFixed(0)}ms`);
-      
-      await this.updatePreloadStatus({
+
+      this.updatePreloadStatus({
         isPreloading: false,
         tradeFinanceReady: true,
         treasuryReady: true,
@@ -160,7 +159,7 @@ class BackgroundDataLoaderService {
       });
     } catch (error) {
       console.error('[BackgroundLoader] ⚠️ Preload error:', error);
-      await this.updatePreloadStatus({ isPreloading: false });
+      this.updatePreloadStatus({ isPreloading: false });
     } finally {
       this.isPreloading = false;
     }
@@ -182,7 +181,7 @@ class BackgroundDataLoaderService {
 
     try {
       // 1. Load last sync block
-      const lastSyncStr = await AsyncStorage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
+      const lastSyncStr = Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
       const lastSyncBlock = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
 
       // 2. Fetch historical events (incremental since last sync)
@@ -212,10 +211,7 @@ class BackgroundDataLoaderService {
         applications = [...buyerPGAs, ...sellerPGAs];
       } else {
         // No new events - load from cache
-        const cachedStr = await AsyncStorage.getItem(STORAGE_KEYS.TRADE_APPLICATIONS);
-        if (cachedStr) {
-          applications = JSON.parse(cachedStr);
-        }
+        applications = Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS) || [];
       }
 
       // 5. Fetch logistics providers
@@ -224,13 +220,11 @@ class BackgroundDataLoaderService {
         tradeFinanceService.getAllDeliveryPersons(),
       ]);
 
-      // 6. Save to persistent cache
-      await Promise.all([
-        AsyncStorage.setItem(STORAGE_KEYS.TRADE_APPLICATIONS, JSON.stringify(applications)),
-        AsyncStorage.setItem(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS, JSON.stringify(logisticsPartners)),
-        AsyncStorage.setItem(STORAGE_KEYS.TRADE_DELIVERY_PERSONS, JSON.stringify(deliveryPersons)),
-        AsyncStorage.setItem(STORAGE_KEYS.TRADE_LAST_SYNC, tradeFinanceEventService.getLastProcessedBlock().toString()),
-      ]);
+      // 6. Save to persistent cache (synchronous)
+      Storage.setJSON(STORAGE_KEYS.TRADE_APPLICATIONS, applications);
+      Storage.setJSON(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS, logisticsPartners);
+      Storage.setJSON(STORAGE_KEYS.TRADE_DELIVERY_PERSONS, deliveryPersons);
+      Storage.setItem(STORAGE_KEYS.TRADE_LAST_SYNC, tradeFinanceEventService.getLastProcessedBlock().toString());
 
       const loadTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ TradeFinance preloaded in ${loadTime.toFixed(0)}ms (${applications.length} PGAs)`);
@@ -257,7 +251,7 @@ class BackgroundDataLoaderService {
 
     try {
       // Mark treasury as ready - TreasuryContext handles its own persistent storage
-      await AsyncStorage.setItem(STORAGE_KEYS.TREASURY_LAST_SYNC, Date.now().toString());
+      Storage.setItem(STORAGE_KEYS.TREASURY_LAST_SYNC, Date.now().toString());
 
       const loadTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ Treasury marked ready in ${loadTime.toFixed(0)}ms`);
@@ -268,26 +262,24 @@ class BackgroundDataLoaderService {
   }
 
   /**
-   * Get cached TradeFinance data (instant)
+   * Get cached TradeFinance data (instant synchronous)
    */
-  public async getCachedTradeFinanceData(): Promise<{
+  public getCachedTradeFinanceData(): {
     applications: PGAInfo[];
     logisticsPartners: string[];
     deliveryPersons: string[];
     lastSyncBlock: number;
-  }> {
+  } {
     try {
-      const [appsStr, partnersStr, personsStr, syncStr] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.TRADE_APPLICATIONS),
-        AsyncStorage.getItem(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS),
-        AsyncStorage.getItem(STORAGE_KEYS.TRADE_DELIVERY_PERSONS),
-        AsyncStorage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC),
-      ]);
+      const apps = Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS);
+      const partners = Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS);
+      const persons = Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_DELIVERY_PERSONS);
+      const syncStr = Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
 
       return {
-        applications: appsStr ? JSON.parse(appsStr) : [],
-        logisticsPartners: partnersStr ? JSON.parse(partnersStr) : [],
-        deliveryPersons: personsStr ? JSON.parse(personsStr) : [],
+        applications: apps || [],
+        logisticsPartners: partners || [],
+        deliveryPersons: persons || [],
         lastSyncBlock: syncStr ? parseInt(syncStr, 10) : 0,
       };
     } catch (error) {
@@ -302,22 +294,20 @@ class BackgroundDataLoaderService {
   }
 
   /**
-   * Get cached Treasury data (instant)
+   * Get cached Treasury data (instant synchronous)
    * Note: Returns data managed by TreasuryContext's own caching system
    */
-  public async getCachedTreasuryData(): Promise<{
+  public getCachedTreasuryData(): {
     pools: any[];
     position: any | null;
-  }> {
+  } {
     try {
-      const [poolsStr, positionStr] = await Promise.all([
-        AsyncStorage.getItem(STORAGE_KEYS.TREASURY_POOLS),
-        AsyncStorage.getItem(STORAGE_KEYS.TREASURY_POSITIONS),
-      ]);
+      const pools = Storage.getJSON<any[]>(STORAGE_KEYS.TREASURY_POOLS);
+      const position = Storage.getJSON<any>(STORAGE_KEYS.TREASURY_POSITIONS);
 
       return {
-        pools: poolsStr ? JSON.parse(poolsStr) : [],
-        position: positionStr ? JSON.parse(positionStr) : null,
+        pools: pools || [],
+        position: position || null,
       };
     } catch (error) {
       console.error('[BackgroundLoader] Failed to get cached Treasury data:', error);
@@ -333,11 +323,10 @@ class BackgroundDataLoaderService {
    */
   public async clearCache(): Promise<void> {
     console.log('[BackgroundLoader] 🗑️ Clearing all cached data');
-    
-    const keys = Object.values(STORAGE_KEYS);
-    await Promise.all(keys.map(key => AsyncStorage.removeItem(key)));
-    
-    await this.updatePreloadStatus({
+
+    Storage.clearAll(); // Clears all MMKV storage
+
+    this.updatePreloadStatus({
       tradeFinanceReady: false,
       treasuryReady: false,
       walletReady: false,

@@ -21,7 +21,7 @@ import {
   RefreshControl,
   Modal,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { StackNavigationProp } from "@react-navigation/stack";
 import { WalletStackParamList } from "@/navigation/types";
@@ -273,69 +273,37 @@ export function TreasuryPortalScreenRedesigned() {
         return true;
       }
 
-      const summaryKeys = [
-        "userTotalStakedUSD",
-        "userVotingPowerPercentage",
-        "globalPoolTotalUSD",
-        "currentAPR",
-        "isFinancier",
-        "availableBalances",
-      ];
+      // Synchronous reads with MMKV
+      const userTotalStakedUSDVal = Storage.getItem(getCacheKey("userTotalStakedUSD"));
+      const userVotingPowerPercentageVal = Storage.getItem(getCacheKey("userVotingPowerPercentage"));
+      const globalPoolTotalUSDVal = Storage.getItem(getCacheKey("globalPoolTotalUSD"));
+      const currentAPRVal = Storage.getItem(getCacheKey("currentAPR"));
+      const isFinancierVal = Storage.getItem(getCacheKey("isFinancier"));
+      const availableBalancesVal = Storage.getJSON<Record<string, number>>(getCacheKey("availableBalances"));
 
-      const summaryResults = await Promise.all(
-        summaryKeys.map((key) => AsyncStorage.getItem(getCacheKey(key))),
-      );
-
-      const hasCache = summaryResults.some((value) => value !== null);
-
-      if (summaryResults[0])
-        setUserTotalStakedUSD(parseFloat(summaryResults[0]));
-      if (summaryResults[1])
-        setUserVotingPowerPercentage(parseFloat(summaryResults[1]));
-      if (summaryResults[2])
-        setGlobalPoolTotalUSD(parseFloat(summaryResults[2]));
-      if (summaryResults[3]) setCurrentAPR(parseFloat(summaryResults[3]));
-      if (summaryResults[4]) setIsFinancier(summaryResults[4] === "true");
-      if (summaryResults[5]) {
-        const cachedAvailable = safeParse<Record<string, number>>(
-          summaryResults[5],
-          {},
-        );
-        if (Object.keys(cachedAvailable).length > 0) {
-          setAvailableBalances(cachedAvailable);
-        }
+      if (userTotalStakedUSDVal) setUserTotalStakedUSD(parseFloat(userTotalStakedUSDVal));
+      if (userVotingPowerPercentageVal) setUserVotingPowerPercentage(parseFloat(userVotingPowerPercentageVal));
+      if (globalPoolTotalUSDVal) setGlobalPoolTotalUSD(parseFloat(globalPoolTotalUSDVal));
+      if (currentAPRVal) setCurrentAPR(parseFloat(currentAPRVal));
+      if (isFinancierVal) setIsFinancier(isFinancierVal === "true");
+      if (availableBalancesVal && Object.keys(availableBalancesVal).length > 0) {
+        setAvailableBalances(availableBalancesVal);
       }
 
+      const hasCache = !!userTotalStakedUSDVal;
       hasLoadedCache.current = hasCache;
+      
+      // Load heavy data synchronously since it's MMKV
+      setAllStakesInfo(Storage.getJSON(getCacheKey("allStakesInfo")));
+      setStakingConfig(Storage.getJSON(getCacheKey("stakingConfig")));
+      setProposals(Storage.getJSON(getCacheKey("proposals")) || []);
+      setDAOStats(Storage.getJSON(getCacheKey("daoStats")));
+      setDAOConfig(Storage.getJSON(getCacheKey("daoConfig")));
+
       const loadTime = performance.now() - startTime;
       console.log(
-        `[TreasuryPortal] ⚡ Summary cache loaded in ${loadTime.toFixed(2)}ms`,
+        `[TreasuryPortal] ⚡ Cache loaded in ${loadTime.toFixed(2)}ms`,
       );
-
-      // Load heavy data in background
-      setTimeout(async () => {
-        try {
-          const heavyKeys = [
-            "allStakesInfo",
-            "stakingConfig",
-            "proposals",
-            "daoStats",
-            "daoConfig",
-          ];
-
-          const heavyResults = await Promise.all(
-            heavyKeys.map((key) => AsyncStorage.getItem(getCacheKey(key))),
-          );
-
-          setAllStakesInfo(safeParse(heavyResults[0], null));
-          setStakingConfig(safeParse(heavyResults[1], null));
-          setProposals(safeParse(heavyResults[2], []));
-          setDAOStats(safeParse(heavyResults[3], null));
-          setDAOConfig(safeParse(heavyResults[4], null));
-        } catch (error) {
-          console.error("[TreasuryPortal] Heavy cache load error:", error);
-        }
-      }, 0);
 
       return hasCache;
     } catch (error) {
@@ -379,13 +347,9 @@ export function TreasuryPortalScreenRedesigned() {
     };
 
     // Fire-and-forget - don't await
-    Promise.all(
-      Object.entries(cacheData).map(([key, value]) =>
-        AsyncStorage.setItem(getCacheKey(key), value),
-      ),
-    ).catch((err) =>
-      console.error("[TreasuryPortal] Cache persist error:", err),
-    );
+    Object.entries(cacheData).forEach(([key, value]) => {
+      Storage.setItem(getCacheKey(key), value);
+    });
   }, [
     address,
     selectedNetwork.chainId,

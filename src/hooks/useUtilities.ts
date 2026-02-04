@@ -17,10 +17,10 @@ export function useToast() {
   const [toast, setToast] = useState<ToastConfig | null>(null);
 
   const showToast = useCallback((config: ToastConfig | string) => {
-    const toastConfig = typeof config === 'string' 
+    const toastConfig = typeof config === 'string'
       ? { message: config, type: 'info' as const, duration: 3000 }
       : { duration: 3000, type: 'info' as const, ...config };
-    
+
     setToast(toastConfig);
   }, []);
 
@@ -50,7 +50,7 @@ export function useToast() {
       const timer = setTimeout(() => {
         hideToast();
       }, toast.duration);
-      
+
       return () => clearTimeout(timer);
     }
   }, [toast, hideToast]);
@@ -96,37 +96,39 @@ export function useToggle(initialValue = false) {
 /**
  * Local storage hook (AsyncStorage for React Native)
  */
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Storage } from "@/utils/storage";
 
-export function useAsyncStorage<T>(key: string, initialValue?: T) {
-  const [value, setValue] = useState<T | undefined>(initialValue);
-  const [isLoading, setIsLoading] = useState(true);
+export function useStorage<T>(key: string, initialValue?: T) {
+  const [value, setValue] = useState<T | undefined>(() => {
+    try {
+      const stored = Storage.getJSON<T>(key);
+      return stored !== null ? stored : initialValue;
+    } catch (err) {
+      return initialValue;
+    }
+  });
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load value on mount
+  // Sync value if key changes
   useEffect(() => {
-    const loadValue = async () => {
-      try {
-        setIsLoading(true);
-        const stored = await AsyncStorage.getItem(key);
-        if (stored !== null) {
-          setValue(JSON.parse(stored));
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-      } finally {
-        setIsLoading(false);
+    try {
+      const stored = Storage.getJSON<T>(key);
+      if (stored !== null) {
+        setValue(stored);
+      } else {
+        setValue(initialValue);
       }
-    };
-
-    loadValue();
-  }, [key]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+    }
+  }, [key, initialValue]);
 
   // Save value
-  const updateValue = useCallback(async (newValue: T) => {
+  const updateValue = useCallback((newValue: T) => {
     try {
       setValue(newValue);
-      await AsyncStorage.setItem(key, JSON.stringify(newValue));
+      Storage.setJSON(key, newValue);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save data');
@@ -134,10 +136,10 @@ export function useAsyncStorage<T>(key: string, initialValue?: T) {
   }, [key]);
 
   // Remove value
-  const removeValue = useCallback(async () => {
+  const removeValue = useCallback(() => {
     try {
       setValue(initialValue);
-      await AsyncStorage.removeItem(key);
+      Storage.removeItem(key);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove data');
@@ -152,6 +154,8 @@ export function useAsyncStorage<T>(key: string, initialValue?: T) {
     error,
   };
 }
+
+export const useAsyncStorage = useStorage;
 
 /**
  * Counter hook with increment/decrement and limits

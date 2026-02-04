@@ -13,7 +13,7 @@ import {
   Platform,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
 import { colors } from "@/theme/colors";
@@ -200,9 +200,9 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const loadStoredDocuments = async () => {
     try {
-      const stored = await AsyncStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      const stored = Storage.getJSON<StoredDocument[]>(DOCUMENTS_STORAGE_KEY);
       if (stored) {
-        setStoredDocuments(JSON.parse(stored));
+        setStoredDocuments(stored);
       }
     } catch (error) {
       console.error("Failed to load stored documents:", error);
@@ -211,11 +211,10 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const loadDraft = async () => {
     try {
-      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      const cached = Storage.getJSON<{formData: PoolGuaranteeForm, currentStep: number}>(CACHE_KEY);
       if (cached) {
-        const parsedData = JSON.parse(cached);
-        setFormData(parsedData.formData);
-        setCurrentStep(parsedData.currentStep || 1);
+        setFormData(cached.formData);
+        setCurrentStep(cached.currentStep || 1);
       }
     } catch (error) {
       console.log("Error loading draft:", error);
@@ -224,10 +223,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const saveDraft = async () => {
     try {
-      await AsyncStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ formData, currentStep }),
-      );
+      Storage.setJSON(CACHE_KEY, { formData, currentStep });
     } catch (error) {
       console.log("Error saving draft:", error);
     }
@@ -235,7 +231,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const clearDraft = async () => {
     try {
-      await AsyncStorage.removeItem(CACHE_KEY);
+      Storage.removeItem(CACHE_KEY);
     } catch (error) {
       console.log("Error clearing draft:", error);
     }
@@ -445,10 +441,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       // Save to local stored documents
       const updatedStoredDocs = [newDoc, ...storedDocuments];
       setStoredDocuments(updatedStoredDocs);
-      await AsyncStorage.setItem(
-        DOCUMENTS_STORAGE_KEY,
-        JSON.stringify(updatedStoredDocs),
-      );
+      Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedStoredDocs);
 
       // Update form data with document info and IPFS data
       setFormData((prev) => ({

@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Storage } from "@/utils/storage";
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 
@@ -119,7 +119,7 @@ class SecureStorageManager {
     try {
       // Generate random salt
       const salt = Math.random().toString(36).substring(7);
-      await this.setItem('blockfinax.salt', salt);
+      this.setItem('blockfinax.salt', salt);
 
       // Derive encryption key from password
       const encryptionKey = await this.deriveKey(password, salt);
@@ -157,7 +157,7 @@ class SecureStorageManager {
         return null;
       }
 
-      const salt = await this.getItem('blockfinax.salt');
+      const salt = this.getItem('blockfinax.salt');
       if (!salt) throw new Error('Encryption salt not found');
 
       const encryptionKey = await this.deriveKey(password, salt);
@@ -211,23 +211,23 @@ class SecureStorageManager {
   }
 
   /**
-   * Store non-sensitive data
+   * Store non-sensitive data (synchronous with MMKV)
    */
-  public async setItem(key: string, value: string): Promise<void> {
+  public setItem(key: string, value: string): Promise<void> {
     try {
-      await AsyncStorage.setItem(key, value);
+      return Storage.setItem(key, value);
     } catch (error) {
       console.error('Error storing item:', error);
-      throw error;
+      return Promise.reject(error);
     }
   }
 
   /**
-   * Retrieve non-sensitive data
+   * Retrieve non-sensitive data (synchronous with MMKV)
    */
-  public async getItem(key: string): Promise<string | null> {
+  public getItem(key: string): string | null {
     try {
-      return await AsyncStorage.getItem(key);
+      return Storage.getItem(key) || null;
     } catch (error) {
       console.error('Error retrieving item:', error);
       return null;
@@ -235,14 +235,14 @@ class SecureStorageManager {
   }
 
   /**
-   * Delete non-sensitive data
+   * Delete non-sensitive data (synchronous with MMKV)
    */
-  public async removeItem(key: string): Promise<void> {
+  public removeItem(key: string): Promise<void> {
     try {
-      await AsyncStorage.removeItem(key);
+      return Storage.removeItem(key);
     } catch (error) {
       console.error('Error removing item:', error);
-      throw error;
+      return Promise.reject(error);
     }
   }
 
@@ -270,9 +270,11 @@ class SecureStorageManager {
       );
 
       // Clear async storage
-      await Promise.all(
-        asyncKeys.map(key => this.removeItem(key).catch(() => { }))
-      );
+      asyncKeys.forEach(key => {
+        try {
+          this.removeItem(key);
+        } catch (e) { }
+      });
 
       console.log('✅ All wallet data cleared successfully');
     } catch (error) {

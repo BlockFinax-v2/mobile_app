@@ -1,6 +1,6 @@
 import { parseEther, formatEther } from "viem";
 import { tokenPriceService } from "./tokenPriceService";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 
 /**
  * Gas Manager Service
@@ -16,15 +16,15 @@ export interface GasSponsorshipPolicy {
   // Per-user daily limits
   perUserDailyLimitUSD: number; // in USD
   perUserDailyLimitETH: bigint; // in wei
-  
+
   // Global limits (across all users)
   globalDailyLimitUSD: number;
   globalDailyLimitETH: bigint;
-  
+
   // Transaction limits
   maxSponsoredValueUSD: number; // Don't sponsor tx above this value
   maxSponsoredValueETH: bigint;
-  
+
   // Supported operations for sponsorship
   sponsoredOperations: string[];
 }
@@ -64,15 +64,15 @@ const DEFAULT_POLICY: GasSponsorshipPolicy = {
   // Per-user: ~3-5 standard ERC20 transfers per day
   perUserDailyLimitUSD: 0.50, // $0.50 USD worth of gas per user per day
   perUserDailyLimitETH: parseEther("0.0002"), // ~$0.50 at $2500 ETH
-  
+
   // Global: Limit total daily sponsorship across all users
   globalDailyLimitUSD: 50.0, // $50 USD total per day
   globalDailyLimitETH: parseEther("0.02"), // ~$50 at $2500 ETH
-  
+
   // Don't sponsor high-value transactions (potential abuse)
   maxSponsoredValueUSD: 100.0, // Don't sponsor tx > $100
   maxSponsoredValueETH: parseEther("0.04"),
-  
+
   // Operations eligible for sponsorship
   sponsoredOperations: [
     'transfer',
@@ -87,12 +87,12 @@ const DEFAULT_POLICY: GasSponsorshipPolicy = {
 class GasManagerService {
   private policy: GasSponsorshipPolicy = DEFAULT_POLICY;
   private globalUsage: GlobalGasUsage | null = null;
-  
+
   // Storage keys
   private readonly STORAGE_PREFIX = '@gas_manager:';
   private readonly USER_USAGE_KEY = (userId: string) => `${this.STORAGE_PREFIX}user_${userId}`;
   private readonly GLOBAL_USAGE_KEY = `${this.STORAGE_PREFIX}global`;
-  
+
   /**
    * Initialize gas manager with custom policy
    */
@@ -106,14 +106,14 @@ class GasManagerService {
       maxSponsoredValueUSD: this.policy.maxSponsoredValueUSD,
     });
   }
-  
+
   /**
    * Get current sponsorship policy
    */
   getPolicy(): GasSponsorshipPolicy {
     return { ...this.policy };
   }
-  
+
   /**
    * Update sponsorship policy
    */
@@ -121,7 +121,7 @@ class GasManagerService {
     this.policy = { ...this.policy, ...updates };
     console.log('[GasManager] Policy updated:', updates);
   }
-  
+
   /**
    * Check if a transaction qualifies for gas sponsorship
    */
@@ -134,19 +134,19 @@ class GasManagerService {
     try {
       // Reset daily limits if needed
       await this.resetDailyLimitsIfNeeded();
-      
+
       // Get user and global usage
       const userUsage = await this.getUserGasUsage(userId);
       const globalUsage = await this.getGlobalGasUsage();
-      
+
       // Estimate gas cost in USD (approximate)
       const estimatedCostETH = estimatedGasWei;
       const estimatedCostUSD = parseFloat(formatEther(estimatedGasWei)) * 2500; // Rough $2500/ETH estimate
-      
+
       // Calculate remaining limits
       const userRemainingUSD = this.policy.perUserDailyLimitUSD - userUsage.dailyGasUsedUSD;
       const globalRemainingUSD = this.policy.globalDailyLimitUSD - globalUsage.dailyGasUsedUSD;
-      
+
       console.log('[GasManager] Sponsorship eligibility check:', {
         userId: userId.substring(0, 10) + '...',
         estimatedCostUSD: estimatedCostUSD.toFixed(4),
@@ -155,7 +155,7 @@ class GasManagerService {
         userRemainingUSD: userRemainingUSD.toFixed(4),
         globalRemainingUSD: globalRemainingUSD.toFixed(2),
       });
-      
+
       // Check 1: Operation must be in sponsored list (if specified)
       if (operation && !this.policy.sponsoredOperations.includes(operation)) {
         return {
@@ -167,7 +167,7 @@ class GasManagerService {
           canAfford: true,
         };
       }
-      
+
       // Check 2: Transaction value must be below max sponsored value
       if (transactionValueUSD > this.policy.maxSponsoredValueUSD) {
         return {
@@ -179,7 +179,7 @@ class GasManagerService {
           canAfford: true,
         };
       }
-      
+
       // Check 3: User must have remaining daily limit
       if (estimatedCostUSD > userRemainingUSD) {
         return {
@@ -191,7 +191,7 @@ class GasManagerService {
           canAfford: true,
         };
       }
-      
+
       // Check 4: Global limit must not be exceeded
       if (estimatedCostUSD > globalRemainingUSD) {
         return {
@@ -203,7 +203,7 @@ class GasManagerService {
           canAfford: true,
         };
       }
-      
+
       // All checks passed - eligible for sponsorship!
       return {
         method: 'sponsored',
@@ -226,7 +226,7 @@ class GasManagerService {
       };
     }
   }
-  
+
   /**
    * Select best gas payment method for a transaction
    */
@@ -248,7 +248,7 @@ class GasManagerService {
         canAfford: true,
       };
     }
-    
+
     // Otherwise, check sponsorship eligibility
     return await this.checkSponsorshipEligibility(
       userId,
@@ -257,7 +257,7 @@ class GasManagerService {
       operation
     );
   }
-  
+
   /**
    * Track gas usage after a transaction
    */
@@ -268,7 +268,7 @@ class GasManagerService {
   ): Promise<void> {
     try {
       const gasUsedUSD = parseFloat(formatEther(gasUsedWei)) * 2500;
-      
+
       // Update user usage
       const userUsage = await this.getUserGasUsage(userId);
       userUsage.dailyGasUsedWei += gasUsedWei;
@@ -278,7 +278,7 @@ class GasManagerService {
         userUsage.sponsoredTransactions += 1;
       }
       await this.saveUserGasUsage(userId, userUsage);
-      
+
       // Update global usage if sponsored
       if (wasSponsored) {
         const globalUsage = await this.getGlobalGasUsage();
@@ -286,7 +286,7 @@ class GasManagerService {
         globalUsage.dailyGasUsedUSD += gasUsedUSD;
         await this.saveGlobalGasUsage(globalUsage);
       }
-      
+
       console.log('[GasManager] Tracked gas usage:', {
         userId: userId.substring(0, 10) + '...',
         gasUsedUSD: gasUsedUSD.toFixed(4),
@@ -297,15 +297,14 @@ class GasManagerService {
       console.error('[GasManager] Error tracking gas usage:', error);
     }
   }
-  
+
   /**
-   * Get user's gas usage stats
+   * Get user gas usage stats
    */
   async getUserGasUsage(userId: string): Promise<UserGasUsage> {
     try {
-      const stored = await AsyncStorage.getItem(this.USER_USAGE_KEY(userId));
-      if (stored) {
-        const parsed = JSON.parse(stored);
+      const parsed = Storage.getJSON<any>(this.USER_USAGE_KEY(userId));
+      if (parsed) {
         // Convert string back to bigint
         return {
           ...parsed,
@@ -315,7 +314,7 @@ class GasManagerService {
     } catch (error) {
       console.error('[GasManager] Error loading user usage:', error);
     }
-    
+
     // Return default
     return {
       userId,
@@ -326,15 +325,14 @@ class GasManagerService {
       sponsoredTransactions: 0,
     };
   }
-  
+
   /**
    * Get global gas usage stats
    */
   async getGlobalGasUsage(): Promise<GlobalGasUsage> {
     try {
-      const stored = await AsyncStorage.getItem(this.GLOBAL_USAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
+      const parsed = Storage.getJSON<any>(this.GLOBAL_USAGE_KEY);
+      if (parsed) {
         return {
           ...parsed,
           dailyGasUsedWei: BigInt(parsed.dailyGasUsedWei || '0'),
@@ -343,7 +341,7 @@ class GasManagerService {
     } catch (error) {
       console.error('[GasManager] Error loading global usage:', error);
     }
-    
+
     return {
       dailyGasUsedWei: BigInt(0),
       dailyGasUsedUSD: 0,
@@ -351,7 +349,7 @@ class GasManagerService {
       totalUsers: 0,
     };
   }
-  
+
   /**
    * Save user gas usage
    */
@@ -362,12 +360,12 @@ class GasManagerService {
         ...usage,
         dailyGasUsedWei: usage.dailyGasUsedWei.toString(),
       };
-      await AsyncStorage.setItem(this.USER_USAGE_KEY(userId), JSON.stringify(toStore));
+      Storage.setJSON(this.USER_USAGE_KEY(userId), toStore);
     } catch (error) {
       console.error('[GasManager] Error saving user usage:', error);
     }
   }
-  
+
   /**
    * Save global gas usage
    */
@@ -377,18 +375,18 @@ class GasManagerService {
         ...usage,
         dailyGasUsedWei: usage.dailyGasUsedWei.toString(),
       };
-      await AsyncStorage.setItem(this.GLOBAL_USAGE_KEY, JSON.stringify(toStore));
+      Storage.setJSON(this.GLOBAL_USAGE_KEY, toStore);
     } catch (error) {
       console.error('[GasManager] Error saving global usage:', error);
     }
   }
-  
+
   /**
    * Reset daily limits if it's a new day
    */
   async resetDailyLimitsIfNeeded(): Promise<void> {
     const today = new Date().toISOString().split('T')[0];
-    
+
     // Check global usage
     const globalUsage = await this.getGlobalGasUsage();
     if (globalUsage.lastResetDate !== today) {
@@ -399,7 +397,7 @@ class GasManagerService {
       await this.saveGlobalGasUsage(globalUsage);
     }
   }
-  
+
   /**
    * Reset user's daily limit manually
    */
@@ -411,14 +409,14 @@ class GasManagerService {
     await this.saveUserGasUsage(userId, usage);
     console.log('[GasManager] User daily limit reset:', userId);
   }
-  
+
   /**
    * Get available gas tokens for a network
    */
   getAvailableGasTokens(networkId: string): string[] {
     // Common stablecoins that can be used for gas payment
     const commonGasTokens = ['USDC', 'USDT'];
-    
+
     // Network-specific tokens
     const networkTokens: Record<string, string[]> = {
       'ethereum-mainnet': [...commonGasTokens],
@@ -428,10 +426,10 @@ class GasManagerService {
       'lisk-mainnet': [...commonGasTokens],
       'lisk-sepolia': [...commonGasTokens],
     };
-    
+
     return networkTokens[networkId] || commonGasTokens;
   }
-  
+
   /**
    * Get user statistics
    */
@@ -447,11 +445,11 @@ class GasManagerService {
     const usage = await this.getUserGasUsage(userId);
     const remainingUSD = Math.max(0, this.policy.perUserDailyLimitUSD - usage.dailyGasUsedUSD);
     const percentUsed = Math.min(100, (usage.dailyGasUsedUSD / this.policy.perUserDailyLimitUSD) * 100);
-    
+
     // Estimate how many standard transfers are left (assuming ~$0.10 per transfer)
     const avgTransferCost = 0.10;
     const estimatedFreeTransactionsLeft = Math.floor(remainingUSD / avgTransferCost);
-    
+
     return {
       dailyUsedUSD: usage.dailyGasUsedUSD,
       dailyLimitUSD: this.policy.perUserDailyLimitUSD,

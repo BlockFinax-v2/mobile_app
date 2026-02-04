@@ -12,7 +12,7 @@ import { spacing } from "@/theme/spacing";
 import MaterialCommunityIcons from "react-native-vector-icons/MaterialCommunityIcons";
 import { gaslessLimitService } from "@/services/gaslessLimitService";
 import { tokenPriceService } from "@/services/tokenPriceService";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 
 export type GasPaymentOption = "gasless" | "token" | "native";
 
@@ -72,7 +72,7 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
 
   const handleConfirm = async () => {
     if (doNotAskAgain) {
-      await AsyncStorage.setItem(DO_NOT_ASK_KEY, selectedOption);
+      Storage.setItem(DO_NOT_ASK_KEY, selectedOption);
     }
     onSelect(selectedOption, doNotAskAgain);
   };
@@ -298,7 +298,7 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
 
 export const checkShouldShowGasModal = async (): Promise<boolean> => {
   try {
-    const preference = await AsyncStorage.getItem(DO_NOT_ASK_KEY);
+    const preference = Storage.getItem(DO_NOT_ASK_KEY);
     return preference === null; // Show modal if no preference is set
   } catch {
     return true;
@@ -308,7 +308,7 @@ export const checkShouldShowGasModal = async (): Promise<boolean> => {
 export const getSavedGasPreference =
   async (): Promise<GasPaymentOption | null> => {
     try {
-      const preference = await AsyncStorage.getItem(DO_NOT_ASK_KEY);
+      const preference = Storage.getItem(DO_NOT_ASK_KEY);
       return preference as GasPaymentOption | null;
     } catch {
       return null;
@@ -317,7 +317,7 @@ export const getSavedGasPreference =
 
 export const clearGasPreference = async (): Promise<void> => {
   try {
-    await AsyncStorage.removeItem(DO_NOT_ASK_KEY);
+    Storage.removeItem(DO_NOT_ASK_KEY);
   } catch (error) {
     console.error("Failed to clear gas preference:", error);
   }

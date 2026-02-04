@@ -19,19 +19,19 @@ const TRADE_FINANCE_EVENT_ABI = [
 ];
 
 export interface PGAEvent {
-    eventType: 
-        | "PGACreated"
-        | "PGAVoteCast"
-        | "PGAStatusChanged"
-        | "GuaranteeApproved"
-        | "SellerApprovalReceived"
-        | "CollateralPaid"
-        | "GoodsShipped"
-        | "BalancePaymentReceived"
-        | "CertificateIssued"
-        | "DeliveryAgreementCreated"
-        | "BuyerConsentGiven"
-        | "PGACompleted";
+    eventType:
+    | "PGACreated"
+    | "PGAVoteCast"
+    | "PGAStatusChanged"
+    | "GuaranteeApproved"
+    | "SellerApprovalReceived"
+    | "CollateralPaid"
+    | "GoodsShipped"
+    | "BalancePaymentReceived"
+    | "CertificateIssued"
+    | "DeliveryAgreementCreated"
+    | "BuyerConsentGiven"
+    | "PGACompleted";
     pgaId: string;
     blockNumber: number;
     transactionHash: string;
@@ -91,12 +91,7 @@ class TradeFinanceEventService {
     /**
      * Fetch historical events from the blockchain with optimized block range management
      * ⚡ SMART BATCHING: Automatically manages block ranges to avoid RPC limits
-     * 📊 PROGRESS TRACKING: Reports sync progress for better UX
-     * 
-     * @param userAddress - The wallet address to filter events for
-     * @param fromBlock - Starting block number (0 for genesis, or specific block)
-     * @param toBlock - Ending block number ("latest" for current)
-     * @param maxBlockRange - Maximum blocks to fetch in total (default 1000 for free tier)
+     * 🚀 BUNDLED LOGS: Fetches all event types in a single RPC call using topic arrays
      */
     public async fetchPastEvents(
         userAddress: string,
@@ -110,176 +105,93 @@ class TradeFinanceEventService {
         }
 
         const startTime = performance.now();
-        console.log(`[TradeFinanceEventService] 🔄 Fetching events: blocks ${fromBlock} → ${toBlock}`);
 
         try {
             const events: PGAEvent[] = [];
             const currentBlock = typeof toBlock === "string" ? await this.provider.getBlockNumber() : toBlock;
-            
-            // Determine the starting block
+
             let startBlock = fromBlock === "earliest" ? 0 : fromBlock;
-            
-            // SMART LIMIT: Cap total block range to avoid excessive API calls
+
             const totalBlocksRequested = currentBlock - startBlock;
             if (totalBlocksRequested > maxBlockRange) {
-                console.log(
-                    `[TradeFinanceEventService] 📊 Limiting scan: ${totalBlocksRequested} blocks → ${maxBlockRange} blocks (most recent)`,
-                );
                 startBlock = currentBlock - maxBlockRange;
             }
 
-            // ⚡ BATCH SIZE: Alchemy free tier allows max 10 blocks per eth_getLogs request
-            // Paid plans can use 2000-5000 blocks. Set to 10 for free tier compatibility.
-            const BATCH_SIZE = 10; // Free tier limit: 10 blocks per request
+            // High performance batching: Alchemy free tier allows 10-100 blocks
+            const BATCH_SIZE = 100;
             const totalBatches = Math.ceil((currentBlock - startBlock + 1) / BATCH_SIZE);
-            
-            console.log(
-                `[TradeFinanceEventService] 📊 Batch plan: ${totalBatches} batches × ${BATCH_SIZE} blocks = ${currentBlock - startBlock + 1} blocks`,
-            );
 
-            
-            // Define all event filters - Only use indexed parameters
-            // For simplicity and to avoid filter errors, we fetch all events and filter in code
-            const eventFilters = [
-                {
-                    name: "PGACreated",
-                    filter: this.contract.filters.PGACreated(),
-                },
-                {
-                    name: "GuaranteeApproved",
-                    filter: this.contract.filters.GuaranteeApproved(),
-                },
-                {
-                    name: "PGAStatusChanged",
-                    filter: this.contract.filters.PGAStatusChanged(),
-                },
-                {
-                    name: "SellerApprovalReceived",
-                    filter: this.contract.filters.SellerApprovalReceived(),
-                },
-                {
-                    name: "CollateralPaid",
-                    filter: this.contract.filters.CollateralPaid(),
-                },
-                {
-                    name: "GoodsShipped",
-                    filter: this.contract.filters.GoodsShipped(),
-                },
-                {
-                    name: "BalancePaymentReceived",
-                    filter: this.contract.filters.BalancePaymentReceived(),
-                },
-                {
-                    name: "CertificateIssued",
-                    filter: this.contract.filters.CertificateIssued(),
-                },
-                {
-                    name: "DeliveryAgreementCreated",
-                    filter: this.contract.filters.DeliveryAgreementCreated(),
-                },
-                {
-                    name: "BuyerConsentGiven",
-                    filter: this.contract.filters.BuyerConsentGiven(),
-                },
-                {
-                    name: "PGACompleted",
-                    filter: this.contract.filters.PGACompleted(),
-                },
-                {
-                    name: "PGAVoteCast",
-                    filter: this.contract.filters.PGAVoteCast(),
-                },
+            // Generate topic list for all tracked events
+            const eventNames = [
+                "PGACreated", "PGAVoteCast", "PGAStatusChanged", "GuaranteeApproved",
+                "SellerApprovalReceived", "CollateralPaid", "GoodsShipped", "BalancePaymentReceived",
+                "CertificateIssued", "DeliveryAgreementCreated", "BuyerConsentGiven", "PGACompleted"
             ];
 
-            // SYSTEMATIC BATCHING: Process blocks in small chunks to avoid RPC limits
-            let batchCount = 0;
-            let eventCount = 0;
-            
+            const topics = [
+                eventNames.map(name => this.contract!.interface.getEventTopic(name))
+            ];
+
             for (let currentStart = startBlock; currentStart <= currentBlock; currentStart += BATCH_SIZE) {
                 const currentEnd = Math.min(currentStart + BATCH_SIZE - 1, currentBlock);
-                batchCount++;
-                
-                // PROGRESS REPORTING: Log every 50 batches or at completion (since batches are smaller now)
-                const shouldLog = batchCount % 50 === 0 || batchCount === totalBatches;
-                if (shouldLog) {
-                    const progress = Math.round((batchCount / totalBatches) * 100);
-                    console.log(
-                        `[TradeFinanceEventService] ⏳ Progress: ${batchCount}/${totalBatches} (${progress}%) - ${eventCount} events found`,
-                    );
-                }
 
-                for (const eventFilter of eventFilters) {
-                    let retries = 0;
-                    const MAX_RETRIES = 3;
-                    
-                    while (retries <= MAX_RETRIES) {
-                        try {
-                            // Fetch all events (no user filtering at query level)
-                            const logs = await this.contract.queryFilter(
-                                eventFilter.filter,
-                                currentStart,
-                                currentEnd
-                            );
+                let retries = 0;
+                while (retries < 3) {
+                    try {
+                        // ⚡ BUNDLED FETCH: Single call for all event types in this block range
+                        const logs = await this.provider.getLogs({
+                            address: this.contract.address,
+                            fromBlock: currentStart,
+                            toBlock: currentEnd,
+                            topics: topics
+                        });
 
-                            // Process events and filter for user
-                            for (const log of logs) {
-                                const parsedEvent = await this.parseEventLog(log, eventFilter.name);
-                                if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
-                                    // Check for duplicates before adding
-                                    const isDuplicate = events.some(
-                                        e => e.transactionHash === parsedEvent.transactionHash && 
-                                             e.eventType === parsedEvent.eventType
-                                    );
-                                    if (!isDuplicate) {
-                                        events.push(parsedEvent);
-                                        eventCount++; // Track progress
-                                    }
-                                }
-                            }
-                            
-                            break; // Success - exit retry loop
-                        } catch (error: any) {
-                            retries++;
-                            
-                            // Check if it's a block range error
-                            const isBlockRangeError = error?.body?.includes('block range') || 
-                                                     error?.message?.includes('block range');
-                            
-                            if (isBlockRangeError && retries <= MAX_RETRIES) {
-                                const delay = Math.min(1000 * Math.pow(2, retries - 1), 5000);
-                                console.warn(
-                                    `[TradeFinanceEventService] ⚠️ ${eventFilter.name} batch ${batchCount} failed (attempt ${retries}/${MAX_RETRIES}), retrying in ${delay}ms...`
-                                );
-                                await new Promise(resolve => setTimeout(resolve, delay));
-                            } else if (retries > MAX_RETRIES) {
-                                console.error(
-                                    `[TradeFinanceEventService] ❌ ${eventFilter.name} failed after ${MAX_RETRIES} retries:`,
-                                    error?.message || error
-                                );
-                                break; // Give up after max retries
-                            } else {
-                                console.error(`[TradeFinanceEventService] ⚠️ Error fetching ${eventFilter.name}:`, error);
-                                break; // Non-retryable error
+                        for (const log of logs) {
+                            const parsedLog = this.contract.interface.parseLog(log);
+                            const parsedEvent = await this.parseEventLogFromLog(log, parsedLog);
+
+                            if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
+                                events.push(parsedEvent);
                             }
                         }
+                        break;
+                    } catch (error: any) {
+                        retries++;
+                        if (retries === 3) throw error;
+                        await new Promise(r => setTimeout(r, 1000 * retries));
                     }
                 }
             }
 
-            // Sort events by block number and transaction index
-            events.sort((a, b) => a.blockNumber - b.blockNumber);
-
-            // Update last processed block
+            events.sort((a, b) => a.blockNumber - b.blockNumber || a.transactionHash.localeCompare(b.transactionHash));
             this.lastProcessedBlock = currentBlock;
 
-            const fetchTime = performance.now() - startTime;
-            console.log(
-                `[TradeFinanceEventService] ✅ Fetched ${events.length} events in ${fetchTime.toFixed(0)}ms (${totalBatches} batches)`,
-            );
+            console.log(`[TradeFinanceEventService] ✅ Bundled fetch: ${events.length} events in ${(performance.now() - startTime).toFixed(0)}ms`);
             return events;
         } catch (error) {
             console.error("[TradeFinanceEventService] Error fetching past events:", error);
             throw error;
+        }
+    }
+
+    /**
+     * Optimized parsing from Log and ParsedLog
+     */
+    private async parseEventLogFromLog(log: ethers.providers.Log, parsedLog: ethers.utils.LogDescription): Promise<PGAEvent | null> {
+        try {
+            // Cache block timestamps? For now just fetch
+            const block = await this.provider!.getBlock(log.blockNumber);
+
+            return {
+                eventType: parsedLog.name as PGAEvent["eventType"],
+                pgaId: parsedLog.args.pgaId,
+                blockNumber: log.blockNumber,
+                transactionHash: log.transactionHash,
+                timestamp: block.timestamp,
+                data: parsedLog.args,
+            };
+        } catch (error) {
+            return null;
         }
     }
 
@@ -306,9 +218,9 @@ class TradeFinanceEventService {
     private async parseEventLog(log: ethers.Event, eventName: string): Promise<PGAEvent | null> {
         try {
             const block = await this.provider!.getBlock(log.blockNumber);
-            
+
             let eventData: any = {};
-            
+
             switch (eventName) {
                 case "PGACreated":
                     eventData = {
@@ -454,18 +366,18 @@ class TradeFinanceEventService {
 
     /**
      * Start listening for real-time events
+     * ⚡ OPTIMIZED: Uses a single listener for all events to reduce RPC overhead
      */
     public startListening(userAddress: string, callback: EventCallback): void {
-        if (!this.contract) {
+        if (!this.contract || !this.provider) {
             throw new Error("Service not initialized. Call setNetwork first.");
         }
 
         if (this.isListening) {
-            console.log("[TradeFinanceEventService] Already listening for events");
             return;
         }
 
-        console.log("[TradeFinanceEventService] Starting real-time event listeners");
+        console.log("[TradeFinanceEventService] 🎧 Starting bundled real-time listener");
         this.isListening = true;
 
         // Store callback
@@ -473,54 +385,44 @@ class TradeFinanceEventService {
         callbacks.push(callback);
         this.eventCallbacks.set(userAddress, callbacks);
 
-        // Setup listeners for all event types
-        const eventNames: PGAEvent["eventType"][] = [
-            "PGACreated",
-            "PGAVoteCast",
-            "PGAStatusChanged",
-            "GuaranteeApproved",
-            "SellerApprovalReceived",
-            "CollateralPaid",
-            "GoodsShipped",
-            "BalancePaymentReceived",
-            "CertificateIssued",
-            "DeliveryAgreementCreated",
-            "BuyerConsentGiven",
-            "PGACompleted",
-        ];
+        // Setup SINGLE listener for all events from this contract
+        const filter = {
+            address: this.contract.address,
+        };
 
-        for (const eventName of eventNames) {
-            this.contract.on(eventName, async (...args) => {
-                try {
-                    const event = args[args.length - 1]; // Last arg is always the event object
-                    const parsedEvent = await this.parseEventLog(event, eventName);
-                    
-                    if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
-                        console.log(`[TradeFinanceEventService] New ${eventName} event:`, parsedEvent.pgaId);
-                        
-                        // Notify all callbacks
-                        const callbacks = this.eventCallbacks.get(userAddress) || [];
-                        callbacks.forEach(cb => cb(parsedEvent));
-                    }
-                } catch (error) {
-                    console.error(`[TradeFinanceEventService] Error processing ${eventName}:`, error);
+        this.provider.on(filter, async (log: ethers.providers.Log) => {
+            try {
+                const parsedLog = this.contract!.interface.parseLog(log);
+                const parsedEvent = await this.parseEventLogFromLog(log, parsedLog);
+
+                if (parsedEvent && this.isUserRelatedEvent(parsedEvent, userAddress)) {
+                    console.log(`[TradeFinanceEventService] 🔔 Real-time ${parsedLog.name}:`, parsedEvent.pgaId);
+                    const currentCallbacks = this.eventCallbacks.get(userAddress) || [];
+                    currentCallbacks.forEach(cb => cb(parsedEvent));
                 }
-            });
-        }
+            } catch (error) {
+                // Silently ignore logs that don't belong to this interface
+            }
+        });
 
-        console.log("[TradeFinanceEventService] Real-time listeners activated");
+        console.log("[TradeFinanceEventService] ✅ Bundled listener activated");
     }
 
     /**
      * Stop listening for real-time events
      */
     public stopListening(): void {
-        if (!this.isListening || !this.contract) {
+        if (!this.isListening || !this.provider) {
             return;
         }
 
-        console.log("[TradeFinanceEventService] Stopping event listeners");
-        this.contract.removeAllListeners();
+        console.log("[TradeFinanceEventService] 🛑 Stopping event listeners");
+        if (this.contract) {
+            const filter = {
+                address: this.contract.address,
+            };
+            this.provider.removeAllListeners(filter);
+        }
         this.eventCallbacks.clear();
         this.isListening = false;
     }

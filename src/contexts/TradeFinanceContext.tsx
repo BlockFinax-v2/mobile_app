@@ -17,7 +17,7 @@ import {
   PGAEvent,
 } from "@/services/tradeFinanceEventService";
 import { useWallet } from "./WalletContext";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import { backgroundDataLoader } from "@/services/backgroundDataLoader";
 
 type TradeFinanceCache = {
@@ -571,22 +571,11 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const persistData = useCallback(() => {
     if (!selectedNetwork || !address) return;
 
-    const memoryKey = `${selectedNetwork.chainId}_${address}`;
-    tradeFinanceMemoryCache.set(memoryKey, {
-      applications,
-      drafts,
-      lastSyncTime: Date.now(),
-      lastUpdated: Date.now(),
-    });
-
-    // Fire-and-forget - instant return
-    Promise.all([
-      AsyncStorage.setItem(APPS_STORAGE_KEY, JSON.stringify(applications)),
-      AsyncStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(drafts)),
-      AsyncStorage.setItem(SYNC_TIME_KEY, Date.now().toString()),
-    ]).catch((error) => {
-      console.error("[TradeFinanceContext] ⚠️ Persist failed:", error);
-    });
+    Storage.setJSON(APPS_STORAGE_KEY, applications);
+    Storage.setJSON(DRAFTS_STORAGE_KEY, drafts);
+    Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
+    
+    console.log("[TradeFinanceContext] ⚡ Data persisted to MMKV");
   }, [
     selectedNetwork?.chainId,
     address,
@@ -607,44 +596,20 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoadingFromCache(true);
 
     try {
-      const memoryKey = `${selectedNetwork.chainId}_${address}`;
-      const memoryCache = tradeFinanceMemoryCache.get(memoryKey);
-      if (memoryCache) {
-        setApplications(memoryCache.applications);
-        setDrafts(memoryCache.drafts);
-        hasLoadedCache.current = true;
-        const loadTime = performance.now() - startTime;
-        console.log(
-          `[TradeFinanceContext] ⚡ Memory cache loaded in ${loadTime.toFixed(2)}ms`,
-        );
-        return true;
-      }
+      const cachedApps = Storage.getJSON<Application[]>(APPS_STORAGE_KEY);
+      const cachedDrafts = Storage.getJSON<DraftCertificate[]>(DRAFTS_STORAGE_KEY);
+      const lastSync = Storage.getItem(SYNC_TIME_KEY);
 
-      const [cachedApps, cachedDrafts, lastSync] = await Promise.all([
-        AsyncStorage.getItem(APPS_STORAGE_KEY),
-        AsyncStorage.getItem(DRAFTS_STORAGE_KEY),
-        AsyncStorage.getItem(SYNC_TIME_KEY),
-      ]);
-
-      // Batch state updates
-      if (cachedApps) {
-        setApplications(JSON.parse(cachedApps));
-      }
-      if (cachedDrafts) {
-        setDrafts(JSON.parse(cachedDrafts));
-      }
+      if (cachedApps) setApplications(cachedApps);
+      if (cachedDrafts) setDrafts(cachedDrafts);
 
       hasLoadedCache.current = Boolean(cachedApps || cachedDrafts);
-
+      
       const loadTime = performance.now() - startTime;
-      console.log(
-        `[TradeFinanceContext] ⚡ Cache loaded in ${loadTime.toFixed(2)}ms`,
-      );
+      console.log(`[TradeFinanceContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`);
 
       if (lastSync) {
-        const timeSince = Math.floor(
-          (Date.now() - parseInt(lastSync, 10)) / 1000,
-        );
+        const timeSince = Math.floor((Date.now() - parseInt(lastSync, 10)) / 1000);
         if (timeSince > 60) {
           console.log(`[TradeFinanceContext] ℹ️ Data is ${timeSince}s old`);
         }
@@ -666,29 +631,18 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Load last synced block from storage
   useEffect(() => {
-    const loadLastSyncedBlock = async () => {
-      if (selectedNetwork && address) {
-        try {
-          const stored = await AsyncStorage.getItem(STORAGE_KEY);
-          if (stored) {
-            setLastSyncedBlock(parseInt(stored, 10));
-          }
-        } catch (error) {
-          console.error("Error loading last synced block:", error);
-        }
+    if (selectedNetwork && address) {
+      const stored = Storage.getItem(STORAGE_KEY);
+      if (stored) {
+        setLastSyncedBlock(parseInt(stored, 10));
       }
-    };
-    loadLastSyncedBlock();
+    }
   }, [selectedNetwork?.chainId, address]);
 
   // Save last synced block to storage
-  const saveLastSyncedBlock = async (blockNumber: number) => {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEY, blockNumber.toString());
-      setLastSyncedBlock(blockNumber);
-    } catch (error) {
-      console.error("Error saving last synced block:", error);
-    }
+  const saveLastSyncedBlock = (blockNumber: number) => {
+    Storage.setItem(STORAGE_KEY, blockNumber.toString());
+    setLastSyncedBlock(blockNumber);
   };
 
   // Sync network with service
@@ -846,9 +800,9 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         // Fire-and-forget persistence (no await - instant return)
         persistData();
 
-        // Save latest block (fire-and-forget)
+        // Save latest block (instant)
         if (event.blockNumber > lastSyncedBlock) {
-          saveLastSyncedBlock(event.blockNumber).catch(() => {});
+          saveLastSyncedBlock(event.blockNumber);
         }
 
         // Clean up pending flag after a delay
@@ -880,7 +834,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     try {
       // PERSISTENT STORAGE STRATEGY: Only sync NEW events since last sync
-      // PGAs are stored permanently in AsyncStorage and never refetched from scratch
+      // PGAs are stored permanently in Storage and never refetched from scratch
       const fromBlock = lastSyncedBlock > 0 ? lastSyncedBlock + 1 : 0;
       const currentBlock =
         await tradeFinanceEventService["provider"]?.getBlockNumber();
@@ -893,8 +847,13 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
+      const maxBlockRange = 200; // Sync up to 200 new blocks
+      const syncCurrentBlock = currentBlock || 0;
+      const syncFromBlock = blocksToSync > maxBlockRange ? syncCurrentBlock - maxBlockRange : fromBlock;
+      const actualBlocksSyncing = syncCurrentBlock - syncFromBlock;
+
       console.log(
-        `[TradeFinanceContext] 🔄 Incremental sync: ${blocksToSync} new blocks (${fromBlock} → ${currentBlock})`,
+        `[TradeFinanceContext] 🔄 Incremental sync: ${actualBlocksSyncing} blocks (${syncFromBlock} → ${syncCurrentBlock})`,
       );
 
       // FIRST TIME SETUP: If never synced, do ONE-TIME full blockchain fetch
@@ -909,11 +868,11 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // INCREMENTAL UPDATES: Only fetch events for new blocks (very fast)
-      const maxBlockRange = 200; // Sync up to 200 new blocks
+      // Removed secondary redeclaration of maxBlockRange
 
       const pastEvents = await tradeFinanceEventService.fetchPastEvents(
         address,
-        fromBlock,
+        syncFromBlock, // Use our calculated syncFromBlock
         "latest",
         maxBlockRange,
       );
@@ -965,7 +924,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       // UPDATE SYNC CHECKPOINT: Save the latest block so we only fetch new events next time
       const latestBlock = tradeFinanceEventService.getLastProcessedBlock();
       if (latestBlock > lastSyncedBlock) {
-        await saveLastSyncedBlock(latestBlock);
+        saveLastSyncedBlock(latestBlock);
       }
 
       const totalTime = performance.now() - startTime;
@@ -1132,7 +1091,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           });
 
           // Save last processed block
-          await saveLastSyncedBlock(currentBlock);
+          saveLastSyncedBlock(currentBlock);
         }
       }
 

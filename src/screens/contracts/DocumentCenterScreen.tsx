@@ -9,7 +9,7 @@ import { useNavigation } from "@react-navigation/native";
 import { StatusBar } from "expo-status-bar";
 import * as DocumentPicker from "expo-document-picker";
 import * as Clipboard from "expo-clipboard";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import React, { useState, useEffect } from "react";
 import { Controller, useForm } from "react-hook-form";
 import {
@@ -74,9 +74,9 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const loadDocuments = async () => {
     try {
-      const stored = await AsyncStorage.getItem(DOCUMENTS_STORAGE_KEY);
+      const stored = Storage.getJSON<StoredDocument[]>(DOCUMENTS_STORAGE_KEY);
       if (stored) {
-        setDocuments(JSON.parse(stored));
+        setDocuments(stored);
       }
     } catch (error) {
       console.error("Failed to load documents:", error);
@@ -85,10 +85,7 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const saveDocuments = async () => {
     try {
-      await AsyncStorage.setItem(
-        DOCUMENTS_STORAGE_KEY,
-        JSON.stringify(documents),
-      );
+      Storage.setJSON(DOCUMENTS_STORAGE_KEY, documents);
     } catch (error) {
       console.error("Failed to save documents:", error);
     }
@@ -152,10 +149,7 @@ export const DocumentCenterScreen: React.FC = () => {
           onPress: async () => {
             const updatedDocs = documents.filter((d) => d.id !== doc.id);
             setDocuments(updatedDocs);
-            await AsyncStorage.setItem(
-              DOCUMENTS_STORAGE_KEY,
-              JSON.stringify(updatedDocs),
-            );
+            Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedDocs);
             Alert.alert(
               "Deleted",
               `"${doc.title}" has been removed from your documents.`,

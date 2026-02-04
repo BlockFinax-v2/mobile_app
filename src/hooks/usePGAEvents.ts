@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { tradeFinanceEventService, PGAEvent } from "@/services/tradeFinanceEventService";
 import { useWallet } from "@/contexts/WalletContext";
+import { useQuery } from "@tanstack/react-query";
 
 /**
  * Hook to monitor specific PGA events in real-time
@@ -84,20 +85,13 @@ export function usePGAEvents(
  * ```
  */
 export function usePGAHistory(pgaId: string, fromBlock: number = 0) {
-  const [events, setEvents] = useState<PGAEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
   const { address, selectedNetwork } = useWallet();
 
-  const fetchHistory = useCallback(async () => {
-    if (!address || !selectedNetwork) {
-      return;
-    }
+  const { data: events = [], isLoading, error, refetch } = useQuery({
+    queryKey: ["pga-history", pgaId, address, selectedNetwork.id],
+    queryFn: async () => {
+      if (!address) return [];
 
-    setLoading(true);
-    setError(null);
-
-    try {
       // Limit to 200 blocks for individual PGA history (faster on free tier)
       const allEvents = await tradeFinanceEventService.fetchPastEvents(
         address,
@@ -107,26 +101,17 @@ export function usePGAHistory(pgaId: string, fromBlock: number = 0) {
       );
 
       // Filter events for this specific PGA
-      const pgaEvents = allEvents.filter((event) => event.pgaId === pgaId);
-      
-      setEvents(pgaEvents);
-    } catch (err) {
-      console.error("Error fetching PGA history:", err);
-      setError(err as Error);
-    } finally {
-      setLoading(false);
-    }
-  }, [address, selectedNetwork, pgaId, fromBlock]);
-
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
+      return allEvents.filter((event) => event.pgaId === pgaId);
+    },
+    enabled: !!address && !!selectedNetwork,
+    staleTime: 30000, // 30 seconds
+  });
 
   return {
     events,
-    loading,
+    loading: isLoading,
     error,
-    refetch: fetchHistory,
+    refetch,
   };
 }
 
@@ -154,7 +139,7 @@ export function useEventSyncStatus() {
     const interval = setInterval(() => {
       const block = tradeFinanceEventService.getLastProcessedBlock();
       const listening = tradeFinanceEventService.getIsListening();
-      
+
       setLastSyncedBlock(block);
       setIsListening(listening);
     }, 1000);
@@ -189,7 +174,7 @@ export function useEventCounts() {
 
   useEffect(() => {
     const newCounts: Record<string, number> = {};
-    
+
     events.forEach((event) => {
       newCounts[event.eventType] = (newCounts[event.eventType] || 0) + 1;
     });

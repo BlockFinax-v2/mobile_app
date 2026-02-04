@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import { ethers } from "ethers";
 import {
   stakingService,
@@ -207,11 +207,11 @@ export const preloadTreasuryPortalData = async ({
       stats.status === "fulfilled"
         ? stats.value
         : {
-            totalProposals: 0,
-            activeProposals: 0,
-            passedProposals: 0,
-            executedProposals: 0,
-          };
+          totalProposals: 0,
+          activeProposals: 0,
+          passedProposals: 0,
+          executedProposals: 0,
+        };
     daoConfig = config.status === "fulfilled" ? config.value : null;
   } catch (error) {
     console.warn("Failed to load governance data", error);
@@ -255,9 +255,7 @@ export const preloadTreasuryPortalData = async ({
     daoConfig: JSON.stringify(daoConfig),
   };
 
-  await Promise.all(
-    Object.entries(cacheData).map(([key, value]) =>
-      AsyncStorage.setItem(getCacheKey(key), value),
-    ),
-  );
+  Object.entries(cacheData).forEach(([key, value]) => {
+    Storage.setItem(getCacheKey(key), value);
+  });
 };

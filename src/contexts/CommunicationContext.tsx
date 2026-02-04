@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Storage } from "@/utils/storage";
 import { useWallet } from "@/contexts/WalletContext";
 import AppConfig from "@/config/AppConfig";
 import React, {
@@ -509,80 +509,55 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Persist data functions
   const persistMessages = useCallback(
-    async (conversationId: string, messages: Message[]) => {
-      try {
-        await AsyncStorage.setItem(
-          `messages:${conversationId}`,
-          JSON.stringify(messages)
-        );
-      } catch (error) {
-        console.error("Failed to persist messages:", error);
-      }
+    (conversationId: string, messages: Message[]) => {
+      Storage.setJSON(`messages:${conversationId}`, messages);
     },
     []
   );
 
-  const persistContacts = useCallback(async (contacts: Contact[]) => {
-    try {
-      await AsyncStorage.setItem("contacts", JSON.stringify(contacts));
-    } catch (error) {
-      console.error("Failed to persist contacts:", error);
-    }
+  const persistContacts = useCallback((contacts: Contact[]) => {
+    Storage.setJSON("contacts", contacts);
   }, []);
 
   const persistConversations = useCallback(
-    async (conversations: Conversation[]) => {
-      try {
-        await AsyncStorage.setItem(
-          "conversations",
-          JSON.stringify(conversations)
-        );
-      } catch (error) {
-        console.error("Failed to persist conversations:", error);
-      }
+    (conversations: Conversation[]) => {
+      Storage.setJSON("conversations", conversations);
     },
     []
   );
 
-  const loadPersistedData = useCallback(async () => {
+  const loadPersistedData = useCallback(() => {
     try {
-      // Load contacts
-      const storedContacts = await AsyncStorage.getItem("contacts");
+      const storedContacts = Storage.getJSON<Contact[]>("contacts");
       if (storedContacts) {
-        setContacts(JSON.parse(storedContacts));
+        setContacts(storedContacts);
       }
 
-      // Load conversations
-      const storedConversations = await AsyncStorage.getItem("conversations");
+      const storedConversations = Storage.getJSON<Conversation[]>("conversations");
       if (storedConversations) {
-        const parsedConversations: Conversation[] =
-          JSON.parse(storedConversations);
-
         // Deduplicate conversations
         const conversationMap = new Map<string, Conversation>();
-        parsedConversations.forEach((conv) => {
+        storedConversations.forEach((conv) => {
           conversationMap.set(conv.id, conv);
         });
 
-        setConversations(Array.from(conversationMap.values()));
+        const sortedConversations = Array.from(conversationMap.values());
+        setConversations(sortedConversations);
 
         // Load messages for each conversation
         const messagesMap: Record<string, Message[]> = {};
-        for (const conversation of parsedConversations) {
-          const storedMessages = await AsyncStorage.getItem(
-            `messages:${conversation.id}`
-          );
+        for (const conversation of sortedConversations) {
+          const storedMessages = Storage.getJSON<Message[]>(`messages:${conversation.id}`);
           if (storedMessages) {
-            messagesMap[conversation.id] = JSON.parse(storedMessages);
+            messagesMap[conversation.id] = storedMessages;
           }
         }
         setMessages(messagesMap);
       }
 
-      // Load call history
-      const storedCallHistory = await AsyncStorage.getItem("callHistory");
+      const storedCallHistory = Storage.getJSON<CallInfo[]>("callHistory");
       if (storedCallHistory) {
-        setCallHistory(JSON.parse(storedCallHistory));
+        setCallHistory(storedCallHistory);
       }
     } catch (error) {
       console.error("Failed to load persisted data:", error);
@@ -793,11 +768,11 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const handleCallRejected = useCallback((callInfo: CallInfo) => {
     setActiveCall(null);
-    setCallHistory((prev) => {
-      const updated = [callInfo, ...prev];
-      AsyncStorage.setItem("callHistory", JSON.stringify(updated));
-      return updated;
-    });
+      setCallHistory((prev) => {
+        const updated = [callInfo, ...prev];
+        Storage.setJSON("callHistory", updated);
+        return updated;
+      });
   }, []);
 
   // Utility functions
@@ -1132,7 +1107,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       setMessages((prev) => {
         const updated = { ...prev };
         delete updated[conversationId];
-        AsyncStorage.removeItem(`messages:${conversationId}`);
+        Storage.removeItem(`messages:${conversationId}`);
         return updated;
       });
     },
