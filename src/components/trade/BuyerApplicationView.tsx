@@ -1687,11 +1687,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  infoDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: colors.text,
     marginBottom: spacing.md,
+  },
+  logisticsNotifiedCard: {
+    alignItems: "center",
+    padding: spacing.lg,
+    backgroundColor: colors.primary + "10",
+    borderRadius: 12,
+    gap: spacing.xs,
+  },
+  logisticsNotifiedText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  logisticsNotifiedSubtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: "center",
   },
   infoRow: {
     flexDirection: "row",
