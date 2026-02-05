@@ -79,10 +79,12 @@ class BackgroundDataLoaderService {
   /**
    * Get current preload status
    */
-  public getPreloadStatus(): PreloadStatus {
+  public async getPreloadStatus(): Promise<PreloadStatus> {
     try {
-      const status = Storage.getJSON<any>(STORAGE_KEYS.PRELOAD_STATUS);
-      const timestampStr = Storage.getItem(STORAGE_KEYS.PRELOAD_TIMESTAMP);
+      const [status, timestampStr] = await Promise.all([
+        Storage.getJSON<any>(STORAGE_KEYS.PRELOAD_STATUS),
+        Storage.getItem(STORAGE_KEYS.PRELOAD_TIMESTAMP)
+      ]);
 
       if (status && timestampStr) {
         const timestamp = parseInt(timestampStr, 10);
@@ -111,12 +113,12 @@ class BackgroundDataLoaderService {
   /**
    * Update preload status
    */
-  private updatePreloadStatus(updates: Partial<PreloadStatus>): void {
-    const current = this.getPreloadStatus();
+  private async updatePreloadStatus(updates: Partial<PreloadStatus>): Promise<void> {
+    const current = await this.getPreloadStatus();
     const newStatus: PreloadStatus = { ...current, ...updates };
 
-    Storage.setJSON(STORAGE_KEYS.PRELOAD_STATUS, newStatus);
-    Storage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now().toString());
+    await Storage.setJSON(STORAGE_KEYS.PRELOAD_STATUS, newStatus);
+    await Storage.setItem(STORAGE_KEYS.PRELOAD_TIMESTAMP, Date.now().toString());
 
     this.notifyListeners(newStatus);
   }
@@ -138,7 +140,7 @@ class BackgroundDataLoaderService {
     console.log('[BackgroundLoader] 🚀 Starting background preload...');
     console.log(`[BackgroundLoader] User: ${userAddress}, Chain: ${chainId}`);
 
-    this.updatePreloadStatus({ isPreloading: true });
+    await this.updatePreloadStatus({ isPreloading: true });
 
     try {
       // Run all preloads in parallel for maximum speed
@@ -151,7 +153,7 @@ class BackgroundDataLoaderService {
       const totalTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ Preload complete in ${totalTime.toFixed(0)}ms`);
 
-      this.updatePreloadStatus({
+      await this.updatePreloadStatus({
         isPreloading: false,
         tradeFinanceReady: true,
         treasuryReady: true,
@@ -159,7 +161,7 @@ class BackgroundDataLoaderService {
       });
     } catch (error) {
       console.error('[BackgroundLoader] ⚠️ Preload error:', error);
-      this.updatePreloadStatus({ isPreloading: false });
+      await this.updatePreloadStatus({ isPreloading: false });
     } finally {
       this.isPreloading = false;
     }
@@ -181,7 +183,7 @@ class BackgroundDataLoaderService {
 
     try {
       // 1. Load last sync block
-      const lastSyncStr = Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
+      const lastSyncStr = await Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
       const lastSyncBlock = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
 
       // 2. Fetch historical events (incremental since last sync)
@@ -211,7 +213,7 @@ class BackgroundDataLoaderService {
         applications = [...buyerPGAs, ...sellerPGAs];
       } else {
         // No new events - load from cache
-        applications = Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS) || [];
+        applications = await Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS) || [];
       }
 
       // 5. Fetch logistics providers
@@ -220,11 +222,11 @@ class BackgroundDataLoaderService {
         tradeFinanceService.getAllDeliveryPersons(),
       ]);
 
-      // 6. Save to persistent cache (synchronous)
-      Storage.setJSON(STORAGE_KEYS.TRADE_APPLICATIONS, applications);
-      Storage.setJSON(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS, logisticsPartners);
-      Storage.setJSON(STORAGE_KEYS.TRADE_DELIVERY_PERSONS, deliveryPersons);
-      Storage.setItem(STORAGE_KEYS.TRADE_LAST_SYNC, tradeFinanceEventService.getLastProcessedBlock().toString());
+      // 6. Save to persistent cache (async)
+      await Storage.setJSON(STORAGE_KEYS.TRADE_APPLICATIONS, applications);
+      await Storage.setJSON(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS, logisticsPartners);
+      await Storage.setJSON(STORAGE_KEYS.TRADE_DELIVERY_PERSONS, deliveryPersons);
+      await Storage.setItem(STORAGE_KEYS.TRADE_LAST_SYNC, tradeFinanceEventService.getLastProcessedBlock().toString());
 
       const loadTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ TradeFinance preloaded in ${loadTime.toFixed(0)}ms (${applications.length} PGAs)`);
@@ -251,7 +253,7 @@ class BackgroundDataLoaderService {
 
     try {
       // Mark treasury as ready - TreasuryContext handles its own persistent storage
-      Storage.setItem(STORAGE_KEYS.TREASURY_LAST_SYNC, Date.now().toString());
+      await Storage.setItem(STORAGE_KEYS.TREASURY_LAST_SYNC, Date.now().toString());
 
       const loadTime = performance.now() - startTime;
       console.log(`[BackgroundLoader] ✅ Treasury marked ready in ${loadTime.toFixed(0)}ms`);
@@ -264,17 +266,19 @@ class BackgroundDataLoaderService {
   /**
    * Get cached TradeFinance data (instant synchronous)
    */
-  public getCachedTradeFinanceData(): {
+  public async getCachedTradeFinanceData(): Promise<{
     applications: PGAInfo[];
     logisticsPartners: string[];
     deliveryPersons: string[];
     lastSyncBlock: number;
-  } {
+  }> {
     try {
-      const apps = Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS);
-      const partners = Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS);
-      const persons = Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_DELIVERY_PERSONS);
-      const syncStr = Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC);
+      const [apps, partners, persons, syncStr] = await Promise.all([
+        Storage.getJSON<PGAInfo[]>(STORAGE_KEYS.TRADE_APPLICATIONS),
+        Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_LOGISTICS_PARTNERS),
+        Storage.getJSON<string[]>(STORAGE_KEYS.TRADE_DELIVERY_PERSONS),
+        Storage.getItem(STORAGE_KEYS.TRADE_LAST_SYNC)
+      ]);
 
       return {
         applications: apps || [],
@@ -297,13 +301,15 @@ class BackgroundDataLoaderService {
    * Get cached Treasury data (instant synchronous)
    * Note: Returns data managed by TreasuryContext's own caching system
    */
-  public getCachedTreasuryData(): {
+  public async getCachedTreasuryData(): Promise<{
     pools: any[];
     position: any | null;
-  } {
+  }> {
     try {
-      const pools = Storage.getJSON<any[]>(STORAGE_KEYS.TREASURY_POOLS);
-      const position = Storage.getJSON<any>(STORAGE_KEYS.TREASURY_POSITIONS);
+      const [pools, position] = await Promise.all([
+        Storage.getJSON<any[]>(STORAGE_KEYS.TREASURY_POOLS),
+        Storage.getJSON<any>(STORAGE_KEYS.TREASURY_POSITIONS)
+      ]);
 
       return {
         pools: pools || [],
@@ -324,7 +330,7 @@ class BackgroundDataLoaderService {
   public async clearCache(): Promise<void> {
     console.log('[BackgroundLoader] 🗑️ Clearing all cached data');
 
-    Storage.clearAll(); // Clears all MMKV storage
+    await Storage.clearAll(); // Clears all storage
 
     this.updatePreloadStatus({
       tradeFinanceReady: false,

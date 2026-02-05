@@ -43,7 +43,7 @@ class GaslessLimitService {
    */
   private async getDailyUsage(): Promise<DailyUsage> {
     try {
-      const usage = Storage.getJSON<DailyUsage>(STORAGE_KEY);
+      const usage = await Storage.getJSON<DailyUsage>(STORAGE_KEY);
       if (!usage) {
         return {
           date: this.getTodayDate(),
@@ -77,7 +77,7 @@ class GaslessLimitService {
    */
   private async saveDailyUsage(usage: DailyUsage): Promise<void> {
     try {
-      Storage.setJSON(STORAGE_KEY, usage);
+      await Storage.setJSON(STORAGE_KEY, usage);
     } catch (error) {
       console.error('Error saving daily usage:', error);
     }
@@ -150,7 +150,7 @@ class GaslessLimitService {
    * Reset usage (for testing or manual reset)
    */
   public async resetUsage(): Promise<void> {
-    Storage.removeItem(STORAGE_KEY);
+    await Storage.removeItem(STORAGE_KEY);
   }
 }
 

@@ -317,7 +317,7 @@ export const getSavedGasPreference =
 
 export const clearGasPreference = async (): Promise<void> => {
   try {
-    Storage.removeItem(DO_NOT_ASK_KEY);
+    await Storage.removeItem(DO_NOT_ASK_KEY);
   } catch (error) {
     console.error("Failed to clear gas preference:", error);
   }

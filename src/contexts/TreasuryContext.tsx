@@ -100,17 +100,17 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
    * Persist data to AsyncStorage (optimized for instant writes)
    * Uses fire-and-forget pattern for maximum speed
    */
-  const persistData = useCallback(() => {
+  const persistData = useCallback(async () => {
     if (!address || !chainId) return;
 
-    // Synchronous writes are nearly instant with MMKV
-    Storage.setJSON(STAKING_STORAGE_KEY, stakingData);
-    Storage.setJSON(FINANCIER_STORAGE_KEY, financierStatus);
-    Storage.setJSON(PROPOSALS_STORAGE_KEY, proposals);
-    Storage.setJSON(EVENTS_STORAGE_KEY, recentEvents.slice(0, 50));
-    Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
+    // Async writes to AsyncStorage
+    await Storage.setJSON(STAKING_STORAGE_KEY, stakingData);
+    await Storage.setJSON(FINANCIER_STORAGE_KEY, financierStatus);
+    await Storage.setJSON(PROPOSALS_STORAGE_KEY, proposals);
+    await Storage.setJSON(EVENTS_STORAGE_KEY, recentEvents.slice(0, 50));
+    await Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
 
-    console.log("[TreasuryContext] ⚡ Data persisted to MMKV");
+    console.log("[TreasuryContext] ⚡ Data persisted to AsyncStorage");
   }, [
     address,
     chainId,
@@ -136,12 +136,14 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoadingFromCache(true);
 
     try {
-      // Synchronous reads with MMKV
-      const staking = Storage.getJSON<StakingData>(STAKING_STORAGE_KEY);
-      const financier = Storage.getJSON<FinancierStatus>(FINANCIER_STORAGE_KEY);
-      const props = Storage.getJSON<Proposal[]>(PROPOSALS_STORAGE_KEY);
-      const events = Storage.getJSON<TreasuryEvent[]>(EVENTS_STORAGE_KEY);
-      const lastSync = Storage.getItem(SYNC_TIME_KEY);
+      // Async reads from AsyncStorage
+      const [staking, financier, props, events, lastSync] = await Promise.all([
+        Storage.getJSON<StakingData>(STAKING_STORAGE_KEY),
+        Storage.getJSON<FinancierStatus>(FINANCIER_STORAGE_KEY),
+        Storage.getJSON<Proposal[]>(PROPOSALS_STORAGE_KEY),
+        Storage.getJSON<TreasuryEvent[]>(EVENTS_STORAGE_KEY),
+        Storage.getItem(SYNC_TIME_KEY),
+      ]);
 
       if (staking) setStakingData(staking);
       if (financier) setFinancierStatus(financier);
@@ -150,7 +152,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const loadTime = performance.now() - startTime;
       console.log(
-        `[TreasuryContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`,
+        `[TreasuryContext] ⚡ Cache loaded from AsyncStorage in ${loadTime.toFixed(2)}ms`,
       );
 
       if (lastSync) {
@@ -322,7 +324,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Get last synced block from Storage
       const storageKey = `treasury_last_block_${chainId}_${address}`;
-      const lastBlockStr = Storage.getItem(storageKey);
+      const lastBlockStr = await Storage.getItem(storageKey);
       const fromBlock = lastBlockStr ? parseInt(lastBlockStr, 10) + 1 : 0;
 
       // Get current block
@@ -350,10 +352,10 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
         await refreshProposals();
 
         if (currentBlock) {
-          Storage.setItem(storageKey, currentBlock.toString());
+          await Storage.setItem(storageKey, currentBlock.toString());
         }
 
-        persistData();
+        await persistData();
         setEventSyncStatus("synced");
         setLastSyncTime(Date.now());
         return;
@@ -419,11 +421,11 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Save last processed block
         const lastBlock = Math.max(...events.map((e) => e.blockNumber));
-        Storage.setItem(storageKey, lastBlock.toString());
+        await Storage.setItem(storageKey, lastBlock.toString());
       }
 
       // PERSIST TO STORAGE: Save all data for offline access and fast next load
-      persistData();
+      await persistData();
 
       setEventSyncStatus("synced");
       setLastSyncTime(Date.now());
@@ -497,7 +499,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
       // Save last processed block (instant)
       if (address && chainId) {
         const storageKey = `treasury_last_block_${chainId}_${address}`;
-        Storage.setItem(storageKey, event.blockNumber.toString());
+        await Storage.setItem(storageKey, event.blockNumber.toString());
       }
 
       // Clear pending update

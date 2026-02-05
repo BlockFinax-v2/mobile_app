@@ -295,11 +295,11 @@ export function TreasuryPortalScreenRedesigned() {
         Storage.getJSON<Record<string, number>>(
           getCacheKey("availableBalances"),
         ),
-        Storage.getJSON(getCacheKey("allStakesInfo")),
-        Storage.getJSON(getCacheKey("stakingConfig")),
-        Storage.getJSON(getCacheKey("proposals")),
-        Storage.getJSON(getCacheKey("daoStats")),
-        Storage.getJSON(getCacheKey("daoConfig")),
+        Storage.getJSON<AllStakesInfo>(getCacheKey("allStakesInfo")),
+        Storage.getJSON<StakingConfig>(getCacheKey("stakingConfig")),
+        Storage.getJSON<Proposal[]>(getCacheKey("proposals")),
+        Storage.getJSON<DAOStats>(getCacheKey("daoStats")),
+        Storage.getJSON<DAOConfig>(getCacheKey("daoConfig")),
       ]);
 
       if (userTotalStakedUSDVal)

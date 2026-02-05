@@ -119,7 +119,7 @@ class SecureStorageManager {
     try {
       // Generate random salt
       const salt = Math.random().toString(36).substring(7);
-      this.setItem('blockfinax.salt', salt);
+      await this.setItem('blockfinax.salt', salt);
 
       // Derive encryption key from password
       const encryptionKey = await this.deriveKey(password, salt);
@@ -157,7 +157,7 @@ class SecureStorageManager {
         return null;
       }
 
-      const salt = this.getItem('blockfinax.salt');
+      const salt = await this.getItem('blockfinax.salt');
       if (!salt) throw new Error('Encryption salt not found');
 
       const encryptionKey = await this.deriveKey(password, salt);
@@ -235,11 +235,11 @@ class SecureStorageManager {
   }
 
   /**
-   * Delete non-sensitive data (synchronous with MMKV)
+   * Delete non-sensitive data
    */
-  public removeItem(key: string): Promise<void> {
+  public async removeItem(key: string): Promise<void> {
     try {
-      return Storage.removeItem(key);
+      return await Storage.removeItem(key);
     } catch (error) {
       console.error('Error removing item:', error);
       return Promise.reject(error);
@@ -270,11 +270,9 @@ class SecureStorageManager {
       );
 
       // Clear async storage
-      asyncKeys.forEach(key => {
-        try {
-          this.removeItem(key);
-        } catch (e) { }
-      });
+      await Promise.all(
+        asyncKeys.map(key => this.removeItem(key).catch(() => { }))
+      );
 
       console.log('✅ All wallet data cleared successfully');
     } catch (error) {

@@ -236,7 +236,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const clearDraft = async () => {
     try {
-      Storage.removeItem(CACHE_KEY);
+      await Storage.removeItem(CACHE_KEY);
     } catch (error) {
       console.log("Error clearing draft:", error);
     }
@@ -306,14 +306,14 @@ export const PoolGuaranteeApplicationFlow: React.FC<
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (validateStep(4)) {
-      clearDraft();
+      await clearDraft();
       onSubmit(formData);
     }
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
     Alert.alert(
       "Save Draft?",
       "Your progress has been automatically saved. You can continue later.",
@@ -321,8 +321,8 @@ export const PoolGuaranteeApplicationFlow: React.FC<
         {
           text: "Discard Draft",
           style: "destructive",
-          onPress: () => {
-            clearDraft();
+          onPress: async () => {
+            await clearDraft();
             onClose();
           },
         },

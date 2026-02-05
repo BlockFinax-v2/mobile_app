@@ -265,8 +265,8 @@ class UserAccountStateService {
    */
   async clearUserData(eoaAddress: Address): Promise<void> {
     try {
-      Storage.removeItem(this.ACCOUNT_STATE_KEY(eoaAddress));
-      Storage.removeItem(this.TX_HISTORY_KEY(eoaAddress));
+      await Storage.removeItem(this.ACCOUNT_STATE_KEY(eoaAddress));
+      await Storage.removeItem(this.TX_HISTORY_KEY(eoaAddress));
       console.log('[UserAccountState] Cleared user data');
     } catch (error) {
       console.error('[UserAccountState] Error clearing user data:', error);

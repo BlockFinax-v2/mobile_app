@@ -577,15 +577,15 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   /**
    * Persist data to AsyncStorage (fire-and-forget for instant performance)
    */
-  const persistData = useCallback(() => {
+  const persistData = useCallback(async () => {
     if (!selectedNetwork || !address) return;
 
     try {
-      Storage.setJSON(APPS_STORAGE_KEY, applications);
-      Storage.setJSON(DRAFTS_STORAGE_KEY, drafts);
-      Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
+      await Storage.setJSON(APPS_STORAGE_KEY, applications);
+      await Storage.setJSON(DRAFTS_STORAGE_KEY, drafts);
+      await Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
 
-      console.log("[TradeFinanceContext] ⚡ Data persisted to MMKV");
+      console.log("[TradeFinanceContext] ⚡ Data persisted to AsyncStorage");
     } catch (error) {
       console.error("[TradeFinanceContext] ❌ Persistence failed:", error);
       // Data will be re-persisted on next update
@@ -610,10 +610,11 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsLoadingFromCache(true);
 
     try {
-      const cachedApps = Storage.getJSON<Application[]>(APPS_STORAGE_KEY);
-      const cachedDrafts =
-        Storage.getJSON<DraftCertificate[]>(DRAFTS_STORAGE_KEY);
-      const lastSync = Storage.getItem(SYNC_TIME_KEY);
+      const [cachedApps, cachedDrafts, lastSync] = await Promise.all([
+        Storage.getJSON<Application[]>(APPS_STORAGE_KEY),
+        Storage.getJSON<DraftCertificate[]>(DRAFTS_STORAGE_KEY),
+        Storage.getItem(SYNC_TIME_KEY),
+      ]);
 
       // Validate cached data - filter out potentially invalid entries
       if (cachedApps) {
@@ -636,7 +637,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const loadTime = performance.now() - startTime;
       console.log(
-        `[TradeFinanceContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`,
+        `[TradeFinanceContext] ⚡ Cache loaded from AsyncStorage in ${loadTime.toFixed(2)}ms`,
       );
 
       if (lastSync) {
@@ -664,17 +665,20 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Load last synced block from storage
   useEffect(() => {
-    if (selectedNetwork && address) {
-      const stored = Storage.getItem(STORAGE_KEY);
-      if (stored) {
-        setLastSyncedBlock(parseInt(stored, 10));
+    const loadLastBlock = async () => {
+      if (selectedNetwork && address) {
+        const stored = await Storage.getItem(STORAGE_KEY);
+        if (stored) {
+          setLastSyncedBlock(parseInt(stored, 10));
+        }
       }
-    }
+    };
+    loadLastBlock();
   }, [selectedNetwork?.chainId, address]);
 
   // Save last synced block to storage
-  const saveLastSyncedBlock = (blockNumber: number) => {
-    Storage.setItem(STORAGE_KEY, blockNumber.toString());
+  const saveLastSyncedBlock = async (blockNumber: number) => {
+    await Storage.setItem(STORAGE_KEY, blockNumber.toString());
     setLastSyncedBlock(blockNumber);
   };
 
