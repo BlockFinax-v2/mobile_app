@@ -273,32 +273,59 @@ export function TreasuryPortalScreenRedesigned() {
         return true;
       }
 
-      // Synchronous reads with MMKV
-      const userTotalStakedUSDVal = Storage.getItem(getCacheKey("userTotalStakedUSD"));
-      const userVotingPowerPercentageVal = Storage.getItem(getCacheKey("userVotingPowerPercentage"));
-      const globalPoolTotalUSDVal = Storage.getItem(getCacheKey("globalPoolTotalUSD"));
-      const currentAPRVal = Storage.getItem(getCacheKey("currentAPR"));
-      const isFinancierVal = Storage.getItem(getCacheKey("isFinancier"));
-      const availableBalancesVal = Storage.getJSON<Record<string, number>>(getCacheKey("availableBalances"));
+      // Async reads with AsyncStorage (parallel loading)
+      const [
+        userTotalStakedUSDVal,
+        userVotingPowerPercentageVal,
+        globalPoolTotalUSDVal,
+        currentAPRVal,
+        isFinancierVal,
+        availableBalancesVal,
+        allStakesInfoVal,
+        stakingConfigVal,
+        proposalsVal,
+        daoStatsVal,
+        daoConfigVal,
+      ] = await Promise.all([
+        Storage.getItem(getCacheKey("userTotalStakedUSD")),
+        Storage.getItem(getCacheKey("userVotingPowerPercentage")),
+        Storage.getItem(getCacheKey("globalPoolTotalUSD")),
+        Storage.getItem(getCacheKey("currentAPR")),
+        Storage.getItem(getCacheKey("isFinancier")),
+        Storage.getJSON<Record<string, number>>(
+          getCacheKey("availableBalances"),
+        ),
+        Storage.getJSON(getCacheKey("allStakesInfo")),
+        Storage.getJSON(getCacheKey("stakingConfig")),
+        Storage.getJSON(getCacheKey("proposals")),
+        Storage.getJSON(getCacheKey("daoStats")),
+        Storage.getJSON(getCacheKey("daoConfig")),
+      ]);
 
-      if (userTotalStakedUSDVal) setUserTotalStakedUSD(parseFloat(userTotalStakedUSDVal));
-      if (userVotingPowerPercentageVal) setUserVotingPowerPercentage(parseFloat(userVotingPowerPercentageVal));
-      if (globalPoolTotalUSDVal) setGlobalPoolTotalUSD(parseFloat(globalPoolTotalUSDVal));
+      if (userTotalStakedUSDVal)
+        setUserTotalStakedUSD(parseFloat(userTotalStakedUSDVal));
+      if (userVotingPowerPercentageVal)
+        setUserVotingPowerPercentage(parseFloat(userVotingPowerPercentageVal));
+      if (globalPoolTotalUSDVal)
+        setGlobalPoolTotalUSD(parseFloat(globalPoolTotalUSDVal));
       if (currentAPRVal) setCurrentAPR(parseFloat(currentAPRVal));
       if (isFinancierVal) setIsFinancier(isFinancierVal === "true");
-      if (availableBalancesVal && Object.keys(availableBalancesVal).length > 0) {
+      if (
+        availableBalancesVal &&
+        Object.keys(availableBalancesVal).length > 0
+      ) {
         setAvailableBalances(availableBalancesVal);
       }
 
       const hasCache = !!userTotalStakedUSDVal;
       hasLoadedCache.current = hasCache;
-      
-      // Load heavy data synchronously since it's MMKV
-      setAllStakesInfo(Storage.getJSON(getCacheKey("allStakesInfo")));
-      setStakingConfig(Storage.getJSON(getCacheKey("stakingConfig")));
-      setProposals(Storage.getJSON(getCacheKey("proposals")) || []);
-      setDAOStats(Storage.getJSON(getCacheKey("daoStats")));
-      setDAOConfig(Storage.getJSON(getCacheKey("daoConfig")));
+
+      // Set heavy data loaded in parallel
+      setAllStakesInfo(allStakesInfoVal);
+      setStakingConfig(stakingConfigVal);
+      setProposals(proposalsVal || []);
+      setDAOStats(daoStatsVal);
+      setDAOConfig(daoConfigVal);
 
       const loadTime = performance.now() - startTime;
       console.log(
@@ -346,10 +373,14 @@ export function TreasuryPortalScreenRedesigned() {
       daoConfig: JSON.stringify(daoConfig),
     };
 
-    // Fire-and-forget - don't await
-    Object.entries(cacheData).forEach(([key, value]) => {
-      Storage.setItem(getCacheKey(key), value);
-    });
+    // Fire-and-forget with async/await
+    (async () => {
+      await Promise.all(
+        Object.entries(cacheData).map(([key, value]) =>
+          Storage.setItem(getCacheKey(key), value),
+        ),
+      );
+    })();
   }, [
     address,
     selectedNetwork.chainId,

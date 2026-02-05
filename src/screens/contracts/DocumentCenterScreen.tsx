@@ -74,7 +74,9 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const loadDocuments = async () => {
     try {
-      const stored = Storage.getJSON<StoredDocument[]>(DOCUMENTS_STORAGE_KEY);
+      const stored = await Storage.getJSON<StoredDocument[]>(
+        DOCUMENTS_STORAGE_KEY,
+      );
       if (stored) {
         setDocuments(stored);
       }
@@ -85,7 +87,7 @@ export const DocumentCenterScreen: React.FC = () => {
 
   const saveDocuments = async () => {
     try {
-      Storage.setJSON(DOCUMENTS_STORAGE_KEY, documents);
+      await Storage.setJSON(DOCUMENTS_STORAGE_KEY, documents);
     } catch (error) {
       console.error("Failed to save documents:", error);
     }
@@ -149,7 +151,7 @@ export const DocumentCenterScreen: React.FC = () => {
           onPress: async () => {
             const updatedDocs = documents.filter((d) => d.id !== doc.id);
             setDocuments(updatedDocs);
-            Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedDocs);
+            await Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedDocs);
             Alert.alert(
               "Deleted",
               `"${doc.title}" has been removed from your documents.`,

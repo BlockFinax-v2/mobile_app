@@ -200,7 +200,9 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const loadStoredDocuments = async () => {
     try {
-      const stored = Storage.getJSON<StoredDocument[]>(DOCUMENTS_STORAGE_KEY);
+      const stored = await Storage.getJSON<StoredDocument[]>(
+        DOCUMENTS_STORAGE_KEY,
+      );
       if (stored) {
         setStoredDocuments(stored);
       }
@@ -211,7 +213,10 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const loadDraft = async () => {
     try {
-      const cached = Storage.getJSON<{formData: PoolGuaranteeForm, currentStep: number}>(CACHE_KEY);
+      const cached = await Storage.getJSON<{
+        formData: PoolGuaranteeForm;
+        currentStep: number;
+      }>(CACHE_KEY);
       if (cached) {
         setFormData(cached.formData);
         setCurrentStep(cached.currentStep || 1);
@@ -223,7 +228,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
 
   const saveDraft = async () => {
     try {
-      Storage.setJSON(CACHE_KEY, { formData, currentStep });
+      await Storage.setJSON(CACHE_KEY, { formData, currentStep });
     } catch (error) {
       console.log("Error saving draft:", error);
     }
@@ -441,7 +446,7 @@ export const PoolGuaranteeApplicationFlow: React.FC<
       // Save to local stored documents
       const updatedStoredDocs = [newDoc, ...storedDocuments];
       setStoredDocuments(updatedStoredDocs);
-      Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedStoredDocs);
+      await Storage.setJSON(DOCUMENTS_STORAGE_KEY, updatedStoredDocs);
 
       // Update form data with document info and IPFS data
       setFormData((prev) => ({

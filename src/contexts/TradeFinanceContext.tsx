@@ -402,10 +402,12 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const addApplication = (application: Application) => {
     setApplications((prev) => [application, ...prev]);
+    setTimeout(() => persistData(), 0);
   };
 
   const addDraft = (draft: DraftCertificate) => {
     setDrafts((prev) => [draft, ...prev]);
+    setTimeout(() => persistData(), 0);
   };
 
   const updateApplicationStatus = (
@@ -415,6 +417,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     setApplications((prev) =>
       prev.map((app) => (app.id === id ? { ...app, status } : app)),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   const updateDraftStatus = (
@@ -424,6 +427,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     setDrafts((prev) =>
       prev.map((draft) => (draft.id === id ? { ...draft, status } : draft)),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   // Stage 5: Certificate issuance
@@ -454,6 +458,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           : draft,
       ),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   // Stage 6: Shipping confirmation
@@ -474,6 +479,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           : app,
       ),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   // Stage 7: Delivery confirmation
@@ -495,6 +501,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           : app,
       ),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   // Stage 8: Complete transaction
@@ -514,6 +521,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           : app,
       ),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   // Progress and persistence
@@ -529,6 +537,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           : app,
       ),
     );
+    setTimeout(() => persistData(), 0);
   };
 
   const saveDraft = (application: Application) => {
@@ -571,11 +580,16 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const persistData = useCallback(() => {
     if (!selectedNetwork || !address) return;
 
-    Storage.setJSON(APPS_STORAGE_KEY, applications);
-    Storage.setJSON(DRAFTS_STORAGE_KEY, drafts);
-    Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
-    
-    console.log("[TradeFinanceContext] ⚡ Data persisted to MMKV");
+    try {
+      Storage.setJSON(APPS_STORAGE_KEY, applications);
+      Storage.setJSON(DRAFTS_STORAGE_KEY, drafts);
+      Storage.setItem(SYNC_TIME_KEY, Date.now().toString());
+
+      console.log("[TradeFinanceContext] ⚡ Data persisted to MMKV");
+    } catch (error) {
+      console.error("[TradeFinanceContext] ❌ Persistence failed:", error);
+      // Data will be re-persisted on next update
+    }
   }, [
     selectedNetwork?.chainId,
     address,
@@ -597,19 +611,38 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     try {
       const cachedApps = Storage.getJSON<Application[]>(APPS_STORAGE_KEY);
-      const cachedDrafts = Storage.getJSON<DraftCertificate[]>(DRAFTS_STORAGE_KEY);
+      const cachedDrafts =
+        Storage.getJSON<DraftCertificate[]>(DRAFTS_STORAGE_KEY);
       const lastSync = Storage.getItem(SYNC_TIME_KEY);
 
-      if (cachedApps) setApplications(cachedApps);
+      // Validate cached data - filter out potentially invalid entries
+      if (cachedApps) {
+        // Check if cache is too old (>7 days) and might contain deleted PGAs
+        const cacheAge = lastSync
+          ? (Date.now() - parseInt(lastSync, 10)) / 1000
+          : Infinity;
+        const isStale = cacheAge > 7 * 24 * 60 * 60; // 7 days
+
+        if (isStale) {
+          console.log(
+            `[TradeFinanceContext] ⚠️ Cache is ${Math.floor(cacheAge / 86400)} days old - will validate with blockchain`,
+          );
+        }
+        setApplications(cachedApps);
+      }
       if (cachedDrafts) setDrafts(cachedDrafts);
 
       hasLoadedCache.current = Boolean(cachedApps || cachedDrafts);
-      
+
       const loadTime = performance.now() - startTime;
-      console.log(`[TradeFinanceContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`);
+      console.log(
+        `[TradeFinanceContext] ⚡ Cache loaded from MMKV in ${loadTime.toFixed(2)}ms`,
+      );
 
       if (lastSync) {
-        const timeSince = Math.floor((Date.now() - parseInt(lastSync, 10)) / 1000);
+        const timeSince = Math.floor(
+          (Date.now() - parseInt(lastSync, 10)) / 1000,
+        );
         if (timeSince > 60) {
           console.log(`[TradeFinanceContext] ℹ️ Data is ${timeSince}s old`);
         }
@@ -688,8 +721,23 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Refresh logistics providers in background
       refreshLogisticsProviders();
-    } catch (error) {
-      console.error("Error fetching blockchain data:", error);
+    } catch (error: any) {
+      // Gracefully handle PGANotFound and other contract errors
+      if (
+        error?.code === "CALL_EXCEPTION" &&
+        error?.errorName === "PGANotFound"
+      ) {
+        console.log(
+          "[TradeFinanceContext] ℹ️ Some cached PGAs no longer exist - clearing stale cache",
+        );
+        // Clear potentially stale cache and retry
+        setApplications([]);
+      } else {
+        console.error(
+          "[TradeFinanceContext] Error fetching blockchain data:",
+          error,
+        );
+      }
     }
   }, [address, isUnlocked, refreshLogisticsProviders, selectedNetwork]);
 
@@ -849,7 +897,10 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const maxBlockRange = 200; // Sync up to 200 new blocks
       const syncCurrentBlock = currentBlock || 0;
-      const syncFromBlock = blocksToSync > maxBlockRange ? syncCurrentBlock - maxBlockRange : fromBlock;
+      const syncFromBlock =
+        blocksToSync > maxBlockRange
+          ? syncCurrentBlock - maxBlockRange
+          : fromBlock;
       const actualBlocksSyncing = syncCurrentBlock - syncFromBlock;
 
       console.log(
@@ -892,8 +943,17 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Fetch ONLY the PGAs that have new events (not all PGAs)
         const pgaPromises = Array.from(pgaIds).map((pgaId) =>
-          tradeFinanceService.getPGA(pgaId, true).catch((err) => {
-            console.warn(`Failed to fetch PGA ${pgaId}:`, err);
+          tradeFinanceService.getPGA(pgaId, true).catch((err: any) => {
+            if (err?.errorName === "PGANotFound") {
+              console.log(
+                `[TradeFinanceContext] ℹ️ PGA ${pgaId} no longer exists (deleted/expired)`,
+              );
+            } else {
+              console.warn(
+                `[TradeFinanceContext] Failed to fetch PGA ${pgaId}:`,
+                err.message || err,
+              );
+            }
             return null;
           }),
         );
@@ -971,10 +1031,21 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           `[TradeFinanceContext] 📦 Found ${cachedData.applications.length} preloaded PGAs`,
         );
 
-        // Map PGAs to applications
-        const apps = cachedData.applications.map((pga: any) =>
-          mapPGAInfoToApplication(pga, selectedNetwork),
-        );
+        // Map PGAs to applications and filter out any invalid ones
+        const apps = cachedData.applications
+          .map((pga: any) => {
+            try {
+              return mapPGAInfoToApplication(pga, selectedNetwork);
+            } catch (error) {
+              console.warn(
+                `[TradeFinanceContext] ⚠️ Skipping invalid PGA:`,
+                error,
+              );
+              return null;
+            }
+          })
+          .filter((app: Application | null) => app !== null) as Application[];
+
         setApplications(apps);
         setLogisticsPartners(cachedData.logisticsPartners);
         setDeliveryPersons(cachedData.deliveryPersons);
@@ -1007,8 +1078,16 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log(
         `[TradeFinanceContext] ✅ Context ready in ${totalTime.toFixed(0)}ms`,
       );
-    } catch (error) {
-      console.error("[TradeFinanceContext] Preload error:", error);
+    } catch (error: any) {
+      // Handle specific errors gracefully
+      if (error?.errorName === "PGANotFound") {
+        console.log(
+          "[TradeFinanceContext] ℹ️ Some cached PGAs don't exist - will refresh from blockchain",
+        );
+        await loadCachedData();
+      } else {
+        console.error("[TradeFinanceContext] Preload error:", error);
+      }
       // Fallback to full fetch
       await fetchBlockchainData();
     }
@@ -1189,12 +1268,21 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log(
         `[TradeFinanceContext] ✅ PGA ${pgaId} refreshed successfully`,
       );
-    } catch (error) {
-      console.error(
-        `[TradeFinanceContext] ❌ Error refreshing PGA ${pgaId}:`,
-        error,
-      );
-      throw error;
+    } catch (error: any) {
+      if (error?.errorName === "PGANotFound") {
+        console.log(
+          `[TradeFinanceContext] ℹ️ PGA ${pgaId} no longer exists - removing from cache`,
+        );
+        // Remove the non-existent PGA from state
+        setApplications((prev) => prev.filter((app) => app.id !== pgaId));
+        setTimeout(() => persistData(), 0);
+      } else {
+        console.error(
+          `[TradeFinanceContext] ❌ Error refreshing PGA ${pgaId}:`,
+          error,
+        );
+        throw error;
+      }
     }
   };
 

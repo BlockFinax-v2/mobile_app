@@ -63,7 +63,7 @@ class UserAccountStateService {
    */
   async getUserState(eoaAddress: Address): Promise<UserAccountState | null> {
     try {
-      return Storage.getJSON<UserAccountState>(this.ACCOUNT_STATE_KEY(eoaAddress));
+      return await Storage.getJSON<UserAccountState>(this.ACCOUNT_STATE_KEY(eoaAddress));
     } catch (error) {
       console.error('[UserAccountState] Error loading user state:', error);
     }
@@ -110,7 +110,7 @@ class UserAccountStateService {
    */
   async saveUserState(state: UserAccountState): Promise<void> {
     try {
-      Storage.setJSON(this.ACCOUNT_STATE_KEY(state.eoaAddress), state);
+      await Storage.setJSON(this.ACCOUNT_STATE_KEY(state.eoaAddress), state);
     } catch (error) {
       console.error('[UserAccountState] Error saving user state:', error);
       throw error;
@@ -230,7 +230,7 @@ class UserAccountStateService {
       // Keep only last 100 transactions
       const limited = history.slice(0, 100);
 
-      Storage.setJSON(this.TX_HISTORY_KEY(tx.from), limited);
+      await Storage.setJSON(this.TX_HISTORY_KEY(tx.from), limited);
 
       console.log('[UserAccountState] Recorded transaction:', {
         type: tx.type,
@@ -250,7 +250,7 @@ class UserAccountStateService {
     limit: number = 20
   ): Promise<TransactionRecord[]> {
     try {
-      const history = Storage.getJSON<TransactionRecord[]>(this.TX_HISTORY_KEY(eoaAddress));
+      const history = await Storage.getJSON<TransactionRecord[]>(this.TX_HISTORY_KEY(eoaAddress));
       if (history) {
         return history.slice(0, limit);
       }

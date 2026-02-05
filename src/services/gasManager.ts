@@ -303,7 +303,7 @@ class GasManagerService {
    */
   async getUserGasUsage(userId: string): Promise<UserGasUsage> {
     try {
-      const parsed = Storage.getJSON<any>(this.USER_USAGE_KEY(userId));
+      const parsed = await Storage.getJSON<any>(this.USER_USAGE_KEY(userId));
       if (parsed) {
         // Convert string back to bigint
         return {
@@ -331,7 +331,7 @@ class GasManagerService {
    */
   async getGlobalGasUsage(): Promise<GlobalGasUsage> {
     try {
-      const parsed = Storage.getJSON<any>(this.GLOBAL_USAGE_KEY);
+      const parsed = await Storage.getJSON<any>(this.GLOBAL_USAGE_KEY);
       if (parsed) {
         return {
           ...parsed,
@@ -360,7 +360,7 @@ class GasManagerService {
         ...usage,
         dailyGasUsedWei: usage.dailyGasUsedWei.toString(),
       };
-      Storage.setJSON(this.USER_USAGE_KEY(userId), toStore);
+      await Storage.setJSON(this.USER_USAGE_KEY(userId), toStore);
     } catch (error) {
       console.error('[GasManager] Error saving user usage:', error);
     }
@@ -375,7 +375,7 @@ class GasManagerService {
         ...usage,
         dailyGasUsedWei: usage.dailyGasUsedWei.toString(),
       };
-      Storage.setJSON(this.GLOBAL_USAGE_KEY, toStore);
+      await Storage.setJSON(this.GLOBAL_USAGE_KEY, toStore);
     } catch (error) {
       console.error('[GasManager] Error saving global usage:', error);
     }

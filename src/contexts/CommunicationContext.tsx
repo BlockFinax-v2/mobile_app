@@ -125,11 +125,11 @@ interface CommunicationContextType {
     toAddress: string,
     text: string,
     type?: Message["type"],
-    metadata?: Message["metadata"]
+    metadata?: Message["metadata"],
   ) => Promise<void>;
   markMessageAsRead: (
     conversationId: string,
-    messageId: string
+    messageId: string,
   ) => Promise<void>;
   markConversationAsRead: (conversationId: string) => Promise<void>;
 
@@ -137,7 +137,7 @@ interface CommunicationContextType {
   addContact: (contact: Omit<Contact, "id">) => Promise<void>;
   updateContact: (
     contactId: string,
-    updates: Partial<Contact>
+    updates: Partial<Contact>,
   ) => Promise<void>;
   removeContact: (contactId: string) => Promise<void>;
   getContactByAddress: (address: string) => Contact | undefined;
@@ -176,13 +176,13 @@ interface CommunicationContextType {
   sendVoiceMessage: (
     toAddress: string,
     audioUri: string,
-    duration: number
+    duration: number,
   ) => Promise<void>;
   sendFile: (
     toAddress: string,
     fileUri: string,
     fileName: string,
-    fileSize: number
+    fileSize: number,
   ) => Promise<void>;
 }
 
@@ -213,7 +213,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [onlineUsers, setOnlineUsers] = useState<Record<string, OnlineUser>>(
-    {}
+    {},
   );
   const [activeCall, setActiveCall] = useState<CallInfo | null>(null);
   const [callHistory, setCallHistory] = useState<CallInfo[]>([]);
@@ -227,7 +227,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [showActiveCall, setShowActiveCall] = useState(false);
 
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
+    null,
   );
   const typingTimeoutRef = useRef<
     Record<string, ReturnType<typeof setTimeout>>
@@ -253,7 +253,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log("✅ Call accepted:", callId);
         if (currentCallData) {
           setCurrentCallData((prev) =>
-            prev ? { ...prev, status: "connecting" } : null
+            prev ? { ...prev, status: "connecting" } : null,
           );
           showActiveCallScreen();
         }
@@ -276,7 +276,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         setRemoteStream(stream);
         if (currentCallData) {
           setCurrentCallData((prev) =>
-            prev ? { ...prev, status: "connected" } : null
+            prev ? { ...prev, status: "connected" } : null,
           );
         }
       },
@@ -406,7 +406,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         } else {
           handleTypingStop(conversationId, userAddress);
         }
-      }
+      },
     );
 
     // Call events
@@ -502,38 +502,43 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const subscription = AppState.addEventListener(
       "change",
-      handleAppStateChange
+      handleAppStateChange,
     );
     return () => subscription?.remove();
   }, [socket, address]);
 
   // Persist data functions
   const persistMessages = useCallback(
-    (conversationId: string, messages: Message[]) => {
-      Storage.setJSON(`messages:${conversationId}`, messages);
+    async (conversationId: string, messages: Message[]) => {
+      await Storage.setJSON(`messages:${conversationId}`, messages);
     },
-    []
+    [],
   );
 
-  const persistContacts = useCallback((contacts: Contact[]) => {
-    Storage.setJSON("contacts", contacts);
+  const persistContacts = useCallback(async (contacts: Contact[]) => {
+    await Storage.setJSON("contacts", contacts);
   }, []);
 
   const persistConversations = useCallback(
-    (conversations: Conversation[]) => {
-      Storage.setJSON("conversations", conversations);
+    async (conversations: Conversation[]) => {
+      await Storage.setJSON("conversations", conversations);
     },
-    []
+    [],
   );
 
-  const loadPersistedData = useCallback(() => {
+  const loadPersistedData = useCallback(async () => {
     try {
-      const storedContacts = Storage.getJSON<Contact[]>("contacts");
+      const [storedContacts, storedConversations, storedCallHistory] =
+        await Promise.all([
+          Storage.getJSON<Contact[]>("contacts"),
+          Storage.getJSON<Conversation[]>("conversations"),
+          Storage.getJSON<CallInfo[]>("callHistory"),
+        ]);
+
       if (storedContacts) {
         setContacts(storedContacts);
       }
 
-      const storedConversations = Storage.getJSON<Conversation[]>("conversations");
       if (storedConversations) {
         // Deduplicate conversations
         const conversationMap = new Map<string, Conversation>();
@@ -544,18 +549,22 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         const sortedConversations = Array.from(conversationMap.values());
         setConversations(sortedConversations);
 
-        // Load messages for each conversation
+        // Load messages for each conversation in parallel
         const messagesMap: Record<string, Message[]> = {};
-        for (const conversation of sortedConversations) {
-          const storedMessages = Storage.getJSON<Message[]>(`messages:${conversation.id}`);
-          if (storedMessages) {
-            messagesMap[conversation.id] = storedMessages;
-          }
-        }
+        const messagePromises = sortedConversations.map(
+          async (conversation) => {
+            const storedMessages = await Storage.getJSON<Message[]>(
+              `messages:${conversation.id}`,
+            );
+            if (storedMessages) {
+              messagesMap[conversation.id] = storedMessages;
+            }
+          },
+        );
+        await Promise.all(messagePromises);
         setMessages(messagesMap);
       }
 
-      const storedCallHistory = Storage.getJSON<CallInfo[]>("callHistory");
       if (storedCallHistory) {
         setCallHistory(storedCallHistory);
       }
@@ -569,7 +578,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     (message: Message) => {
       const conversationId = getConversationId(
         message.fromAddress,
-        message.toAddress
+        message.toAddress,
       );
 
       setMessages((prev) => {
@@ -623,7 +632,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         socket.emit("message:delivered", { messageId: message.id });
       }
     },
-    [socket, persistMessages, persistConversations]
+    [socket, persistMessages, persistConversations],
   );
 
   const handleMessageStatusUpdate = useCallback(
@@ -632,13 +641,13 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         const updated = { ...prev };
         Object.keys(updated).forEach((conversationId) => {
           updated[conversationId] = updated[conversationId].map((message) =>
-            message.id === messageId ? { ...message, status } : message
+            message.id === messageId ? { ...message, status } : message,
           );
         });
         return updated;
       });
     },
-    []
+    [],
   );
 
   // Typing handlers
@@ -658,7 +667,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       // Clear existing timeout
       if (typingTimeoutRef.current[`${conversationId}:${userAddress}`]) {
         clearTimeout(
-          typingTimeoutRef.current[`${conversationId}:${userAddress}`]
+          typingTimeoutRef.current[`${conversationId}:${userAddress}`],
         );
       }
 
@@ -667,10 +676,10 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         () => {
           handleTypingStop(conversationId, userAddress);
         },
-        3000
+        3000,
       );
     },
-    []
+    [],
   );
 
   const handleTypingStop = useCallback(
@@ -680,7 +689,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         return {
           ...prev,
           [conversationId]: conversationTyping.filter(
-            (addr) => addr !== userAddress
+            (addr) => addr !== userAddress,
           ),
         };
       });
@@ -688,12 +697,12 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       // Clear timeout
       if (typingTimeoutRef.current[`${conversationId}:${userAddress}`]) {
         clearTimeout(
-          typingTimeoutRef.current[`${conversationId}:${userAddress}`]
+          typingTimeoutRef.current[`${conversationId}:${userAddress}`],
         );
         delete typingTimeoutRef.current[`${conversationId}:${userAddress}`];
       }
     },
-    []
+    [],
   );
 
   // Call screen navigation helpers
@@ -705,7 +714,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         navigation.navigate("IncomingCallScreen", { callData });
       }
     },
-    [navigation]
+    [navigation],
   );
 
   const showActiveCallScreen = useCallback(() => {
@@ -758,7 +767,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
           text: "Accept",
           onPress: () => acceptCall(callInfo.id),
         },
-      ]
+      ],
     );
   }, []);
 
@@ -768,11 +777,11 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const handleCallRejected = useCallback((callInfo: CallInfo) => {
     setActiveCall(null);
-      setCallHistory((prev) => {
-        const updated = [callInfo, ...prev];
-        Storage.setJSON("callHistory", updated);
-        return updated;
-      });
+    setCallHistory((prev) => {
+      const updated = [callInfo, ...prev];
+      (async () => await Storage.setJSON("callHistory", updated))();
+      return updated;
+    });
   }, []);
 
   // Utility functions
@@ -784,10 +793,10 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     (walletAddress: string): Contact | undefined => {
       return contacts.find(
         (contact) =>
-          contact.walletAddress.toLowerCase() === walletAddress.toLowerCase()
+          contact.walletAddress.toLowerCase() === walletAddress.toLowerCase(),
       );
     },
-    [contacts]
+    [contacts],
   );
 
   // Public functions
@@ -796,7 +805,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       toAddress: string,
       text: string,
       type: Message["type"] = "text",
-      metadata?: Message["metadata"]
+      metadata?: Message["metadata"],
     ) => {
       console.log("sendMessage called:", {
         toAddress,
@@ -861,7 +870,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         handleMessageStatusUpdate(message.id, "sent");
       }, 100);
     },
-    [socket, address, persistMessages]
+    [socket, address, persistMessages],
   );
 
   const getOrCreateConversation = useCallback(
@@ -870,7 +879,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const conversationId = getConversationId(address, participantAddress);
       const existingConversation = conversations.find(
-        (c) => c.id === conversationId
+        (c) => c.id === conversationId,
       );
 
       if (!existingConversation) {
@@ -901,7 +910,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       return conversationId;
     },
-    [address, conversations, persistConversations]
+    [address, conversations, persistConversations],
   );
 
   const getConversationMessages = useCallback(
@@ -913,14 +922,14 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       });
       return conversationMessages;
     },
-    [messages]
+    [messages],
   );
 
   const markConversationAsRead = useCallback(
     async (conversationId: string) => {
       setConversations((prev) => {
         const updated = prev.map((c) =>
-          c.id === conversationId ? { ...c, unreadCount: 0 } : c
+          c.id === conversationId ? { ...c, unreadCount: 0 } : c,
         );
         persistConversations(updated);
         return updated;
@@ -935,7 +944,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       });
     },
-    [messages, address, socket, persistConversations]
+    [messages, address, socket, persistConversations],
   );
 
   const addContact = useCallback(
@@ -954,7 +963,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         return updated;
       });
     },
-    [persistContacts]
+    [persistContacts],
   );
 
   const sendTypingIndicator = useCallback(
@@ -963,7 +972,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       socket.emit("typing", { conversationId, isTyping });
     },
-    [socket]
+    [socket],
   );
 
   const initiateCall = useCallback(
@@ -998,7 +1007,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         Alert.alert("Call Failed", `Failed to initiate call: ${error}`);
       }
     },
-    [address, showActiveCallScreen, getContactByAddress]
+    [address, showActiveCallScreen, getContactByAddress],
   );
 
   const acceptCall = useCallback(
@@ -1010,7 +1019,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         await webrtcServiceRef.current.acceptCall(callId);
         setCurrentCallData((prev) =>
-          prev ? { ...prev, status: "connecting" } : null
+          prev ? { ...prev, status: "connecting" } : null,
         );
       } catch (error) {
         console.error("❌ Failed to accept call:", error);
@@ -1018,7 +1027,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         handleCallEnded();
       }
     },
-    [currentCallData, handleCallEnded]
+    [currentCallData, handleCallEnded],
   );
 
   const rejectCall = useCallback(
@@ -1029,7 +1038,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       webrtcServiceRef.current.declineCall(callId);
       handleCallEnded();
     },
-    [handleCallEnded]
+    [handleCallEnded],
   );
 
   const endCall = useCallback(
@@ -1040,7 +1049,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       webrtcServiceRef.current.endCall();
       handleCallEnded();
     },
-    [handleCallEnded]
+    [handleCallEnded],
   );
 
   // WebRTC Controls
@@ -1069,20 +1078,20 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     async (conversationId: string, messageId: string) => {
       // Implementation for marking specific message as read
     },
-    []
+    [],
   );
 
   const updateContact = useCallback(
     async (contactId: string, updates: Partial<Contact>) => {
       setContacts((prev) => {
         const updated = prev.map((contact) =>
-          contact.id === contactId ? { ...contact, ...updates } : contact
+          contact.id === contactId ? { ...contact, ...updates } : contact,
         );
         persistContacts(updated);
         return updated;
       });
     },
-    [persistContacts]
+    [persistContacts],
   );
 
   const removeContact = useCallback(
@@ -1093,7 +1102,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         return updated;
       });
     },
-    [persistContacts]
+    [persistContacts],
   );
 
   const deleteConversation = useCallback(
@@ -1111,7 +1120,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
         return updated;
       });
     },
-    [persistConversations]
+    [persistConversations],
   );
 
   const sendImage = useCallback(
@@ -1119,7 +1128,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       // Implementation for sending images
       await sendMessage(toAddress, "", "image", { imageUri });
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const sendVoiceMessage = useCallback(
@@ -1127,7 +1136,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       // Implementation for sending voice messages
       await sendMessage(toAddress, "", "voice", { voiceDuration: duration });
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const sendFile = useCallback(
@@ -1135,26 +1144,26 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
       toAddress: string,
       fileUri: string,
       fileName: string,
-      fileSize: number
+      fileSize: number,
     ) => {
       // Implementation for sending files
       await sendMessage(toAddress, "", "file", { fileName, fileSize, fileUri });
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const startVoiceCall = useCallback(
     async (toAddress: string) => {
       await initiateCall(toAddress, "voice");
     },
-    [initiateCall]
+    [initiateCall],
   );
 
   const startVideoCall = useCallback(
     async (toAddress: string) => {
       await initiateCall(toAddress, "video");
     },
-    [initiateCall]
+    [initiateCall],
   );
 
   const contextValue: CommunicationContextType = {
@@ -1166,7 +1175,7 @@ export const CommunicationProvider: React.FC<{ children: React.ReactNode }> = ({
     messages,
     conversations: conversations.sort(
       (a, b) =>
-        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     ),
     contacts,
 
@@ -1244,7 +1253,7 @@ export const useCommunication = (): CommunicationContextType => {
   const context = useContext(CommunicationContext);
   if (context === undefined) {
     throw new Error(
-      "useCommunication must be used within a CommunicationProvider"
+      "useCommunication must be used within a CommunicationProvider",
     );
   }
   return context;

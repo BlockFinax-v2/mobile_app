@@ -211,11 +211,11 @@ class SecureStorageManager {
   }
 
   /**
-   * Store non-sensitive data (synchronous with MMKV)
+   * Store non-sensitive data (async with AsyncStorage)
    */
-  public setItem(key: string, value: string): Promise<void> {
+  public async setItem(key: string, value: string): Promise<void> {
     try {
-      return Storage.setItem(key, value);
+      return await Storage.setItem(key, value);
     } catch (error) {
       console.error('Error storing item:', error);
       return Promise.reject(error);
@@ -223,11 +223,11 @@ class SecureStorageManager {
   }
 
   /**
-   * Retrieve non-sensitive data (synchronous with MMKV)
+   * Retrieve non-sensitive data (async with AsyncStorage)
    */
-  public getItem(key: string): string | null {
+  public async getItem(key: string): Promise<string | null> {
     try {
-      return Storage.getItem(key) || null;
+      return await Storage.getItem(key) || null;
     } catch (error) {
       console.error('Error retrieving item:', error);
       return null;

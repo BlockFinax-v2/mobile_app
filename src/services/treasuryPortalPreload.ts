@@ -255,7 +255,9 @@ export const preloadTreasuryPortalData = async ({
     daoConfig: JSON.stringify(daoConfig),
   };
 
-  Object.entries(cacheData).forEach(([key, value]) => {
-    Storage.setItem(getCacheKey(key), value);
-  });
+  await Promise.all(
+    Object.entries(cacheData).map(([key, value]) =>
+      Storage.setItem(getCacheKey(key), value)
+    )
+  );
 };

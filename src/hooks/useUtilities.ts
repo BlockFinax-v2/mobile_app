@@ -99,36 +99,40 @@ export function useToggle(initialValue = false) {
 import { Storage } from "@/utils/storage";
 
 export function useStorage<T>(key: string, initialValue?: T) {
-  const [value, setValue] = useState<T | undefined>(() => {
-    try {
-      const stored = Storage.getJSON<T>(key);
-      return stored !== null ? stored : initialValue;
-    } catch (err) {
-      return initialValue;
-    }
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const [value, setValue] = useState<T | undefined>(initialValue);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Sync value if key changes
+  // Load initial value asynchronously
   useEffect(() => {
-    try {
-      const stored = Storage.getJSON<T>(key);
-      if (stored !== null) {
-        setValue(stored);
-      } else {
-        setValue(initialValue);
+    let isMounted = true;
+    (async () => {
+      try {
+        setIsLoading(true);
+        const stored = await Storage.getJSON<T>(key);
+        if (isMounted) {
+          setValue(stored !== null ? stored : initialValue);
+          setError(null);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(err instanceof Error ? err.message : 'Failed to load data');
+          setValue(initialValue);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-    }
-  }, [key, initialValue]);
+    })();
+    return () => { isMounted = false; };
+  }, [key]);
 
   // Save value
-  const updateValue = useCallback((newValue: T) => {
+  const updateValue = useCallback(async (newValue: T) => {
     try {
       setValue(newValue);
-      Storage.setJSON(key, newValue);
+      await Storage.setJSON(key, newValue);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save data');
@@ -136,10 +140,10 @@ export function useStorage<T>(key: string, initialValue?: T) {
   }, [key]);
 
   // Remove value
-  const removeValue = useCallback(() => {
+  const removeValue = useCallback(async () => {
     try {
       setValue(initialValue);
-      Storage.removeItem(key);
+      await Storage.removeItem(key);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove data');

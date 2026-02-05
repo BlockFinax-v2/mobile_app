@@ -51,7 +51,7 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
   const loadGaslessInfo = async () => {
     const amountUSD = tokenPriceService.convertToUSD(
       transactionAmount,
-      tokenSymbol
+      tokenSymbol,
     );
     const result = await gaslessLimitService.canUseGasless(amountUSD);
     const summary = await gaslessLimitService.getUsageSummary();
@@ -72,7 +72,7 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
 
   const handleConfirm = async () => {
     if (doNotAskAgain) {
-      Storage.setItem(DO_NOT_ASK_KEY, selectedOption);
+      await Storage.setItem(DO_NOT_ASK_KEY, selectedOption);
     }
     onSelect(selectedOption, doNotAskAgain);
   };
@@ -142,8 +142,8 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
                       !gaslessInfo.canUseGasless
                         ? palette.neutralMid
                         : selectedOption === "gasless"
-                        ? palette.accentGreen
-                        : palette.neutralDark
+                          ? palette.accentGreen
+                          : palette.neutralDark
                     }
                   />
                   <View>
@@ -269,8 +269,8 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
               {selectedOption === "gasless"
                 ? "gasless when available"
                 : selectedOption === "token"
-                ? "token payment"
-                : "native gas"}{" "}
+                  ? "token payment"
+                  : "native gas"}{" "}
               by default)
             </Text>
           </TouchableOpacity>
@@ -298,7 +298,7 @@ export const GasPaymentModal: React.FC<GasPaymentModalProps> = ({
 
 export const checkShouldShowGasModal = async (): Promise<boolean> => {
   try {
-    const preference = Storage.getItem(DO_NOT_ASK_KEY);
+    const preference = await Storage.getItem(DO_NOT_ASK_KEY);
     return preference === null; // Show modal if no preference is set
   } catch {
     return true;
@@ -308,7 +308,7 @@ export const checkShouldShowGasModal = async (): Promise<boolean> => {
 export const getSavedGasPreference =
   async (): Promise<GasPaymentOption | null> => {
     try {
-      const preference = Storage.getItem(DO_NOT_ASK_KEY);
+      const preference = await Storage.getItem(DO_NOT_ASK_KEY);
       return preference as GasPaymentOption | null;
     } catch {
       return null;
