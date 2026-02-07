@@ -19,6 +19,7 @@ import {
 import { useWallet } from "./WalletContext";
 import { Storage } from "@/utils/storage";
 import { backgroundDataLoader } from "@/services/backgroundDataLoader";
+import { stakingService } from "@/services/stakingService";
 
 type TradeFinanceCache = {
   applications: Application[];
@@ -394,6 +395,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [pendingUpdates, setPendingUpdates] = useState<Set<string>>(new Set());
   const [logisticsPartners, setLogisticsPartners] = useState<string[]>([]);
   const [deliveryPersons, setDeliveryPersons] = useState<string[]>([]);
+  const [isFinancier, setIsFinancier] = useState<boolean>(false);
 
   // Prevent re-initialization on screen navigation
   const hasInitialized = useRef(false);
@@ -712,10 +714,43 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const fetchBlockchainData = useCallback(async () => {
     if (!address || !isUnlocked) return;
     try {
-      const buyerPGAs = await tradeFinanceService.getAllPGAsByBuyer(address);
-      const sellerPGAs = await tradeFinanceService.getAllPGAsBySeller(address);
+      // CRITICAL: Check if user is a financier first
+      const financierStatus = await stakingService.isFinancier(address);
+      setIsFinancier(financierStatus || false);
 
-      const allApps = [...buyerPGAs, ...sellerPGAs].map((pga) =>
+      console.log(
+        `[TradeFinanceContext] 👤 User role - Financier: ${financierStatus}`,
+      );
+
+      let allPGAInfos: PGAInfo[] = [];
+
+      if (financierStatus) {
+        // FINANCIERS: Fetch ALL PGAs for voting/pool review
+        console.log(
+          "[TradeFinanceContext] 💼 Fetching ALL PGAs for financier pool...",
+        );
+        const allPGAIds = await tradeFinanceService.getAllActivePGAs();
+        const pgaPromises = allPGAIds.map((id) =>
+          tradeFinanceService.getPGA(id).catch(() => null),
+        );
+        allPGAInfos = (await Promise.all(pgaPromises)).filter(
+          (p) => p !== null,
+        ) as PGAInfo[];
+        console.log(
+          `[TradeFinanceContext] ✅ Loaded ${allPGAInfos.length} PGAs for financier`,
+        );
+      } else {
+        // BUYERS/SELLERS: Fetch only their specific PGAs
+        const buyerPGAs = await tradeFinanceService.getAllPGAsByBuyer(address);
+        const sellerPGAs =
+          await tradeFinanceService.getAllPGAsBySeller(address);
+        allPGAInfos = [...buyerPGAs, ...sellerPGAs];
+        console.log(
+          `[TradeFinanceContext] ✅ Loaded ${buyerPGAs.length} buyer + ${sellerPGAs.length} seller PGAs`,
+        );
+      }
+
+      const allApps = allPGAInfos.map((pga) =>
         mapPGAInfoToApplication(pga, selectedNetwork),
       );
       const uniqueMap = new Map<string, Application>();
@@ -786,6 +821,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
    * Real-time event handler - optimized for microsecond-level updates
    * Uses fire-and-forget persistence and optimistic UI updates
    * ⚡ PERSISTENCE: Cards persist until removal events are emitted
+   * 🎯 ROLE-BASED: Properly handles buyer, seller, financier, and logistics visibility
    */
   const handleRealtimeEvent = useCallback(
     async (event: PGAEvent) => {
@@ -824,6 +860,55 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
+        // 🎯 ROLE-BASED VISIBILITY CHECK
+        // Determine if this user should see this PGA card
+        const shouldShowCard = await (async () => {
+          const normalizedAddress = address?.toLowerCase();
+
+          // Always show if user is buyer or seller
+          if (event.data.buyer?.toLowerCase() === normalizedAddress) {
+            console.log(
+              `[TradeFinanceContext] 🎯 User is BUYER - showing card`,
+            );
+            return true;
+          }
+          if (event.data.seller?.toLowerCase() === normalizedAddress) {
+            console.log(
+              `[TradeFinanceContext] 🎯 User is SELLER - showing card`,
+            );
+            return true;
+          }
+
+          // Check if user is financier (should see ALL PGAs for voting)
+          if (isFinancier) {
+            console.log(
+              `[TradeFinanceContext] 🎯 User is FINANCIER - showing card for pool voting`,
+            );
+            return true;
+          }
+
+          // For other events, check if user is logistics partner
+          if (
+            event.data.logisticPartner?.toLowerCase() === normalizedAddress ||
+            event.data.deliveryPerson?.toLowerCase() === normalizedAddress
+          ) {
+            console.log(
+              `[TradeFinanceContext] 🎯 User is LOGISTICS - showing card`,
+            );
+            return true;
+          }
+
+          console.log(
+            `[TradeFinanceContext] ⏭️ User not involved in PGA ${event.pgaId} - skipping card`,
+          );
+          return false;
+        })();
+
+        if (!shouldShowCard) {
+          setTimeout(() => pendingUpdates.delete(eventKey), 1000);
+          return;
+        }
+
         // Fetch updated PGA data (will get from blockchain since cache is invalidated)
         const pgaInfo = await tradeFinanceService.getPGA(event.pgaId);
         const updatedApp = mapPGAInfoToApplication(pgaInfo, selectedNetwork);
@@ -835,6 +920,11 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           );
           // Certificate is now considered issued as per redesigned flow
         }
+
+        // Log the card action for visibility
+        console.log(
+          `[TradeFinanceContext] 🔔 ${event.eventType} → Card UPDATE for PGA ${event.pgaId} (Status: ${mapPGAStatusToAppStatus(pgaInfo.status, pgaInfo.issuanceFeePaid)})`,
+        );
 
         // INSTANT UI update (optimistic)
         setApplications((prev) => {
@@ -871,12 +961,21 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       }
     },
-    [lastSyncedBlock, persistData, pendingUpdates, shouldRemoveCard],
+    [
+      lastSyncedBlock,
+      persistData,
+      pendingUpdates,
+      shouldRemoveCard,
+      address,
+      isFinancier,
+      selectedNetwork,
+    ],
   );
 
   /**
    * Load historical events on initial mount with systematic block range management
    * ⚡ OPTIMIZED: Only fetches new events since last sync, not entire history
+   * 🎯 ROLE-AWARE: Handles financiers specially (they see ALL PGAs)
    */
   const loadHistoricalEvents = useCallback(async () => {
     if (!address || !isUnlocked || isLoadingHistory) return;
@@ -945,8 +1044,31 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
           `[TradeFinanceContext] 📝 Updating ${pgaIds.size} PGAs with new events...`,
         );
 
-        // Fetch ONLY the PGAs that have new events (not all PGAs)
-        const pgaPromises = Array.from(pgaIds).map((pgaId) =>
+        // 🎯 ROLE-BASED FILTERING: Only fetch PGAs relevant to this user
+        const relevantPGAIds = Array.from(pgaIds).filter((pgaId) => {
+          // If user is financier, show ALL PGAs (for pool voting)
+          if (isFinancier) return true;
+
+          // Find at least one event for this PGA that involves the user
+          const relatedEvent = pastEvents.find((e) => {
+            if (e.pgaId !== pgaId) return false;
+            const normalizedAddress = address.toLowerCase();
+            return (
+              e.data.buyer?.toLowerCase() === normalizedAddress ||
+              e.data.seller?.toLowerCase() === normalizedAddress ||
+              e.data.logisticPartner?.toLowerCase() === normalizedAddress ||
+              e.data.deliveryPerson?.toLowerCase() === normalizedAddress
+            );
+          });
+          return relatedEvent !== undefined;
+        });
+
+        console.log(
+          `[TradeFinanceContext] 🎯 ${relevantPGAIds.length}/${pgaIds.size} PGAs are relevant to user`,
+        );
+
+        // Fetch ONLY the PGAs that have new events AND are relevant to user
+        const pgaPromises = relevantPGAIds.map((pgaId) =>
           tradeFinanceService.getPGA(pgaId, true).catch((err: any) => {
             if (err?.errorName === "PGANotFound") {
               console.log(
@@ -1011,6 +1133,8 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     persistData,
     fetchBlockchainData,
     saveLastSyncedBlock,
+    isFinancier,
+    selectedNetwork,
   ]);
 
   const preload = useCallback(async () => {
@@ -1027,6 +1151,13 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const preloadStart = performance.now();
 
     try {
+      // CRITICAL: Check financier status FIRST
+      const financierStatus = await stakingService.isFinancier(address);
+      setIsFinancier(financierStatus || false);
+      console.log(
+        `[TradeFinanceContext] 🎯 Financier status: ${financierStatus}`,
+      );
+
       // 1. Load background preloaded data (INSTANT - already fetched during unlock screen)
       const cachedData = await backgroundDataLoader.getCachedTradeFinanceData();
 
@@ -1066,10 +1197,18 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         await loadCachedData();
       }
 
-      // 2. Start real-time listeners immediately (no need to wait for sync)
+      // 2. If user is financier but cache has no PGAs, fetch ALL active PGAs
+      if (financierStatus && applications.length === 0) {
+        console.log(
+          "[TradeFinanceContext] 💼 Financier with empty cache - fetching ALL active PGAs...",
+        );
+        await fetchBlockchainData();
+      }
+
+      // 3. Start real-time listeners immediately (no need to wait for sync)
       tradeFinanceEventService.startListening(address, handleRealtimeEvent);
 
-      // 3. Fetch only NEW events since last sync (background, non-blocking)
+      // 4. Fetch only NEW events since last sync (background, non-blocking)
       // This runs after UI is already shown to user
       loadHistoricalEvents().catch((err) => {
         console.warn("[TradeFinanceContext] Background sync error:", err);
@@ -1104,6 +1243,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchBlockchainData,
     handleRealtimeEvent,
     mapPGAInfoToApplication,
+    applications.length,
   ]);
 
   // SMART BACKGROUND SYNC: Only fetch NEW events every 2 minutes (not full refresh)

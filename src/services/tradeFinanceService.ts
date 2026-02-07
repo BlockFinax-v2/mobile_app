@@ -397,6 +397,21 @@ class TradeFinanceService {
         return results;
     }
 
+    /**
+     * Get all ACTIVE PGAs (for financier pool view)
+     * CRITICAL: Financiers need to see ALL active PGAs for voting
+     */
+    public async getAllActivePGAs(skipCache: boolean = false): Promise<string[]> {
+        const startTime = performance.now();
+        const contract = await this.getContract();
+        const ids = await contract.getActivePGAs();
+
+        const fetchTime = performance.now() - startTime;
+        console.log(`[TradeFinanceService] ✅ Fetched ${ids.length} active PGA IDs in ${fetchTime.toFixed(0)}ms`);
+
+        return ids;
+    }
+
     public async createPGA(params: {
         pgaId: string;
         seller: string;
@@ -406,6 +421,7 @@ class TradeFinanceService {
         tradeValue: string;
         guaranteeAmount: string;
         collateralAmount: string;
+        issuanceFee: string;
         duration: number;
         beneficiaryName: string;
         beneficiaryWallet: string;
@@ -430,6 +446,7 @@ class TradeFinanceService {
                 ethers.utils.parseUnits(params.tradeValue, decimals),
                 ethers.utils.parseUnits(params.guaranteeAmount, decimals),
                 ethers.utils.parseUnits(params.collateralAmount, decimals),
+                ethers.utils.parseUnits(params.issuanceFee, decimals),
                 params.duration,
                 params.beneficiaryName,
                 params.beneficiaryWallet,

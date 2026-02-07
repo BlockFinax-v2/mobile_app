@@ -3897,19 +3897,18 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: "#FFFFFF",
   },
-  votingButtons: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  voteButton: {
-    flex: 1,
+  viewDetailsButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: spacing.sm,
-    borderRadius: 8,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.xs,
     gap: spacing.xs,
+  },
+  viewDetailsText: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "500",
   },
   detailRowCompact: {
     flexDirection: "row",
@@ -3932,11 +3931,6 @@ const styles = StyleSheet.create({
   reviewDraftButtonText: {
     fontSize: 14,
     color: colors.primary,
-    fontWeight: "600",
-  },
-  voteButtonText: {
-    color: "white",
-    fontSize: 14,
     fontWeight: "600",
   },
   actionButton: {

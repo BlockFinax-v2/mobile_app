@@ -196,18 +196,39 @@ class TradeFinanceEventService {
     }
 
     /**
-     * Check if event is related to the user (as buyer, seller, or participant)
+     * Check if event is related to the user (as buyer, seller, financier, or participant)
+     * 
+     * CRITICAL: Financiers should see ALL PGAs for voting!
+     * This is temporarily returning true for all events until we can check financier status
+     * The context layer will handle proper filtering based on user role
      */
     private isUserRelatedEvent(event: PGAEvent, userAddress: string): boolean {
         const normalizedUser = userAddress.toLowerCase();
         const data = event.data;
 
-        // Check common address fields
+        // Check if user is directly involved
         if (data.buyer?.toLowerCase() === normalizedUser) return true;
         if (data.seller?.toLowerCase() === normalizedUser) return true;
         if (data.voter?.toLowerCase() === normalizedUser) return true;
         if (data.logisticPartner?.toLowerCase() === normalizedUser) return true;
         if (data.deliveryPerson?.toLowerCase() === normalizedUser) return true;
+
+        // CRITICAL FIX: For PGACreated, GuaranteeApproved, and PGAVoteCast events,
+        // ALL users should receive them because:
+        // 1. Financiers need to see PGAs for voting (not included in buyer/seller)
+        // 2. Context layer will filter based on actual user role
+        // 3. This ensures cards appear for ALL relevant parties
+        const eventsForAllUsers = [
+            "PGACreated",
+            "GuaranteeApproved", 
+            "PGAVoteCast",
+            "PGAStatusChanged"
+        ];
+        
+        if (eventsForAllUsers.includes(event.eventType)) {
+            console.log(`[TradeFinanceEventService] 🔔 Broadcasting ${event.eventType} to all users (PGA: ${event.pgaId})`);
+            return true;
+        }
 
         return false;
     }

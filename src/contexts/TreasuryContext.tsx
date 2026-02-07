@@ -535,8 +535,16 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
     // Skip if already initialized for this wallet/network
     if (hasInitialized.current && lastInitializedKey.current === initKey) {
       console.log(
-        "[TreasuryContext] 🚀 Already initialized - using cached data",
+        "[TreasuryContext] 🚀 Already initialized - verifying listeners are active",
       );
+
+      // CRITICAL FIX: Ensure event listener is ALWAYS active even if already initialized
+      if (!treasuryEventService.getIsListening()) {
+        console.log(
+          "[TreasuryContext] ⚠️ Event listener was inactive, restarting...",
+        );
+        treasuryEventService.startListening(address, handleRealtimeEvent);
+      }
       return;
     }
 
@@ -574,8 +582,20 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
           await loadCachedData();
         }
 
-        // 2. Start real-time listeners immediately (no need to wait for sync)
+        // 2. Start real-time listeners immediately (CRITICAL - must be active)
+        console.log(
+          "[TreasuryContext] 🎧 Starting real-time event listener...",
+        );
         treasuryEventService.startListening(address, handleRealtimeEvent);
+
+        // Verify listener is active
+        if (treasuryEventService.getIsListening()) {
+          console.log("[TreasuryContext] ✅ Real-time listener is ACTIVE");
+        } else {
+          console.error(
+            "[TreasuryContext] ❌ CRITICAL: Real-time listener FAILED to start!",
+          );
+        }
 
         // 3. Load historical events in background (non-blocking, runs after UI is shown)
         loadHistoricalEvents().catch((err) => {
@@ -591,6 +611,15 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
         );
       } catch (error) {
         console.error("[TreasuryContext] Initialization error:", error);
+
+        // CRITICAL: Ensure listener starts even if data load fails
+        if (!treasuryEventService.getIsListening()) {
+          console.log(
+            "[TreasuryContext] 🎧 Starting listener after error recovery...",
+          );
+          treasuryEventService.startListening(address, handleRealtimeEvent);
+        }
+
         // Fallback to full data fetch
         await loadCachedData();
         await loadHistoricalEvents();
@@ -600,6 +629,7 @@ export const TreasuryProvider: React.FC<{ children: React.ReactNode }> = ({
     initialize();
 
     return () => {
+      console.log("[TreasuryContext] 🛑 Cleanup: stopping listeners");
       treasuryEventService.stopListening();
     };
   }, [
