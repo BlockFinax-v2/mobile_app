@@ -241,6 +241,7 @@ interface TradeFinanceContextType {
   logisticsPartners: string[];
   deliveryPersons: string[];
   refreshLogisticsProviders: () => Promise<void>;
+  isAuthorizedLogistics: boolean; // Whether current user is an authorized logistics partner
 
   // Data mapping
   mapPGAInfoToApplication: (pga: PGAInfo) => Application;
@@ -309,13 +310,13 @@ export const mapPGAStatusToStage = (
     case PGAStatus.LogisticsNotified:
       return 5; // Certificate / Logistics
     case PGAStatus.LogisticsTakeup:
-      return 5; // Still in Logistics stage
+      return 5; // Logistics claimed, ready to ship
     case PGAStatus.GoodsShipped:
       return 6; // Shipped
-    case PGAStatus.GoodsDelivered:
-      return 7; // Delivered
     case PGAStatus.BalancePaymentPaid:
-      return 8; // Balance Paid
+      return 7; // Balance Paid
+    case PGAStatus.GoodsDelivered:
+      return 8; // Delivered
     case PGAStatus.CertificateIssued:
       return 9; // Complete
     case PGAStatus.Completed:
@@ -325,7 +326,7 @@ export const mapPGAStatusToStage = (
     case PGAStatus.Expired:
       return 1;
     case PGAStatus.Disputed:
-      return 8;
+      return 7;
     default:
       return 1;
   }
@@ -396,6 +397,8 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
   const [logisticsPartners, setLogisticsPartners] = useState<string[]>([]);
   const [deliveryPersons, setDeliveryPersons] = useState<string[]>([]);
   const [isFinancier, setIsFinancier] = useState<boolean>(false);
+  const [isAuthorizedLogistics, setIsAuthorizedLogistics] =
+    useState<boolean>(false);
 
   // Prevent re-initialization on screen navigation
   const hasInitialized = useRef(false);
@@ -722,6 +725,9 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       const isLogistics =
         await tradeFinanceService.isAuthorizedLogisticsPartner(address);
       const isDeliveryPerson = deliveryPersons.includes(address.toLowerCase());
+
+      // Update state for logistics authorization
+      setIsAuthorizedLogistics(isLogistics);
 
       console.log(
         `[TradeFinanceContext] 👤 User roles - Financier: ${financierStatus}, Logistics: ${isLogistics}, Delivery: ${isDeliveryPerson}`,
@@ -1595,6 +1601,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         logisticsPartners,
         deliveryPersons,
         refreshLogisticsProviders,
+        isAuthorizedLogistics,
         confirmGoodsDeliveredBlockchain,
         takeUpPGABlockchain,
         mapPGAInfoToApplication: (pga: PGAInfo) =>

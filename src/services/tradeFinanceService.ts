@@ -278,6 +278,23 @@ class TradeFinanceService {
         return this.getTokenDecimals(usdcAddress);
     }
 
+    /**
+     * Check if an address is an Account Abstraction wallet or EOA
+     * @param address Address to check
+     * @returns true if AA wallet, false if EOA
+     */
+    private async isAccountAbstraction(address: string): Promise<boolean> {
+        try {
+            const provider = await this.getProvider();
+            const code = await provider.getCode(address);
+            // EOA addresses have no code (0x), AA wallets have contract code
+            return code !== '0x' && code.length > 2;
+        } catch (error) {
+            console.error('[TradeFinanceService] Error checking account type:', error);
+            return false; // Default to EOA if check fails
+        }
+    }
+
     public async getPGA(pgaId: string, skipCache: boolean = false): Promise<PGAInfo> {
         // ⚡ Check cache first (unless explicitly skipped)
         if (!skipCache) {
@@ -608,15 +625,61 @@ class TradeFinanceService {
     }
 
     public async confirmGoodsShipped(pgaId: string) {
-        const contract = await this.getContract();
-        const tx = await contract.confirmGoodsShipped(pgaId);
-        return await tx.wait();
+        try {
+            console.log('[TradeFinanceService] 📦 Confirming goods shipped for PGA:', pgaId);
+            
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const isAA = await this.isAccountAbstraction(address);
+            
+            console.log(`[TradeFinanceService] 🔐 Signer type: ${isAA ? 'Account Abstraction (AA)' : 'EOA (Externally Owned Account)'}`);
+            console.log('[TradeFinanceService] 📍 Logistics partner address:', address);
+            
+            const contract = await this.getContract();
+            console.log('[TradeFinanceService] ⏳ Submitting confirmGoodsShipped transaction...');
+            
+            const tx = await contract.confirmGoodsShipped(pgaId);
+            console.log('[TradeFinanceService] 📄 Transaction hash:', tx.hash);
+            console.log('[TradeFinanceService] ⏱️ Waiting for confirmation...');
+            
+            const receipt = await tx.wait();
+            console.log('[TradeFinanceService] ✅ Goods shipped confirmed! Block:', receipt.blockNumber);
+            console.log('[TradeFinanceService] ⛽ Gas used:', receipt.gasUsed?.toString());
+            
+            return receipt;
+        } catch (error: any) {
+            console.error('[TradeFinanceService] ❌ confirmGoodsShipped error:', error);
+            throw error;
+        }
     }
 
     public async confirmGoodsDelivered(pgaId: string) {
-        const contract = await this.getContract();
-        const tx = await contract.confirmGoodsDelivered(pgaId);
-        return await tx.wait();
+        try {
+            console.log('[TradeFinanceService] 📬 Confirming goods delivered for PGA:', pgaId);
+            
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const isAA = await this.isAccountAbstraction(address);
+            
+            console.log(`[TradeFinanceService] 🔐 Signer type: ${isAA ? 'Account Abstraction (AA)' : 'EOA (Externally Owned Account)'}`);
+            console.log('[TradeFinanceService] 📍 Logistics partner address:', address);
+            
+            const contract = await this.getContract();
+            console.log('[TradeFinanceService] ⏳ Submitting confirmGoodsDelivered transaction...');
+            
+            const tx = await contract.confirmGoodsDelivered(pgaId);
+            console.log('[TradeFinanceService] 📄 Transaction hash:', tx.hash);
+            console.log('[TradeFinanceService] ⏱️ Waiting for confirmation...');
+            
+            const receipt = await tx.wait();
+            console.log('[TradeFinanceService] ✅ Goods delivery confirmed! Block:', receipt.blockNumber);
+            console.log('[TradeFinanceService] ⛽ Gas used:', receipt.gasUsed?.toString());
+            
+            return receipt;
+        } catch (error: any) {
+            console.error('[TradeFinanceService] ❌ confirmGoodsDelivered error:', error);
+            throw error;
+        }
     }
 
     public async takeUpPGA(pgaId: string) {
@@ -643,44 +706,74 @@ class TradeFinanceService {
         onProgress?: (stage: 'checking' | 'approving' | 'paying', message: string) => void
     ) {
         try {
+            console.log('[TradeFinanceService] 💰 Starting balance payment for PGA:', pgaId);
+            
+            const signer = await this.getSigner();
+            const address = await signer.getAddress();
+            const isAA = await this.isAccountAbstraction(address);
+            
+            console.log(`[TradeFinanceService] 🔐 Signer type: ${isAA ? 'Account Abstraction (AA)' : 'EOA (Externally Owned Account)'}`);
+            console.log('[TradeFinanceService] 📍 Buyer address:', address);
+            
             onProgress?.('checking', 'Checking balance payment requirements...');
 
             const contract = await this.getContract();
             const diamond = this.getDiamondAddress();
 
             // Get PGA data to calculate balance (tradeValue - collateral)
+            console.log('[TradeFinanceService] 📊 Fetching PGA data...');
             const pgaData = await contract.getPGA(pgaId);
             const balanceAmount = pgaData.tradeValue.sub(pgaData.collateralAmount);
+            
+            console.log('[TradeFinanceService] 💵 Trade value:', ethers.utils.formatUnits(pgaData.tradeValue, 6));
+            console.log('[TradeFinanceService] 🔒 Collateral paid:', ethers.utils.formatUnits(pgaData.collateralAmount, 6));
+            console.log('[TradeFinanceService] 💳 Balance to pay:', ethers.utils.formatUnits(balanceAmount, 6));
 
             // Get token contract
             const provider = await this.getProvider();
             const token = new ethers.Contract(tokenAddress, ERC20_ABI, provider);
+            const tokenSymbol = await token.symbol();
+
+            console.log('[TradeFinanceService] 🪙 Payment token:', tokenSymbol, 'at', tokenAddress);
 
             // Check balance
-            const signer = await this.getSigner();
-            const address = await signer.getAddress();
             const balance = await token.balanceOf(address);
+            console.log('[TradeFinanceService] 👛 Wallet balance:', ethers.utils.formatUnits(balance, 6), tokenSymbol);
 
             if (balance.lt(balanceAmount)) {
-                throw new Error(`Insufficient ${await token.symbol()} balance`);
+                throw new Error(`Insufficient ${tokenSymbol} balance`);
             }
 
             // Check and handle approval
             const allowance = await token.allowance(address, diamond);
+            console.log('[TradeFinanceService] ✅ Current allowance:', ethers.utils.formatUnits(allowance, 6), tokenSymbol);
+            
             if (allowance.lt(balanceAmount)) {
-                onProgress?.('approving', `Approving ${await token.symbol()} spend...`);
+                console.log('[TradeFinanceService] 🔓 Approval needed. Approving spend...');
+                onProgress?.('approving', `Approving ${tokenSymbol} spend...`);
                 const tokenWithSigner = token.connect(signer);
                 const approveTx = await tokenWithSigner.approve(diamond, balanceAmount);
+                console.log('[TradeFinanceService] 📄 Approval tx hash:', approveTx.hash);
                 await approveTx.wait();
+                console.log('[TradeFinanceService] ✅ Approval confirmed');
             }
 
             onProgress?.('paying', 'Paying balance amount...');
+            console.log('[TradeFinanceService] ⏳ Submitting payBalancePayment transaction...');
 
             // Multi-token signature: payBalancePayment(pgaId, tokenAddress)
             const tx = await contract.payBalancePayment(pgaId, tokenAddress);
-            return tx.wait();
+            console.log('[TradeFinanceService] 📄 Transaction hash:', tx.hash);
+            console.log('[TradeFinanceService] ⏱️ Waiting for confirmation...');
+            
+            const receipt = await tx.wait();
+            console.log('[TradeFinanceService] ✅ Balance payment successful! Block:', receipt.blockNumber);
+            console.log('[TradeFinanceService] ⛽ Gas used:', receipt.gasUsed?.toString());
+            console.log('[TradeFinanceService] 🎉 PGA status updated to BalancePaymentPaid');
+            
+            return receipt;
         } catch (error: any) {
-            console.error('[TradeFinanceService] payBalancePayment error:', error);
+            console.error('[TradeFinanceService] ❌ payBalancePayment error:', error);
             throw error;
         }
     }

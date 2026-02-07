@@ -14,6 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { colors } from "@/theme/colors";
 import { spacing } from "@/theme/spacing";
 import { DocumentViewerModal } from "@/components/documents/DocumentViewerModal";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 interface ApplicationData {
   id: string;
@@ -67,8 +68,11 @@ interface BuyerApplicationViewProps {
   onPayInvoice?: () => void;
   onConfirmDelivery?: () => void;
   onIssueCertificate?: () => void;
+  onPayBalance?: (tokenAddress: string) => Promise<void>;
   onRefresh?: () => Promise<void>;
   isRefreshing?: boolean;
+  userRole?: "buyer" | "seller" | "logistics";
+  currentUserAddress?: string;
 }
 
 const STAGE_TITLES = [
@@ -78,8 +82,7 @@ const STAGE_TITLES = [
   "Payment Pending",
   "Logistics",
   "Shipped",
-  "Delivered",
-  "Balance Paid",
+  "Balance Payment",
   "Complete",
 ];
 
@@ -103,6 +106,9 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
   onPayInvoice,
   onConfirmDelivery,
   onIssueCertificate,
+  onPayBalance,
+  userRole,
+  currentUserAddress,
   onRefresh,
   isRefreshing = false,
 }) => {
@@ -110,6 +116,29 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+
+  const { selectedNetwork } = useNetwork();
+
+  // Helper functions to determine user's role in this transaction
+  const isBuyer = () => {
+    return (
+      userRole === "buyer" ||
+      currentUserAddress?.toLowerCase() ===
+        application.applicant?.walletAddress?.toLowerCase()
+    );
+  };
+
+  const isSeller = () => {
+    return (
+      userRole === "seller" ||
+      currentUserAddress?.toLowerCase() ===
+        application.beneficiary?.walletAddress?.toLowerCase()
+    );
+  };
+
+  const isLogistics = () => {
+    return userRole === "logistics";
+  };
 
   const handlePayCollateral = async () => {
     if (!onPayCollateral) return;
@@ -245,11 +274,14 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         return renderLogisticsStage();
       case 6: // Goods Shipped
         return renderGoodsShippedStage();
-      case 7: // Delivery Confirmed
-        return renderDeliveryConfirmedStage();
-      case 8: // Balance Paid
+      case 7: // Delivery Confirmed - Balance Payment Required
+        return renderBalancePaymentStage();
+      case 8: // Balance Payment Paid
         return renderInvoicePaidStage();
-      case 9: // Complete (Cert Issued)
+        return renderDeliveryConfirmedStage();
+      case 9: // Invoice Paid
+        return renderInvoicePaidStage();
+      case 10: // Complete (Cert Issued)
         return renderCertificateIssuedStage();
       default:
         return renderAppliedStage();
@@ -314,10 +346,7 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Your Company:</Text>
           <Text style={styles.infoValue}>
-            {application.applicant?.company ||
-              application.buyer?.company ||
-              application.companyName ||
-              "N/A"}
+            {application.applicant?.company || application.companyName || "N/A"}
           </Text>
         </View>
         <View style={styles.infoRow}>
@@ -501,279 +530,369 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
     </View>
   );
 
-  const renderApprovedStage = () => (
-    <View style={styles.stageContent}>
-      <View style={styles.statusBanner}>
-        <MaterialCommunityIcons
-          name="check-circle"
-          size={24}
-          color={colors.success}
-        />
-        <Text style={styles.statusBannerText}>
-          Seller approved! - Action required:{" "}
-          {application.collateralPaid && application.issuanceFeePaid
-            ? "Awaiting logistics"
-            : !application.collateralPaid && !application.issuanceFeePaid
-              ? "Pay collateral and fee"
-              : !application.collateralPaid
-                ? "Pay collateral"
-                : "Pay issuance fee"}
-        </Text>
-      </View>
-
-      {/* Step 1: Collateral Payment */}
-      <View
-        style={[
-          styles.feePaymentCard,
-          application.collateralPaid && styles.completedCard,
-        ]}
-      >
-        <View style={styles.feeHeader}>
-          <MaterialCommunityIcons
-            name={application.collateralPaid ? "check-circle" : "shield-lock"}
-            size={40}
-            color={application.collateralPaid ? colors.success : colors.primary}
-          />
-          <View style={styles.feeHeaderText}>
-            <Text style={styles.feeTitle}>
-              Step 1: Collateral Payment {application.collateralPaid ? "✓" : ""}
-            </Text>
-            <Text style={styles.feeAmount}>{application.collateralValue}</Text>
-          </View>
-        </View>
-
-        <View style={styles.feeDivider} />
-
-        <View style={styles.feeDetails}>
-          <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Collateral Amount:</Text>
-            <Text style={styles.feeValue}>{application.collateralValue}</Text>
-          </View>
-          <View style={styles.feeRow}>
-            <Text style={styles.feeLabel}>Paid to:</Text>
-            <Text style={styles.feeValue}>BlockFinax Diamond (Staking)</Text>
-          </View>
-        </View>
-
-        {!application.collateralPaid && (
-          <TouchableOpacity
-            style={styles.payFeeButton}
-            onPress={handlePayCollateral}
-            disabled={isProcessing}
-          >
-            {isProcessing ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <MaterialCommunityIcons
-                  name="shield-check"
-                  size={20}
-                  color="white"
-                />
-                <Text style={styles.payFeeButtonText}>Pay Collateral</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {application.collateralPaid && (
-          <View style={styles.paidBadge}>
+  const renderApprovedStage = () => {
+    // For seller and logistics, show informational view only
+    if (isSeller() || isLogistics()) {
+      return (
+        <View style={styles.stageContent}>
+          <View style={styles.statusBanner}>
             <MaterialCommunityIcons
-              name="check"
-              size={16}
-              color={colors.success}
+              name="information"
+              size={24}
+              color={colors.primary}
             />
-            <Text style={styles.paidText}>Collateral Paid</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Step 2: Issuance Fee Payment */}
-      <View
-        style={[
-          styles.feePaymentCard,
-          !application.collateralPaid && styles.disabledCard,
-          application.issuanceFeePaid && styles.completedCard,
-        ]}
-      >
-        <View style={styles.feeHeader}>
-          <MaterialCommunityIcons
-            name={
-              application.issuanceFeePaid ? "check-circle" : "cash-multiple"
-            }
-            size={40}
-            color={
-              application.issuanceFeePaid
-                ? colors.success
-                : application.collateralPaid
-                  ? colors.primary
-                  : colors.textSecondary
-            }
-          />
-          <View style={styles.feeHeaderText}>
-            <Text
-              style={[
-                styles.feeTitle,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              Step 2: Issuance Fee Payment{" "}
-              {application.issuanceFeePaid ? "✓" : ""}
-            </Text>
-            <Text
-              style={[
-                styles.feeAmount,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              {application.issuanceFee}
+            <Text style={styles.statusBannerText}>
+              {application.collateralPaid && application.issuanceFeePaid
+                ? "Buyer has completed all payments - Awaiting logistics"
+                : "Buyer is required to pay collateral and issuance fee"}
             </Text>
           </View>
-        </View>
 
-        <View style={styles.feeDivider} />
+          <View style={styles.infoCardContainer}>
+            <View style={styles.roleInfoRow}>
+              <MaterialCommunityIcons
+                name={
+                  application.collateralPaid ? "check-circle" : "clock-outline"
+                }
+                size={20}
+                color={
+                  application.collateralPaid
+                    ? colors.success
+                    : colors.textSecondary
+                }
+              />
+              <View style={styles.roleInfoContent}>
+                <Text style={styles.roleInfoLabel}>Collateral Payment</Text>
+                <Text style={styles.roleInfoValue}>
+                  {application.collateralPaid
+                    ? `✓ Paid: ${application.collateralValue}`
+                    : `Pending: ${application.collateralValue}`}
+                </Text>
+              </View>
+            </View>
 
-        <View style={styles.feeDetails}>
-          <View style={styles.feeRow}>
-            <Text
-              style={[
-                styles.feeLabel,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              Guarantee Amount:
-            </Text>
-            <Text
-              style={[
-                styles.feeValue,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              {application.guaranteeAmount}
-            </Text>
+            <View style={styles.infoDivider} />
+
+            <View style={styles.roleInfoRow}>
+              <MaterialCommunityIcons
+                name={
+                  application.issuanceFeePaid ? "check-circle" : "clock-outline"
+                }
+                size={20}
+                color={
+                  application.issuanceFeePaid
+                    ? colors.success
+                    : colors.textSecondary
+                }
+              />
+              <View style={styles.roleInfoContent}>
+                <Text style={styles.roleInfoLabel}>Issuance Fee Payment</Text>
+                <Text style={styles.roleInfoValue}>
+                  {application.issuanceFeePaid
+                    ? `✓ Paid: ${application.issuanceFee}`
+                    : `Pending: ${application.issuanceFee}`}
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.feeRow}>
-            <Text
-              style={[
-                styles.feeLabel,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              Issuance Fee (1%):
-            </Text>
-            <Text
-              style={[
-                styles.feeValue,
-                styles.feeHighlight,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              {application.issuanceFee}
-            </Text>
-          </View>
-          <View style={styles.feeRow}>
-            <Text
-              style={[
-                styles.feeLabel,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              Paid to:
-            </Text>
-            <Text
-              style={[
-                styles.feeValue,
-                !application.collateralPaid && styles.disabledText,
-              ]}
-            >
-              BlockFinax Treasury
-            </Text>
-          </View>
-        </View>
 
-        {!application.issuanceFeePaid && application.collateralPaid && (
-          <TouchableOpacity
-            style={[
-              styles.payFeeButton,
-              !application.collateralPaid && styles.disabledButton,
-            ]}
-            onPress={handlePayFee}
-            disabled={isProcessing || !application.collateralPaid}
-          >
-            {isProcessing ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="cash" size={20} color="white" />
-                <Text style={styles.payFeeButtonText}>Pay Issuance Fee</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {application.issuanceFeePaid && (
-          <View style={styles.paidBadge}>
-            <MaterialCommunityIcons
-              name="check"
-              size={16}
-              color={colors.success}
-            />
-            <Text style={styles.paidText}>Issuance Fee Paid</Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Payment Steps</Text>
-        <View style={styles.stepsList}>
-          <View style={styles.stepItem}>
-            <View
-              style={[
-                styles.stepNumber,
-                application.collateralPaid && styles.stepNumberComplete,
-              ]}
-            >
-              <Text style={styles.stepNumberText}>
-                {application.collateralPaid ? "✓" : "1"}
+          {isSeller() && (
+            <View style={styles.noteCard}>
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.noteText}>
+                You will receive payment once the buyer completes the
+                transaction and all logistics are finalized.
               </Text>
             </View>
-            <Text style={styles.stepText}>
-              Pay collateral to Diamond (staking model)
-            </Text>
-          </View>
-          <View style={styles.stepItem}>
-            <View
-              style={[
-                styles.stepNumber,
-                application.issuanceFeePaid && styles.stepNumberComplete,
-                !application.collateralPaid && styles.stepNumberDisabled,
-              ]}
-            >
-              <Text style={styles.stepNumberText}>
-                {application.issuanceFeePaid ? "✓" : "2"}
+          )}
+        </View>
+      );
+    }
+
+    // For buyer, show payment interface
+    return (
+      <View style={styles.stageContent}>
+        <View style={styles.statusBanner}>
+          <MaterialCommunityIcons
+            name="check-circle"
+            size={24}
+            color={colors.success}
+          />
+          <Text style={styles.statusBannerText}>
+            Seller approved! - Action required:{" "}
+            {application.collateralPaid && application.issuanceFeePaid
+              ? "Awaiting logistics"
+              : !application.collateralPaid && !application.issuanceFeePaid
+                ? "Pay collateral and fee"
+                : !application.collateralPaid
+                  ? "Pay collateral"
+                  : "Pay issuance fee"}
+          </Text>
+        </View>
+
+        {/* Step 1: Collateral Payment */}
+        <View
+          style={[
+            styles.feePaymentCard,
+            application.collateralPaid && styles.completedCard,
+          ]}
+        >
+          <View style={styles.feeHeader}>
+            <MaterialCommunityIcons
+              name={application.collateralPaid ? "check-circle" : "shield-lock"}
+              size={40}
+              color={
+                application.collateralPaid ? colors.success : colors.primary
+              }
+            />
+            <View style={styles.feeHeaderText}>
+              <Text style={styles.feeTitle}>
+                Step 1: Collateral Payment{" "}
+                {application.collateralPaid ? "✓" : ""}
+              </Text>
+              <Text style={styles.feeAmount}>
+                {application.collateralValue}
               </Text>
             </View>
-            <Text style={styles.stepText}>
-              Pay issuance fee to BlockFinax Treasury
-            </Text>
           </View>
-          <View style={styles.stepItem}>
-            <View
-              style={[
-                styles.stepNumber,
-                !application.issuanceFeePaid && styles.stepNumberDisabled,
-              ]}
-            >
-              <Text style={styles.stepNumberText}>3</Text>
+
+          <View style={styles.feeDivider} />
+
+          <View style={styles.feeDetails}>
+            <View style={styles.feeRow}>
+              <Text style={styles.feeLabel}>Collateral Amount:</Text>
+              <Text style={styles.feeValue}>{application.collateralValue}</Text>
             </View>
-            <Text style={styles.stepText}>
-              Certificate generated and goods shipped
-            </Text>
+            <View style={styles.feeRow}>
+              <Text style={styles.feeLabel}>Paid to:</Text>
+              <Text style={styles.feeValue}>BlockFinax Diamond (Staking)</Text>
+            </View>
+          </View>
+
+          {!application.collateralPaid && (
+            <TouchableOpacity
+              style={styles.payFeeButton}
+              onPress={handlePayCollateral}
+              disabled={isProcessing}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="shield-check"
+                    size={20}
+                    color="white"
+                  />
+                  <Text style={styles.payFeeButtonText}>Pay Collateral</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {application.collateralPaid && (
+            <View style={styles.paidBadge}>
+              <MaterialCommunityIcons
+                name="check"
+                size={16}
+                color={colors.success}
+              />
+              <Text style={styles.paidText}>Collateral Paid</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Step 2: Issuance Fee Payment */}
+        <View
+          style={[
+            styles.feePaymentCard,
+            !application.collateralPaid && styles.disabledCard,
+            application.issuanceFeePaid && styles.completedCard,
+          ]}
+        >
+          <View style={styles.feeHeader}>
+            <MaterialCommunityIcons
+              name={
+                application.issuanceFeePaid ? "check-circle" : "cash-multiple"
+              }
+              size={40}
+              color={
+                application.issuanceFeePaid
+                  ? colors.success
+                  : application.collateralPaid
+                    ? colors.primary
+                    : colors.textSecondary
+              }
+            />
+            <View style={styles.feeHeaderText}>
+              <Text
+                style={[
+                  styles.feeTitle,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                Step 2: Issuance Fee Payment{" "}
+                {application.issuanceFeePaid ? "✓" : ""}
+              </Text>
+              <Text
+                style={[
+                  styles.feeAmount,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                {application.issuanceFee}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.feeDivider} />
+
+          <View style={styles.feeDetails}>
+            <View style={styles.feeRow}>
+              <Text
+                style={[
+                  styles.feeLabel,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                Guarantee Amount:
+              </Text>
+              <Text
+                style={[
+                  styles.feeValue,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                {application.guaranteeAmount}
+              </Text>
+            </View>
+            <View style={styles.feeRow}>
+              <Text
+                style={[
+                  styles.feeLabel,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                Issuance Fee (1%):
+              </Text>
+              <Text
+                style={[
+                  styles.feeValue,
+                  styles.feeHighlight,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                {application.issuanceFee}
+              </Text>
+            </View>
+            <View style={styles.feeRow}>
+              <Text
+                style={[
+                  styles.feeLabel,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                Paid to:
+              </Text>
+              <Text
+                style={[
+                  styles.feeValue,
+                  !application.collateralPaid && styles.disabledText,
+                ]}
+              >
+                BlockFinax Treasury
+              </Text>
+            </View>
+          </View>
+
+          {!application.issuanceFeePaid && application.collateralPaid && (
+            <TouchableOpacity
+              style={[
+                styles.payFeeButton,
+                !application.collateralPaid && styles.disabledButton,
+              ]}
+              onPress={handlePayFee}
+              disabled={isProcessing || !application.collateralPaid}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="cash" size={20} color="white" />
+                  <Text style={styles.payFeeButtonText}>Pay Issuance Fee</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {application.issuanceFeePaid && (
+            <View style={styles.paidBadge}>
+              <MaterialCommunityIcons
+                name="check"
+                size={16}
+                color={colors.success}
+              />
+              <Text style={styles.paidText}>Issuance Fee Paid</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Payment Steps</Text>
+          <View style={styles.stepsList}>
+            <View style={styles.stepItem}>
+              <View
+                style={[
+                  styles.stepNumber,
+                  application.collateralPaid && styles.stepNumberComplete,
+                ]}
+              >
+                <Text style={styles.stepNumberText}>
+                  {application.collateralPaid ? "✓" : "1"}
+                </Text>
+              </View>
+              <Text style={styles.stepText}>
+                Pay collateral to Diamond (staking model)
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View
+                style={[
+                  styles.stepNumber,
+                  application.issuanceFeePaid && styles.stepNumberComplete,
+                  !application.collateralPaid && styles.stepNumberDisabled,
+                ]}
+              >
+                <Text style={styles.stepNumberText}>
+                  {application.issuanceFeePaid ? "✓" : "2"}
+                </Text>
+              </View>
+              <Text style={styles.stepText}>
+                Pay issuance fee to BlockFinax Treasury
+              </Text>
+            </View>
+            <View style={styles.stepItem}>
+              <View
+                style={[
+                  styles.stepNumber,
+                  !application.issuanceFeePaid && styles.stepNumberDisabled,
+                ]}
+              >
+                <Text style={styles.stepNumberText}>3</Text>
+              </View>
+              <Text style={styles.stepText}>
+                Certificate generated and goods shipped
+              </Text>
+            </View>
           </View>
         </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderFeePaidStage = () => (
     <View style={styles.stageContent}>
@@ -935,6 +1054,243 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
       </View>
     </View>
   );
+
+  const renderBalancePaymentStage = () => {
+    const [isPayingBalance, setIsPayingBalance] = React.useState(false);
+
+    // Calculate balance amount (tradeValue - collateral)
+    const tradeValue =
+      parseFloat(application.tradeValue?.split(" ")[0] || "0") || 0;
+    const collateralValue =
+      parseFloat(application.collateralValue?.split(" ")[0] || "0") || 0;
+    const balanceAmount = tradeValue - collateralValue;
+    const symbol = application.tradeValue?.split(" ")[1] || "USDC";
+
+    // For seller and logistics, show informational view only
+    if (isSeller() || isLogistics()) {
+      return (
+        <View style={styles.stageContent}>
+          <View style={styles.statusBanner}>
+            <MaterialCommunityIcons
+              name="information"
+              size={24}
+              color={colors.primary}
+            />
+            <Text style={styles.statusBannerText}>
+              {isLogistics()
+                ? "Goods have been delivered. Waiting for buyer to pay the remaining balance."
+                : "Buyer is required to pay the remaining balance after delivery confirmation"}
+            </Text>
+          </View>
+
+          <View style={styles.infoCardContainer}>
+            <View style={styles.roleInfoRow}>
+              <MaterialCommunityIcons
+                name="wallet"
+                size={24}
+                color={colors.primary}
+              />
+              <View style={styles.roleInfoContent}>
+                <Text style={styles.roleInfoLabel}>Balance Payment Status</Text>
+                <Text style={styles.roleInfoValue}>
+                  Pending: {balanceAmount.toFixed(2)} {symbol}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.infoDivider} />
+
+            <View style={styles.balanceBreakdown}>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Trade Value:</Text>
+                <Text style={styles.breakdownValue}>
+                  {application.tradeValue}
+                </Text>
+              </View>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Collateral Paid:</Text>
+                <Text style={styles.breakdownValue}>
+                  -{application.collateralValue}
+                </Text>
+              </View>
+              <View style={[styles.breakdownRow, styles.breakdownTotal]}>
+                <Text style={styles.breakdownTotalLabel}>Balance Due:</Text>
+                <Text style={styles.breakdownTotalValue}>
+                  {balanceAmount.toFixed(2)} {symbol}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {isLogistics() && (
+            <View style={styles.noteCard}>
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.noteText}>
+                The buyer will pay the balance after delivery confirmation. Your
+                logistics tasks are complete.
+              </Text>
+            </View>
+          )}
+
+          {isSeller() && (
+            <View style={styles.noteCard}>
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={18}
+                color={colors.primary}
+              />
+              <Text style={styles.noteText}>
+                The buyer will pay this balance after delivery. You will receive
+                your full trade payment once the balance is paid.
+              </Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+
+    // For buyer, show payment interface
+    const handleBalancePayment = async () => {
+      // For now, we'll pass the token address from the application or use a placeholder
+      // In production, this should come from the selectedNetwork configuration
+      const tokenAddress = "0x..."; // This should be passed from the parent component
+
+      try {
+        setIsPayingBalance(true);
+
+        await onPayBalance?.(tokenAddress);
+
+        Alert.alert(
+          "Success",
+          "Balance payment successful! Transaction complete.",
+        );
+      } catch (error: any) {
+        console.error("[BuyerApplicationView] Balance payment error:", error);
+        Alert.alert(
+          "Payment Failed",
+          error.message ||
+            "Failed to process balance payment. Please try again.",
+        );
+      } finally {
+        setIsPayingBalance(false);
+      }
+    };
+
+    return (
+      <View style={styles.stageContent}>
+        <View style={styles.statusBanner}>
+          <MaterialCommunityIcons
+            name="cash-check"
+            size={24}
+            color={colors.warning}
+          />
+          <Text style={styles.statusBannerText}>
+            Goods delivered - Pay remaining balance to complete transaction
+          </Text>
+        </View>
+
+        <View style={styles.infoSection}>
+          <Text style={styles.sectionTitle}>Balance Payment Required</Text>
+          <Text style={styles.infoDescription}>
+            The goods have been successfully delivered. Please pay the remaining
+            balance to complete the transaction and receive your funds.
+          </Text>
+
+          <View style={styles.balancePaymentCard}>
+            <View style={styles.balancePaymentHeader}>
+              <MaterialCommunityIcons
+                name="wallet"
+                size={40}
+                color={colors.primary}
+              />
+              <View style={styles.balancePaymentInfo}>
+                <Text style={styles.balancePaymentLabel}>
+                  Remaining Balance
+                </Text>
+                <Text style={styles.balancePaymentAmount}>
+                  {balanceAmount.toFixed(2)} {symbol}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.balanceBreakdown}>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Trade Value:</Text>
+                <Text style={styles.breakdownValue}>
+                  {application.tradeValue}
+                </Text>
+              </View>
+              <View style={styles.breakdownRow}>
+                <Text style={styles.breakdownLabel}>Collateral Paid:</Text>
+                <Text style={styles.breakdownValue}>
+                  -{application.collateralValue}
+                </Text>
+              </View>
+              <View style={[styles.breakdownRow, styles.breakdownTotal]}>
+                <Text style={styles.breakdownTotalLabel}>Balance Due:</Text>
+                <Text style={styles.breakdownTotalValue}>
+                  {balanceAmount.toFixed(2)} {symbol}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.balancePaymentButton,
+                isPayingBalance && styles.balancePaymentButtonDisabled,
+              ]}
+              onPress={handleBalancePayment}
+              disabled={isPayingBalance}
+            >
+              {isPayingBalance ? (
+                <>
+                  <ActivityIndicator
+                    size="small"
+                    color="#fff"
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.balancePaymentButtonText}>
+                    Processing Payment...
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <MaterialCommunityIcons
+                    name="credit-card"
+                    size={20}
+                    color="#fff"
+                  />
+                  <Text style={styles.balancePaymentButtonText}>
+                    Pay Balance ({balanceAmount.toFixed(2)} {symbol})
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.alertCard}>
+            <MaterialCommunityIcons
+              name="information"
+              size={24}
+              color={colors.primary}
+            />
+            <View style={styles.alertContent}>
+              <Text style={styles.alertTitle}>Next Steps</Text>
+              <Text style={styles.alertDescription}>
+                After paying the balance, the logistics partner will be able to
+                confirm goods shipment. You'll then track the delivery and
+                confirm receipt.
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   const renderGoodsShippedStage = () => (
     <View style={styles.stageContent}>
@@ -2459,5 +2815,131 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.primary,
     fontWeight: "600",
+  },
+  balancePaymentCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    padding: spacing.lg,
+    marginTop: spacing.md,
+    borderWidth: 2,
+    borderColor: colors.primary + "20",
+  },
+  balancePaymentHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  balancePaymentInfo: {
+    marginLeft: spacing.md,
+    flex: 1,
+  },
+  balancePaymentLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  balancePaymentAmount: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: colors.text,
+  },
+  balanceBreakdown: {
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  breakdownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingVertical: spacing.xs,
+  },
+  breakdownLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+  },
+  breakdownValue: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: "500",
+  },
+  breakdownTotal: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  breakdownTotalLabel: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: "bold",
+  },
+  breakdownTotalValue: {
+    fontSize: 15,
+    color: colors.primary,
+    fontWeight: "bold",
+  },
+  balancePaymentButton: {
+    backgroundColor: colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.md,
+    borderRadius: 8,
+    gap: spacing.sm,
+  },
+  balancePaymentButtonDisabled: {
+    backgroundColor: colors.textSecondary,
+    opacity: 0.7,
+  },
+  balancePaymentButtonText: {
+    fontSize: 16,
+    color: "#fff",
+    fontWeight: "bold",
+  },
+  // Role-specific information cards
+  infoCardContainer: {
+    backgroundColor: "white",
+    borderRadius: 12,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  roleInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  roleInfoContent: {
+    flex: 1,
+  },
+  roleInfoLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  roleInfoValue: {
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.md,
+  },
+  noteCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#E3F2FD",
+    borderRadius: 8,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  noteText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#1565C0",
+    lineHeight: 18,
   },
 });

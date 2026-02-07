@@ -115,6 +115,7 @@ export const TradeFinanceScreen = () => {
     takeUpPGABlockchain,
     confirmGoodsDeliveredBlockchain,
     mapPGAInfoToApplication,
+    isAuthorizedLogistics,
   } = useTradeFinance();
 
   const { selectedNetwork, address } = useWallet();
@@ -256,7 +257,7 @@ export const TradeFinanceScreen = () => {
     (app) => app.buyer?.walletAddress?.toLowerCase() === normalizedAddress,
   );
 
-  // SELLER VIEW: Show ALL PGAs where user is seller (not just "Draft Sent to Seller")
+  // SELLER VIEW: Separate drafts awaiting approval from already approved applications
   const sellerAwaitingDrafts = [
     ...drafts.filter(
       (draft) =>
@@ -266,8 +267,10 @@ export const TradeFinanceScreen = () => {
     ...applications
       .filter(
         (app) =>
-          app.seller?.walletAddress?.toLowerCase() === address?.toLowerCase() ||
-          app.beneficiaryWallet?.toLowerCase() === address?.toLowerCase(),
+          (app.seller?.walletAddress?.toLowerCase() ===
+            address?.toLowerCase() ||
+            app.beneficiaryWallet?.toLowerCase() === address?.toLowerCase()) &&
+          app.status === "Draft Sent to Seller",
       )
       .map((app) => ({
         ...app,
@@ -276,6 +279,14 @@ export const TradeFinanceScreen = () => {
         guaranteeNo: app.requestId,
       })),
   ];
+
+  // SELLER VIEW: Already approved applications (for viewing only)
+  const sellerApprovedApplications = applications.filter(
+    (app) =>
+      (app.seller?.walletAddress?.toLowerCase() === address?.toLowerCase() ||
+        app.beneficiaryWallet?.toLowerCase() === address?.toLowerCase()) &&
+      app.status !== "Draft Sent to Seller",
+  );
 
   const [guaranteeStats] = useState({
     pending: 0,
@@ -1063,28 +1074,31 @@ export const TradeFinanceScreen = () => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[
-              styles.roleSliderOption,
-              userRole === "logistics" && styles.roleSliderOptionActive,
-            ]}
-            onPress={() => setUserRole("logistics")}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name="truck-delivery"
-              size={18}
-              color={userRole === "logistics" ? "white" : colors.primary}
-            />
-            <Text
+          {/* Logistics tab - Only visible to authorized logistics partners */}
+          {isAuthorizedLogistics && (
+            <TouchableOpacity
               style={[
-                styles.roleSliderText,
-                userRole === "logistics" && styles.roleSliderTextActive,
+                styles.roleSliderOption,
+                userRole === "logistics" && styles.roleSliderOptionActive,
               ]}
+              onPress={() => setUserRole("logistics")}
+              activeOpacity={0.7}
             >
-              Logistics
-            </Text>
-          </TouchableOpacity>
+              <MaterialCommunityIcons
+                name="truck-delivery"
+                size={18}
+                color={userRole === "logistics" ? "white" : colors.primary}
+              />
+              <Text
+                style={[
+                  styles.roleSliderText,
+                  userRole === "logistics" && styles.roleSliderTextActive,
+                ]}
+              >
+                Logistics
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -1245,121 +1259,244 @@ export const TradeFinanceScreen = () => {
 
       {/* Drafts Awaiting Your Approval Section for Sellers */}
       {userRole === "seller" && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Drafts Awaiting Your Approval</Text>
-
-          {sellerAwaitingDrafts.length === 0 ? (
-            <Text style={styles.emptyMessage}>
-              No pending draft approvals at this time.
+        <>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Drafts Awaiting Your Approval
             </Text>
-          ) : (
-            <View style={styles.draftsContainer}>
-              {sellerAwaitingDrafts.map((draft) => (
-                <View key={draft.id} style={styles.draftCard}>
-                  <View style={styles.draftHeader}>
-                    <Text style={styles.draftTitle}>
-                      {draft.applicant.company}
-                    </Text>
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        { backgroundColor: "#2196F3" },
-                      ]}
-                    >
-                      <Text style={styles.statusText}>{draft.status}</Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.draftDetails}>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Request ID:</Text>
-                      <Text style={styles.detailValue}>{draft.requestId}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Buyer (Applicant):</Text>
-                      <Text style={styles.detailValue}>
-                        {draft.applicant.contact}
+            {sellerAwaitingDrafts.length === 0 ? (
+              <Text style={styles.emptyMessage}>
+                No pending draft approvals at this time.
+              </Text>
+            ) : (
+              <View style={styles.draftsContainer}>
+                {sellerAwaitingDrafts.map((draft) => (
+                  <View key={draft.id} style={styles.draftCard}>
+                    <View style={styles.draftHeader}>
+                      <Text style={styles.draftTitle}>
+                        {draft.applicant.company}
                       </Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          { backgroundColor: "#2196F3" },
+                        ]}
+                      >
+                        <Text style={styles.statusText}>{draft.status}</Text>
+                      </View>
                     </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Goods Description:</Text>
-                      <Text style={styles.detailValue}>
-                        {draft.tradeDescription}
-                      </Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Text style={styles.detailLabel}>Guarantee Amount:</Text>
-                      <Text style={styles.detailValue}>
-                        {draft.guaranteeAmount}
-                      </Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.draftActions}>
-                    <TouchableOpacity
-                      style={styles.viewDraftButton}
-                      onPress={() => {
-                        setSelectedSellerDraft(draft);
-                        setShowSellerDraftView(true);
-                      }}
-                    >
-                      <MaterialCommunityIcons
-                        name="eye"
-                        size={16}
-                        color={colors.primary}
-                      />
-                      <Text style={styles.viewDraftText}>View Draft</Text>
-                    </TouchableOpacity>
+                    <View style={styles.draftDetails}>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Request ID:</Text>
+                        <Text style={styles.detailValue}>
+                          {draft.requestId}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>
+                          Buyer (Applicant):
+                        </Text>
+                        <Text style={styles.detailValue}>
+                          {draft.applicant.contact}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>
+                          Goods Description:
+                        </Text>
+                        <Text style={styles.detailValue}>
+                          {draft.tradeDescription}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>
+                          Guarantee Amount:
+                        </Text>
+                        <Text style={styles.detailValue}>
+                          {draft.guaranteeAmount}
+                        </Text>
+                      </View>
+                    </View>
 
-                    <View style={styles.approvalButtons}>
+                    <View style={styles.draftActions}>
                       <TouchableOpacity
-                        style={styles.approveButton}
-                        onPress={() =>
-                          handleDraftApproval(
-                            (draft as any).requestId ?? draft.id,
-                            true,
-                          )
-                        }
+                        style={styles.viewDraftButton}
+                        onPress={() => {
+                          setSelectedSellerDraft(draft);
+                          setShowSellerDraftView(true);
+                        }}
                       >
                         <MaterialCommunityIcons
-                          name="check"
+                          name="eye"
                           size={16}
-                          color="white"
+                          color={colors.primary}
                         />
-                        <Text style={styles.approveButtonText}>Approve</Text>
+                        <Text style={styles.viewDraftText}>View Draft</Text>
                       </TouchableOpacity>
 
-                      <TouchableOpacity
-                        style={styles.rejectButton}
-                        onPress={() =>
-                          handleDraftApproval(
-                            (draft as any).requestId ?? draft.id,
-                            false,
-                          )
-                        }
-                      >
-                        <MaterialCommunityIcons
-                          name="close"
-                          size={16}
-                          color="white"
-                        />
-                        <Text style={styles.rejectButtonText}>Reject</Text>
-                      </TouchableOpacity>
+                      <View style={styles.approvalButtons}>
+                        <TouchableOpacity
+                          style={styles.approveButton}
+                          onPress={() =>
+                            handleDraftApproval(
+                              (draft as any).requestId ?? draft.id,
+                              true,
+                            )
+                          }
+                        >
+                          <MaterialCommunityIcons
+                            name="check"
+                            size={16}
+                            color="white"
+                          />
+                          <Text style={styles.approveButtonText}>Approve</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={styles.rejectButton}
+                          onPress={() =>
+                            handleDraftApproval(
+                              (draft as any).requestId ?? draft.id,
+                              false,
+                            )
+                          }
+                        >
+                          <MaterialCommunityIcons
+                            name="close"
+                            size={16}
+                            color="white"
+                          />
+                          <Text style={styles.rejectButtonText}>Reject</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   </View>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Approved Applications - View Only */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Approved Applications</Text>
+
+            {sellerApprovedApplications.length === 0 ? (
+              <Text style={styles.emptyMessage}>
+                No approved applications yet.
+              </Text>
+            ) : (
+              <View style={styles.applicationsContainer}>
+                {sellerApprovedApplications.map((app) => (
+                  <View key={app.id} style={styles.applicationListCard}>
+                    <View style={styles.applicationListHeader}>
+                      <Text style={styles.applicationListTitle}>
+                        {app.buyer?.company || "Buyer"}
+                      </Text>
+                      <View
+                        style={[
+                          styles.statusBadge,
+                          {
+                            backgroundColor:
+                              app.status === "Certificate Issued" ||
+                              app.status === "Delivery Confirmed" ||
+                              app.status === "Transaction Complete"
+                                ? "#4CAF50"
+                                : app.status === "Goods Shipped"
+                                  ? "#FF9800"
+                                  : "#2196F3",
+                          },
+                        ]}
+                      >
+                        <Text style={styles.statusText}>{app.status}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.applicationListDetails}>
+                      <View style={styles.detailRowCompact}>
+                        <MaterialCommunityIcons
+                          name="file-document"
+                          size={14}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.detailLabelCompact}>
+                          Request ID: {app.requestId}
+                        </Text>
+                      </View>
+                      <View style={styles.detailRowCompact}>
+                        <MaterialCommunityIcons
+                          name="currency-usd"
+                          size={14}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.detailLabelCompact}>
+                          Trade Value: {app.tradeValue} {tokenSymbol}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.logisticsActionsRow}>
+                      {/* View Transaction Button */}
+                      <TouchableOpacity
+                        style={[
+                          styles.actionButton,
+                          styles.viewTransactionButton,
+                          { backgroundColor: palette.neutralMid },
+                        ]}
+                        onPress={() => openBuyerApplication(app)}
+                      >
+                        <MaterialCommunityIcons
+                          name="eye"
+                          size={18}
+                          color="white"
+                        />
+                        <Text style={styles.actionButtonText}>
+                          View Transaction
+                        </Text>
+                      </TouchableOpacity>
+
+                      {/* Claim Trade Fund Button - Only for completed transactions */}
+                      {(app.status === "Transaction Complete" ||
+                        app.status === "Delivery Confirmed") && (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: colors.success, flex: 1 },
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              "Claim Trade Fund",
+                              "This feature will be implemented soon. You will be able to claim your trade funds from the diamond contract.",
+                              [{ text: "OK" }],
+                            );
+                          }}
+                        >
+                          <MaterialCommunityIcons
+                            name="cash"
+                            size={18}
+                            color="white"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Claim Trade Fund
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        </>
       )}
 
-      {/* Logistics Dashboard Section */}
-      {userRole === "logistics" && (
+      {/* Logistics Dashboard Section - Only for authorized logistics partners */}
+      {userRole === "logistics" && isAuthorizedLogistics && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Logistics Operations</Text>
           <Text style={styles.sectionSubtitle}>
-            Authorized logistics partners can sign and confirm shipments here.
+            Authorized logistics partners can claim and confirm shipments here.
           </Text>
 
           {applications.filter(
@@ -1431,79 +1568,102 @@ export const TradeFinanceScreen = () => {
                       </Text>
                     </View>
 
-                    {app.status === "Certificate Issued" ||
-                    app.status === "Logistics Notified" ? (
+                    {/* Action Buttons Row */}
+                    <View style={styles.logisticsActionsRow}>
+                      {/* View Transaction Button - Always visible */}
                       <TouchableOpacity
                         style={[
                           styles.actionButton,
-                          { backgroundColor: colors.primary },
+                          styles.viewTransactionButton,
+                          { backgroundColor: palette.neutralMid },
                         ]}
-                        onPress={async () => {
-                          try {
-                            await takeUpPGABlockchain(app.id);
-                            showToast("Logistics assignment successful!");
-                          } catch (e: any) {
-                            Alert.alert(
-                              "Error",
-                              e.message || "Failed to take up application",
-                            );
-                          }
-                        }}
+                        onPress={() => openBuyerApplication(app)}
                       >
                         <MaterialCommunityIcons
-                          name="hand-back-right"
+                          name="eye"
                           size={18}
                           color="white"
                         />
                         <Text style={styles.actionButtonText}>
-                          Claim Shipment
+                          View Transaction
                         </Text>
                       </TouchableOpacity>
-                    ) : app.status === "Logistics Claimed" ? (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton,
-                          { backgroundColor: "#FF9800" },
-                        ]}
-                        onPress={() => handleShippingConfirmation(app)}
-                      >
-                        <MaterialCommunityIcons
-                          name="truck-fast"
-                          size={18}
-                          color="white"
-                        />
-                        <Text style={styles.actionButtonText}>
-                          Confirm Shipped
-                        </Text>
-                      </TouchableOpacity>
-                    ) : app.status === "Goods Shipped" ? (
-                      <TouchableOpacity
-                        style={[
-                          styles.actionButton,
-                          { backgroundColor: "#4CAF50" },
-                        ]}
-                        onPress={async () => {
-                          try {
-                            await confirmGoodsDeliveredBlockchain(app.id);
-                            showToast("Delivery confirmed successfully!");
-                          } catch (e: any) {
-                            Alert.alert(
-                              "Error",
-                              e.message || "Failed to confirm delivery",
-                            );
-                          }
-                        }}
-                      >
-                        <MaterialCommunityIcons
-                          name="check-circle"
-                          size={18}
-                          color="white"
-                        />
-                        <Text style={styles.actionButtonText}>
-                          Confirm Delivered
-                        </Text>
-                      </TouchableOpacity>
-                    ) : null}
+
+                      {/* Status-specific Action Button */}
+                      {app.status === "Certificate Issued" ||
+                      app.status === "Logistics Notified" ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: colors.primary },
+                          ]}
+                          onPress={async () => {
+                            try {
+                              await takeUpPGABlockchain(app.id);
+                              showToast("Logistics assignment successful!");
+                            } catch (e: any) {
+                              Alert.alert(
+                                "Error",
+                                e.message || "Failed to take up application",
+                              );
+                            }
+                          }}
+                        >
+                          <MaterialCommunityIcons
+                            name="hand-back-right"
+                            size={18}
+                            color="white"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Claim Shipment
+                          </Text>
+                        </TouchableOpacity>
+                      ) : app.status === "Logistics Claimed" ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: "#FF9800" },
+                          ]}
+                          onPress={() => handleShippingConfirmation(app)}
+                        >
+                          <MaterialCommunityIcons
+                            name="truck-fast"
+                            size={18}
+                            color="white"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Confirm Shipped
+                          </Text>
+                        </TouchableOpacity>
+                      ) : app.status === "Invoice Settled" ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.actionButton,
+                            { backgroundColor: "#4CAF50" },
+                          ]}
+                          onPress={async () => {
+                            try {
+                              await confirmGoodsDeliveredBlockchain(app.id);
+                              showToast("Delivery confirmed successfully!");
+                            } catch (e: any) {
+                              Alert.alert(
+                                "Error",
+                                e.message || "Failed to confirm delivery",
+                              );
+                            }
+                          }}
+                        >
+                          <MaterialCommunityIcons
+                            name="check-circle"
+                            size={18}
+                            color="white"
+                          />
+                          <Text style={styles.actionButtonText}>
+                            Confirm Delivered
+                          </Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   </View>
                 ))}
             </View>
@@ -2421,6 +2581,8 @@ export const TradeFinanceScreen = () => {
             }
             onRefresh={handleRefreshApplication}
             isRefreshing={isRefreshingApplication}
+            userRole={userRole}
+            currentUserAddress={address}
             onClose={() => {
               setShowBuyerApplicationView(false);
               setSelectedBuyerApplication(null);
@@ -3897,23 +4059,15 @@ const styles = StyleSheet.create({
   roleTabTextActive: {
     color: "#FFFFFF",
   },
-  viewDetailsButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: spacing.sm,
-    paddingVertical: spacing.xs,
-    gap: spacing.xs,
-  },
-  viewDetailsText: {
-    color: colors.primary,
-    fontSize: 14,
-    fontWeight: "500",
-  },
   detailRowCompact: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 2,
+  },
+  detailLabelCompact: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginLeft: spacing.xs,
   },
   reviewDraftButton: {
     flexDirection: "row",
@@ -3947,6 +4101,14 @@ const styles = StyleSheet.create({
     color: "white",
     fontSize: 14,
     fontWeight: "600",
+  },
+  logisticsActionsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  viewTransactionButton: {
+    flex: 1,
   },
 });
 
