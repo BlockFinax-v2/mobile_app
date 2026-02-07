@@ -1775,8 +1775,24 @@ export function TreasuryPortalScreenRedesigned() {
   };
 
   const renderPoolTab = () => {
-    const votingApps = applications.filter(
+    // Split applications into pending and completed votes
+    const pendingVotes = applications.filter(
       (app) => app.status === "Draft Sent to Pool",
+    );
+
+    const completedVotes = applications.filter(
+      (app) =>
+        app.status !== "Draft Sent to Pool" &&
+        (app.status === "Draft Sent to Seller" ||
+          app.status === "Seller Approved" ||
+          app.status === "Collateral Paid" ||
+          app.status === "Certificate Issued" ||
+          app.status === "Logistics Notified" ||
+          app.status === "Logistics Claimed" ||
+          app.status === "Goods Shipped" ||
+          app.status === "Delivery Confirmed" ||
+          app.status === "Invoice Settled" ||
+          app.currentStage >= 2), // Stage 2+ means pool voted
     );
 
     if (!isFinancier) {
@@ -1804,16 +1820,17 @@ export function TreasuryPortalScreenRedesigned() {
 
     return (
       <View style={styles.content}>
+        {/* Pending Votes Section */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Pool Guarantee Voting</Text>
+          <Text style={styles.sectionTitle}>Pending Votes</Text>
           <View style={styles.badgeSmall}>
             <Text style={styles.badgeTextSmall}>
-              {votingApps.length} Pending
+              {pendingVotes.length} Awaiting
             </Text>
           </View>
         </View>
 
-        {votingApps.length === 0 ? (
+        {pendingVotes.length === 0 ? (
           <View style={styles.placeholderCard}>
             <MaterialCommunityIcons
               name="shield-check-outline"
@@ -1826,7 +1843,7 @@ export function TreasuryPortalScreenRedesigned() {
             </Text>
           </View>
         ) : (
-          votingApps.map((app) => (
+          pendingVotes.map((app) => (
             <View key={app.id} style={styles.pgaVoteCard}>
               <View style={styles.pgaCardHeader}>
                 <View style={styles.pgaIconContainer}>
@@ -1924,6 +1941,133 @@ export function TreasuryPortalScreenRedesigned() {
               </View>
             </View>
           ))
+        )}
+
+        {/* Completed Votes Section - Transaction History */}
+        {completedVotes.length > 0 && (
+          <>
+            <View style={[styles.sectionHeaderRow, { marginTop: 24 }]}>
+              <Text style={styles.sectionTitle}>Transaction History</Text>
+              <View
+                style={[styles.badgeSmall, { backgroundColor: "#10B98120" }]}
+              >
+                <Text style={[styles.badgeTextSmall, { color: "#10B981" }]}>
+                  {completedVotes.length} Completed
+                </Text>
+              </View>
+            </View>
+
+            {completedVotes.map((app) => (
+              <View
+                key={app.id}
+                style={[styles.pgaVoteCard, { backgroundColor: "#F9FAFB" }]}
+              >
+                <View style={styles.pgaCardHeader}>
+                  <View
+                    style={[
+                      styles.pgaIconContainer,
+                      { backgroundColor: "#10B98120" },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="check-circle"
+                      size={24}
+                      color="#10B981"
+                    />
+                  </View>
+                  <View style={styles.pgaHeaderText}>
+                    <Text style={styles.pgaTitle}>
+                      {app.companyName || "Pool Application"}
+                    </Text>
+                    <Text style={styles.pgaSubtitle} numberOfLines={1}>
+                      {app.tradeDescription}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.badgeSmall,
+                      {
+                        backgroundColor:
+                          app.status === "Invoice Settled"
+                            ? "#10B98120"
+                            : "#3B82F620",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeTextSmall,
+                        {
+                          color:
+                            app.status === "Invoice Settled"
+                              ? "#10B981"
+                              : "#3B82F6",
+                          fontSize: 10,
+                        },
+                      ]}
+                    >
+                      {app.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.pgaDetailsRow}>
+                  <View style={styles.pgaDetailItem}>
+                    <MaterialCommunityIcons
+                      name="cash"
+                      size={14}
+                      color={palette.textSecondary}
+                    />
+                    <Text style={styles.pgaDetailLabel}>Trade:</Text>
+                    <Text style={styles.pgaDetailValue}>{app.tradeValue}</Text>
+                  </View>
+
+                  <View style={styles.pgaDetailItem}>
+                    <MaterialCommunityIcons
+                      name="shield-check"
+                      size={14}
+                      color={palette.textSecondary}
+                    />
+                    <Text style={styles.pgaDetailLabel}>Guarantee:</Text>
+                    <Text style={styles.pgaDetailValue}>
+                      {app.guaranteeAmount}
+                    </Text>
+                  </View>
+
+                  <View style={styles.pgaDetailItem}>
+                    <MaterialCommunityIcons
+                      name="progress-check"
+                      size={14}
+                      color={palette.textSecondary}
+                    />
+                    <Text style={styles.pgaDetailLabel}>Stage:</Text>
+                    <Text style={styles.pgaDetailValue}>
+                      {app.currentStage}/8
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.pgaReviewButton, { borderColor: "#10B981" }]}
+                  onPress={() => {
+                    setSelectedDraft(app);
+                    setShowDraftReview(true);
+                  }}
+                >
+                  <MaterialCommunityIcons
+                    name="eye"
+                    size={16}
+                    color="#10B981"
+                  />
+                  <Text
+                    style={[styles.pgaReviewButtonText, { color: "#10B981" }]}
+                  >
+                    View Transaction Flow
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </>
         )}
 
         <Modal

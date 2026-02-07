@@ -718,16 +718,21 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       const financierStatus = await stakingService.isFinancier(address);
       setIsFinancier(financierStatus || false);
 
+      // Check if user is logistics partner
+      const isLogistics =
+        await tradeFinanceService.isAuthorizedLogisticsPartner(address);
+      const isDeliveryPerson = deliveryPersons.includes(address.toLowerCase());
+
       console.log(
-        `[TradeFinanceContext] 👤 User role - Financier: ${financierStatus}`,
+        `[TradeFinanceContext] 👤 User roles - Financier: ${financierStatus}, Logistics: ${isLogistics}, Delivery: ${isDeliveryPerson}`,
       );
 
       let allPGAInfos: PGAInfo[] = [];
 
-      if (financierStatus) {
-        // FINANCIERS: Fetch ALL PGAs for voting/pool review
+      if (financierStatus || isLogistics || isDeliveryPerson) {
+        // SPECIAL ROLES: Fetch ALL PGAs (financiers vote, logistics get assigned)
         console.log(
-          "[TradeFinanceContext] 💼 Fetching ALL PGAs for financier pool...",
+          "[TradeFinanceContext] 💼 Fetching ALL PGAs for special role (financier/logistics)...",
         );
         const allPGAIds = await tradeFinanceService.getAllActivePGAs();
         const pgaPromises = allPGAIds.map((id) =>
@@ -736,9 +741,24 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         allPGAInfos = (await Promise.all(pgaPromises)).filter(
           (p) => p !== null,
         ) as PGAInfo[];
-        console.log(
-          `[TradeFinanceContext] ✅ Loaded ${allPGAInfos.length} PGAs for financier`,
-        );
+
+        // For logistics, filter to only assigned PGAs
+        if (!financierStatus && (isLogistics || isDeliveryPerson)) {
+          const normalizedAddress = address.toLowerCase();
+          allPGAInfos = allPGAInfos.filter(
+            (pga) =>
+              pga.logisticsPartner?.toLowerCase() === normalizedAddress ||
+              pga.buyer?.toLowerCase() === normalizedAddress ||
+              pga.seller?.toLowerCase() === normalizedAddress,
+          );
+          console.log(
+            `[TradeFinanceContext] ✅ Filtered to ${allPGAInfos.length} PGAs for logistics partner`,
+          );
+        } else {
+          console.log(
+            `[TradeFinanceContext] ✅ Loaded ${allPGAInfos.length} PGAs for financier`,
+          );
+        }
       } else {
         // BUYERS/SELLERS: Fetch only their specific PGAs
         const buyerPGAs = await tradeFinanceService.getAllPGAsByBuyer(address);
@@ -974,8 +994,11 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
   /**
    * Load historical events on initial mount with systematic block range management
-   * ⚡ OPTIMIZED: Only fetches new events since last sync, not entire history
-   * 🎯 ROLE-AWARE: Handles financiers specially (they see ALL PGAs)
+   * ⚡ OPTIMIZED: Direct blockchain queries instead of event scanning
+   * 🎯 STRATEGY:
+   *    - On login: fetchBlockchainData() queries contract directly (instant)
+   *    - While active: Real-time event listeners update state
+   *    - No event scanning: Blockchain queries are faster & more reliable
    */
   const loadHistoricalEvents = useCallback(async () => {
     if (!address || !isUnlocked || isLoadingHistory) return;
@@ -984,11 +1007,31 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     const startTime = performance.now();
 
     try {
-      // PERSISTENT STORAGE STRATEGY: Only sync NEW events since last sync
-      // PGAs are stored permanently in Storage and never refetched from scratch
-      const fromBlock = lastSyncedBlock > 0 ? lastSyncedBlock + 1 : 0;
       const currentBlock =
         await tradeFinanceEventService["provider"]?.getBlockNumber();
+
+      // DIRECT BLOCKCHAIN QUERY: Always fetch fresh data from contract
+      // This is faster than scanning events and works for offline users
+      console.log(
+        `[TradeFinanceContext] 🔄 Fetching PGAs via direct blockchain query (faster than event scanning)`,
+      );
+
+      // If no cached data or first load, fetch everything
+      if (applications.length === 0) {
+        console.log(
+          "[TradeFinanceContext] 🚀 Initial load - querying blockchain for all user PGAs...",
+        );
+        await fetchBlockchainData();
+        await saveLastSyncedBlock(currentBlock || 0);
+        setIsLoadingHistory(false);
+        return;
+      }
+
+      // If already have data, just sync new events from recent blocks (200 blocks)
+      const fromBlock =
+        lastSyncedBlock > 0
+          ? lastSyncedBlock + 1
+          : Math.max(0, (currentBlock || 0) - 200);
       const blocksToSync = currentBlock ? currentBlock - fromBlock : 0;
 
       // Skip if already synced (no new blocks)
@@ -998,28 +1041,16 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      const maxBlockRange = 200; // Sync up to 200 new blocks
+      const maxBlockRange = 200; // Only sync recent events for incremental updates
       const syncCurrentBlock = currentBlock || 0;
       const syncFromBlock =
         blocksToSync > maxBlockRange
           ? syncCurrentBlock - maxBlockRange
           : fromBlock;
-      const actualBlocksSyncing = syncCurrentBlock - syncFromBlock;
 
       console.log(
-        `[TradeFinanceContext] 🔄 Incremental sync: ${actualBlocksSyncing} blocks (${syncFromBlock} → ${syncCurrentBlock})`,
+        `[TradeFinanceContext] 🔄 Incremental sync: ${syncCurrentBlock - syncFromBlock} blocks (${syncFromBlock} → ${syncCurrentBlock})`,
       );
-
-      // FIRST TIME SETUP: If never synced, do ONE-TIME full blockchain fetch
-      if (lastSyncedBlock === 0 && applications.length === 0) {
-        console.log(
-          "[TradeFinanceContext] 🚀 First time setup - doing one-time full fetch...",
-        );
-        await fetchBlockchainData();
-        await saveLastSyncedBlock(currentBlock || 0);
-        setIsLoadingHistory(false);
-        return;
-      }
 
       // INCREMENTAL UPDATES: Only fetch events for new blocks (very fast)
       // Removed secondary redeclaration of maxBlockRange
@@ -1197,13 +1228,12 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
         await loadCachedData();
       }
 
-      // 2. If user is financier but cache has no PGAs, fetch ALL active PGAs
-      if (financierStatus && applications.length === 0) {
-        console.log(
-          "[TradeFinanceContext] 💼 Financier with empty cache - fetching ALL active PGAs...",
-        );
-        await fetchBlockchainData();
-      }
+      // 2. CRITICAL: Always fetch fresh blockchain data on login
+      // This ensures offline users see PGAs created while they were away
+      console.log(
+        "[TradeFinanceContext] 🔄 Fetching fresh blockchain data (catches offline transactions)...",
+      );
+      await fetchBlockchainData();
 
       // 3. Start real-time listeners immediately (no need to wait for sync)
       tradeFinanceEventService.startListening(address, handleRealtimeEvent);

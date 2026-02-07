@@ -256,6 +256,7 @@ export const TradeFinanceScreen = () => {
     (app) => app.buyer?.walletAddress?.toLowerCase() === normalizedAddress,
   );
 
+  // SELLER VIEW: Show ALL PGAs where user is seller (not just "Draft Sent to Seller")
   const sellerAwaitingDrafts = [
     ...drafts.filter(
       (draft) =>
@@ -263,7 +264,6 @@ export const TradeFinanceScreen = () => {
         address?.toLowerCase(),
     ),
     ...applications
-      .filter((app) => app.status === "Draft Sent to Seller")
       .filter(
         (app) =>
           app.seller?.walletAddress?.toLowerCase() === address?.toLowerCase() ||
