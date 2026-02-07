@@ -313,7 +313,12 @@ export const BuyerApplicationView: React.FC<BuyerApplicationViewProps> = ({
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Your Company:</Text>
-          <Text style={styles.infoValue}>{application.applicant.company}</Text>
+          <Text style={styles.infoValue}>
+            {application.applicant?.company ||
+              application.buyer?.company ||
+              application.companyName ||
+              "N/A"}
+          </Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Guarantee Amount:</Text>

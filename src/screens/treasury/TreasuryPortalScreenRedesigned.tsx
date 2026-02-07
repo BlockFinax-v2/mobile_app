@@ -453,6 +453,15 @@ export function TreasuryPortalScreenRedesigned() {
       // ALWAYS load cache first for instant display
       const hasCache = await loadCachedData();
 
+      // CRITICAL: If NO cache (e.g., after clearing app data), force fresh fetch
+      if (!hasCache) {
+        console.log(
+          "[TreasuryPortal] ⚠️ No cache found - forcing fresh blockchain fetch...",
+        );
+        hasLoadedData.current = false; // Reset to force loadInitialData
+        hasInitialized.current = false; // Reset to allow re-initialization
+      }
+
       // If cache exists, show instantly, then refresh in background
       if (hasCache) {
         console.log("[TreasuryPortal] 🚀 Cache hit - refreshing in background");
@@ -462,15 +471,10 @@ export function TreasuryPortalScreenRedesigned() {
         return;
       }
 
-      if (hasInitialized.current && lastInitializedKey.current === initKey) {
-        console.log(
-          "[TreasuryPortal] 🚀 Already initialized - using cached data only",
-        );
-        return;
-      }
-
-      console.log("[TreasuryPortal] Initializing for first time...");
-      await loadInitialData();
+      console.log(
+        "[TreasuryPortal] 📊 No cache - loading fresh data from blockchain...",
+      );
+      await loadInitialData({ force: true }); // Force load when no cache
       hasInitialized.current = true;
       lastInitializedKey.current = initKey;
     };
@@ -1780,19 +1784,10 @@ export function TreasuryPortalScreenRedesigned() {
       (app) => app.status === "Draft Sent to Pool",
     );
 
+    // CRITICAL: Show ALL PGAs except pending votes (financiers track entire lifecycle)
+    // This ensures financiers always see PGAs they voted on, regardless of status
     const completedVotes = applications.filter(
-      (app) =>
-        app.status !== "Draft Sent to Pool" &&
-        (app.status === "Draft Sent to Seller" ||
-          app.status === "Seller Approved" ||
-          app.status === "Collateral Paid" ||
-          app.status === "Certificate Issued" ||
-          app.status === "Logistics Notified" ||
-          app.status === "Logistics Claimed" ||
-          app.status === "Goods Shipped" ||
-          app.status === "Delivery Confirmed" ||
-          app.status === "Invoice Settled" ||
-          app.currentStage >= 2), // Stage 2+ means pool voted
+      (app) => app.status !== "Draft Sent to Pool", // Everything except pending votes
     );
 
     if (!isFinancier) {
@@ -2050,7 +2045,12 @@ export function TreasuryPortalScreenRedesigned() {
                 <TouchableOpacity
                   style={[styles.pgaReviewButton, { borderColor: "#10B981" }]}
                   onPress={() => {
-                    setSelectedDraft(app);
+                    setSelectedDraft({
+                      ...app,
+                      applicant: app.buyer,
+                      beneficiary: app.seller,
+                      guaranteeNo: app.requestId,
+                    });
                     setShowDraftReview(true);
                   }}
                 >

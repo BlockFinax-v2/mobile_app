@@ -1381,13 +1381,17 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const initialize = async () => {
       console.log(
-        "[TradeFinanceContext] Initializing with cache-first strategy...",
+        "[TradeFinanceContext] Initializing with blockchain-first strategy...",
       );
 
-      // 1. Load cached data immediately (INSTANT UI - < 100ms)
-      await loadCachedData();
+      // 1. CRITICAL: Always fetch fresh blockchain data first
+      // This ensures users see all their PGAs even after clearing app data
+      console.log(
+        "[TradeFinanceContext] 🔄 Fetching fresh blockchain data (universal data source)...",
+      );
+      await fetchBlockchainData();
 
-      // 2. Load historical events in background (sync)
+      // 2. Load historical events in background (for incremental sync)
       await loadHistoricalEvents();
 
       // 3. Start listening for real-time events
@@ -1396,7 +1400,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
       hasInitialized.current = true;
       lastInitializedKey.current = initKey;
       console.log(
-        "[TradeFinanceContext] ✅ Initialization complete (cache + sync)",
+        "[TradeFinanceContext] ✅ Initialization complete (blockchain + sync)",
       );
     };
 
@@ -1410,7 +1414,7 @@ export const TradeFinanceProvider: React.FC<{ children: React.ReactNode }> = ({
     address,
     isUnlocked,
     selectedNetwork,
-    loadCachedData,
+    fetchBlockchainData,
     loadHistoricalEvents,
     handleRealtimeEvent,
   ]);

@@ -213,7 +213,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Company:</Text>
-          <Text style={styles.infoValue}>{draft.applicant.company}</Text>
+          <Text style={styles.infoValue}>
+            {draft.applicant?.company ||
+              draft.buyer?.company ||
+              draft.companyName ||
+              "N/A"}
+          </Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Guarantee Amount:</Text>
@@ -247,7 +252,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
         <Text style={styles.sectionTitle}>Application Details</Text>
         <View style={styles.reviewRow}>
           <Text style={styles.reviewLabel}>Company Name:</Text>
-          <Text style={styles.reviewValue}>{draft.applicant.company}</Text>
+          <Text style={styles.reviewValue}>
+            {draft.applicant?.company ||
+              draft.buyer?.company ||
+              draft.companyName ||
+              "N/A"}
+          </Text>
         </View>
         <View style={styles.reviewRow}>
           <Text style={styles.reviewLabel}>Registration:</Text>
@@ -377,7 +387,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Company:</Text>
-            <Text style={styles.detailValue}>{draft.applicant.company}</Text>
+            <Text style={styles.detailValue}>
+              {draft.applicant?.company ||
+                draft.buyer?.company ||
+                draft.companyName ||
+                "N/A"}
+            </Text>
           </View>
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Guarantee Amount:</Text>
@@ -566,7 +581,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Paid By:</Text>
-          <Text style={styles.infoValue}>{draft.applicant.company}</Text>
+          <Text style={styles.infoValue}>
+            {draft.applicant?.company ||
+              draft.buyer?.company ||
+              draft.companyName ||
+              "N/A"}
+          </Text>
         </View>
       </View>
     </View>
@@ -854,7 +874,12 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Buyer:</Text>
-          <Text style={styles.summaryValue}>{draft.applicant.company}</Text>
+          <Text style={styles.summaryValue}>
+            {draft.applicant?.company ||
+              draft.buyer?.company ||
+              draft.companyName ||
+              "N/A"}
+          </Text>
         </View>
         <View style={styles.summaryRow}>
           <Text style={styles.summaryLabel}>Status:</Text>
@@ -936,7 +961,10 @@ export const SellerDraftView: React.FC<SellerDraftViewProps> = ({
               <View style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>Company Name:</Text>
                 <Text style={styles.reviewValue}>
-                  {draft.applicant.company}
+                  {draft.applicant?.company ||
+                    draft.buyer?.company ||
+                    draft.companyName ||
+                    "N/A"}
                 </Text>
               </View>
               <View style={styles.reviewRow}>
